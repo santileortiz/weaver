@@ -1,0 +1,7 @@
+note_data.js
+notes/
+
+*__pycache__*
+*.pyc
+mkpy/cache
+usage/**/cache
