@@ -1,5 +1,6 @@
 note_data.js
-notes/
+notes
+build
 
 *__pycache__*
 *.pyc

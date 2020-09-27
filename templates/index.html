@@ -7,8 +7,9 @@
   </head>
   <body>
       <header id="header">
-          <a href="">My Quick Title</a>
-          <a href="Internet Reading">Another Quick Title</a>
+          {% for note_id in title_notes %}
+          <a href="{{ note_id }}">{{ id_to_note_title[note_id] }}</a>
+          {% endfor %}
       </header>
       <div id="note-container">
           <div class="note collapsed" style="left: 0px">

@@ -641,6 +641,9 @@ def pers_func (name, func, arg):
     # to wrap arg into a list.
     return pers_func_f (name, func, [arg])
 
+def path_isdir (path_s):
+    return os.path.isdir(path_s.format(**get_user_str_vars()))
+
 def path_resolve (path_s):
     return os.path.expanduser(path_s.format(**get_user_str_vars()))
 
