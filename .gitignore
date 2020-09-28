@@ -1,6 +1,7 @@
 note_data.js
 notes
 build
+mkpy/chrome_data
 
 *__pycache__*
 *.pyc

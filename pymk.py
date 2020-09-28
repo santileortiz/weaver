@@ -17,6 +17,18 @@ def default ():
     target = store_get ('last_snip', default='new_note')
     call_user_function(target)
 
+def open_browser ():
+    # So... AJAX GET requests are forbidden to URLs using the file:// protocol,
+    # I don't understand why... supposedly, Firefox did allow it a while back,
+    # as long as the page was originally loaded as file://, I don't know why
+    # they changed it, but it doesn't work anymore.
+    #
+    # TODO: What happens if we don't use --user-data-dir and there's a chrome
+    # session already open?
+    chrome_data_dir = 'mkpy/chrome_data'
+    ensure_dir (chrome_data_dir)
+    ex ('google-chrome --user-data-dir=' + chrome_data_dir + ' --allow-file-access-from-files build/index.html&')
+
 def new_note ():
     is_vim_mode = get_cli_bool_opt('--vim')
     ensure_dir(notes_dir)
@@ -127,6 +139,7 @@ def generate ():
         template.stream(locals()).dump(out_path)
 
     gn.copy_changed(static_dir, out_dir)
+    gn.copy_changed(notes_dir, path_cat(out_dir, notes_dir))
 
 if __name__ == "__main__":
     # Everything above this line will be executed for each TAB press.
