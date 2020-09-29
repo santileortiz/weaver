@@ -280,7 +280,8 @@ function note_text_to_element (note_text)
 
         if (ps_match(ps, TokenType.PARAGRAPH, null)) {
             var curr_ctx = context_stack.pop()
-            while (curr_ctx.margin > ps.margin) {
+            while (context_stack.length > 0 &&
+                   (curr_ctx.margin > ps.margin || curr_ctx.type == ContextType.PARAGRAPH)) {
                 curr_ctx = context_stack.pop()
             }
             context_stack.push(curr_ctx)
@@ -309,6 +310,58 @@ function note_text_to_element (note_text)
         } else if (ps_match(ps, TokenType.TEXT, null) || ps_match(ps, TokenType.SPACE, null)) {
             var curr_ctx = context_stack[context_stack.length - 1]
             curr_ctx.dom_element.innerHTML += ps.value
+
+        } else if (ps_match(ps, TokenType.TAG, "href")) {
+            ps_expect (ps, TokenType.OPERATOR, "{")
+
+            var content = ""
+            ps_next(ps)
+            while (!ps.is_eof && !ps.error && !ps_match(ps, TokenType.OPERATOR, "}")) {
+                content += ps.value
+                ps_next(ps)
+            }
+
+            // We parse the URL from the title starting at the end. I thinkg is
+            // far less likely to have a non URL encoded > character, than a
+            // user wanting to use > inside their title.
+            var pos = content.length - 1
+            while (pos > 1 && content.charAt(pos) != ">") {
+                pos--
+            }
+
+            var url = content
+            var title = content
+            if (pos != 1 && content.charAt(pos - 1) === "-") {
+                pos--
+                url = content.substr(pos + 2).trim()
+                title = content.substr(0, pos).trim()
+            }
+
+            var link_element = document.createElement("a")
+            link_element.setAttribute("href", url)
+            link_element.setAttribute("target", "_blank")
+            link_element.innerHTML = title
+
+            var curr_ctx = context_stack[context_stack.length - 1]
+            curr_ctx.dom_element.appendChild(link_element)
+
+        } else if (ps_match(ps, TokenType.TAG, "note")) {
+            ps_expect (ps, TokenType.OPERATOR, "{")
+
+            var note_title = ""
+            ps_next(ps)
+            while (!ps.is_eof && !ps.error && !ps_match(ps, TokenType.OPERATOR, "}")) {
+                note_title += ps.value
+                ps_next(ps)
+            }
+
+            var link_element = document.createElement("a")
+            link_element.setAttribute("onclick", "return open_note('" + note_title_to_id[note_title] + "');")
+            link_element.setAttribute("href", "#")
+            link_element.innerHTML = note_title
+
+            var curr_ctx = context_stack[context_stack.length - 1]
+            curr_ctx.dom_element.appendChild(link_element)
 
         } else if (ps_match(ps, TokenType.OPERATOR, null) || ps_match(ps, TokenType.TAG, null)) {
             // TODO: Implement this...
