@@ -1,7 +1,5 @@
-var note_width = 40 // px
+var collapsed_note_width = 40 // px
 var opened_notes = []
-
-var next_pos = 4
 
 function instantiate_template(id)
 {
@@ -123,7 +121,9 @@ function ps_next(ps) {
             while (!pos_is_eof(ps) && pos_is_space(ps)) {
                 ps.pos++
             }
-            ps.value = ps.str.substr(start, ps.pos - start)
+
+            // Here is where single newline characters become a single space character.
+            ps.value = " " + ps.str.substr(start, ps.pos - start)
             ps.type = TokenType.TEXT
         }
 
@@ -248,7 +248,7 @@ function note_text_to_element (note_text)
     var new_expanded_note = document.createElement("div")
     new_expanded_note.classList.add("note")
     new_expanded_note.classList.add("expanded")
-    new_expanded_note.style.left = (next_pos + 1)*note_width + "px"
+    new_expanded_note.style.left = (opened_notes.length)*collapsed_note_width + "px"
 
     var ps = new ParserState(note_text)
 
@@ -311,7 +311,7 @@ function note_text_to_element (note_text)
             var curr_ctx = context_stack[context_stack.length - 1]
             curr_ctx.dom_element.innerHTML += ps.value
 
-        } else if (ps_match(ps, TokenType.TAG, "href")) {
+        } else if (ps_match(ps, TokenType.TAG, "link")) {
             ps_expect (ps, TokenType.OPERATOR, "{")
 
             var content = ""
@@ -322,8 +322,12 @@ function note_text_to_element (note_text)
             }
 
             // We parse the URL from the title starting at the end. I thinkg is
-            // far less likely to have a non URL encoded > character, than a
-            // user wanting to use > inside their title.
+            // far less likely to have a non URL encoded > character in the
+            // URL, than a user wanting to use > inside their title.
+            //
+            // TODO: Support another syntax for the rare case of a user that
+            // wants a > character in a URL. Or make sure URLs are URL encoded
+            // from the UI that will be used to edit this.
             var pos = content.length - 1
             while (pos > 1 && content.charAt(pos) != ">") {
                 pos--
@@ -369,51 +373,7 @@ function note_text_to_element (note_text)
             curr_ctx.dom_element.innerHTML += ps.value
         }
 
-        //if (context_type === ContextType.CONSUME_SPACES_AND_NEWLINE) {
-        //    if (!ps_match(ps, TokenType.SPACE, null) && !ps_match(ps, TokenType.OPERATOR, "\n")) {
-        //        if (ps.type == TokenType.TEXT) {
-        //            context_type = ContextType.TEXT
-        //        } else if (ps_match(ps, TokenType.OPERATOR, "-")) {
-        //            context_type = ContextType.BULLET_LIST
-        //            list_element = document.createElement("ul")
-        //        }
-        //    }
-        //}
-        //
-        //if (context_type === ContextType.TEXT) {
-        //    if (ps_match(ps, TokenType.OPERATOR, "\n")) {
-        //        newline_count++
-        //    } else {
-        //        newline_count = 0
-        //        paragraph += ps.value
-        //    }
-
-        //    if (newline_count === 2 || ps.is_eof) {
-        //        var paragraph_element = document.createElement("p")
-        //        paragraph_element.innerHTML = paragraph
-        //        new_expanded_note.appendChild(paragraph_element)
-
-        //        paragraph = ""
-        //        context_type = ContextType.CONSUME_SPACES_AND_NEWLINE
-        //    }
-
-        //} else if (context_type === ContextType.BULLET_LIST) {
-        //    if (ps_match(ps, TokenType.OPERATOR, "\n")) {
-        //        var paragraph_element = document.createElement("p")
-        //        paragraph_element.innerHTML = paragraph
-        //        new_expanded_note.appendChild(paragraph_element)
-        //        paragraph = ""
-
-        //        list_item_element = document.createElement("li")
-        //        list_item_element.appendChild(paragraph)
-
-        //        if (newline_count === 2 || ps.is_eof) {
-        //            context_type = ContextType.CONSUME_SPACES_AND_NEWLINE
-        //        }
-        //    }
-        //}
-
-        console.log(token_type_names[ps.type] + ": " + ps.value)
+        // console.log(token_type_names[ps.type] + ": " + ps.value)
     }
 
     return new_expanded_note
@@ -425,9 +385,14 @@ function reset_and_open_note(note_id)
         function(response) {
             var note_container = document.getElementById("note-container")
             note_container.innerHTML = ''
+            opened_notes = []
             note_container.appendChild(note_text_to_element(response))
+            opened_notes.push(note_id)
+            history.pushState(null, "", "?n=" + opened_notes.join("&n="))
         }
     )
+
+    return false
 }
 
 function open_note(note_id)
@@ -437,13 +402,17 @@ function open_note(note_id)
     expanded_note.classList.add("collapsed")
     expanded_note.innerHTML = ''
     var collapsed_title = instantiate_template("collapsed-title")
-    collapsed_title.innerHTML = 'Title 5' // TODO: Set the actual title of the note being collapsed
+    collapsed_title.innerHTML = id_to_note_title[opened_notes[opened_notes.length - 1]]
     expanded_note.appendChild(collapsed_title)
 
     ajax_get ("notes/" + note_id,
         function(response) {
             var note_container = document.getElementById("note-container")
             note_container.appendChild(note_text_to_element(response))
+            opened_notes.push(note_id)
+            history.pushState(null, "", "?n=" + opened_notes.join("&n="))
         }
     )
+
+    return false
 }

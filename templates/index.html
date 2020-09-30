@@ -8,7 +8,7 @@
   <body>
       <header id="header">
           {% for note_id in title_notes %}
-          <button onclick='open_note("{{ note_id }}")'>{{ id_to_note_title[note_id] }}</button>
+          <a onclick='return reset_and_open_note("{{ note_id }}")' href="#">{{ id_to_note_title[note_id] }}</a>
           {% endfor %}
       </header>
       <div id="note-container">
