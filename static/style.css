@@ -78,10 +78,6 @@
     --heading-font: Raleway, var(--ui-font);
 }
 
-:root {
-    --note-width: 30rem;
-}
-
 body, html {
     margin: 0;
     padding: 0;
@@ -151,8 +147,7 @@ header > a {
 
 .note {
     height: var(--note-container-height);
-    width: var(--note-width);
-    max-width: var(--note-width);
+    width: var(--expanded-note-width);
     margin: 0 auto;
     padding: 0 1rem;
     display: block;
@@ -181,7 +176,7 @@ header > a {
     padding: 0 0;
     height: var(--note-container-height);
     display: block;
-    width: 40px;
+    width: var(--collapsed-note-width);
     position: absolute;
 
     /* :absolute_positioning_background_color_no_shadow */

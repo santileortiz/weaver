@@ -1,16 +1,23 @@
+let screen_height = document.documentElement.clientHeight;
+let header_height = document.getElementById("header").offsetHeight;
+css_property_set ("--note-container-height", screen_height - header_height + "px");
+
 let collapsed_note_width = 40 // px
+css_property_set ("--collapsed-note-width", collapsed_note_width + "px");
+
+let expanded_note_width = 480 // px
+css_property_set ("--expanded-note-width", expanded_note_width + "px");
+
+
 let opened_notes = []
 
-function ajax_get (url, callback)
+function note_element_new(x)
 {
-    let request = new XMLHttpRequest();
-    request.onreadystatechange = function() { 
-        if (this.readyState == 4) {
-            callback(request.responseText);
-        }
-    }
-    request.open("GET", url, true);
-    request.send(null);
+    let new_note = document.createElement("div")
+    new_note.classList.add("note")
+    new_note.style.left = x + "px"
+
+    return new_note;
 }
 
 let TokenType = {
@@ -238,12 +245,10 @@ function push_new_context (context_stack, type, margin, element_name)
     return new_context
 }
 
-function note_text_to_element (note_text)
+function note_text_to_element (note_text, x)
 {
-    let new_expanded_note = document.createElement("div")
-    new_expanded_note.classList.add("note")
+    let new_expanded_note = note_element_new (x)
     new_expanded_note.classList.add("expanded")
-    new_expanded_note.style.left = (opened_notes.length)*collapsed_note_width + "px"
 
     let ps = new ParserState(note_text)
 
@@ -384,13 +389,22 @@ function reset_and_open_note(note_id)
             let note_container = document.getElementById("note-container")
             note_container.innerHTML = ''
             opened_notes = []
-            note_container.appendChild(note_text_to_element(response))
+            note_container.appendChild(note_text_to_element(response, opened_notes.length*collapsed_note_width))
             opened_notes.push(note_id)
             history.pushState(null, "", "?n=" + opened_notes.join("&n="))
         }
     )
 
     return false
+}
+
+function collapsed_element_new (note_id)
+{
+    let collapsed_title = document.createElement("h3")
+    collapsed_title.classList.add("collapsed-label")
+    collapsed_title.innerHTML = id_to_note_title[note_id]
+
+    return collapsed_title
 }
 
 // :pushes_state
@@ -401,15 +415,13 @@ function open_note(note_id)
     expanded_note.classList.add("collapsed")
     expanded_note.innerHTML = ''
 
-    let collapsed_title = document.createElement("h3")
-    collapsed_title.classList.add("collapsed-label")
-    collapsed_title.innerHTML = id_to_note_title[opened_notes[opened_notes.length - 1]]
+    let collapsed_title = collapsed_element_new (opened_notes[opened_notes.length - 1])
     expanded_note.appendChild(collapsed_title)
 
     ajax_get ("notes/" + note_id,
         function(response) {
             let note_container = document.getElementById("note-container")
-            note_container.appendChild(note_text_to_element(response))
+            note_container.appendChild(note_text_to_element(response, opened_notes.length*collapsed_note_width))
             opened_notes.push(note_id)
             history.pushState(null, "", "?n=" + opened_notes.join("&n="))
         }
@@ -418,94 +430,62 @@ function open_note(note_id)
     return false
 }
 
-// Compute a dictionary of URL paramer keys to an array of values mapped to
-// that key.
-//
-// These are relevant implementation details:
-//  - Return null if there are no query parameters.
-//  - Optionally pass a "flags" array where parameters that don't have a value
-//    (like "...&flag&...") will be pushed once.
-//  - Keys and values are URL decoded.
-//  - Query parameters like "...&key=&..." will get the empty string as value.
-//  - For each key, its array of values is guaranteed to be in the order they
-//    were in the URL.
-//  - Percent encoding of UTF-8 octets will be correctly decoded (%C3%B1 is
-//    decoded to é).
-//  - If a flags array is passed, flags not already present will be added in
-//    the order they were in the URL. Flags already present are left in the
-//    original position.
-//  - Don't replace + with space.
-//
-// TODO: Test all these details are true in most browsers. Tested in Chrome.
-//
-// Why + isn't replaced to space
-// -----------------------------
-//
-// The use of + characters as space is specific to the context where URL
-// parameters are being parsed. The URI specification [1] never mentions that
-// the + should be translated to the space character. It is the HTML
-// specification that defines + as space in the form data serialization
-// (it uses the application/x-www-form-urlencoded [2] serialization format).
-// When using forms with the GET method [3], form data is sent appended to the
-// URI [4], as query parameters (this is different from a form that uses POST,
-// where form data is sent as the body of the HTTP request [5]).
-//
-// This function was written for the use case of client side parsing of URL
-// parameters. In this case, we can't know if the query component of the URI
-// has been serialized with the application/x-www-form-urlencoded format, so we
-// don't replace + to space.
-//
-// [1]: https://tools.ietf.org/html/rfc3986
-// [2]: https://url.spec.whatwg.org/#application/x-www-form-urlencoded
-// [3]: https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#form-submission-algorithm
-// [4]: https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#submit-mutate-action
-// [5]: https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#submit-body
-function url_parameters(flags)
+
+// Unlike reset_and_open_note() and open_note(), this one doesn't push a state.
+// It's intended to be used in handlers for events that need to change the
+// openened notes.
+function open_notes(note_ids, expanded_note_id)
 {
-    let params = null
+    opened_notes = note_ids
 
-    // NOTE: At least in Chrome, when using an IRI, its UTF-8 characters get
-    // percent encoded to transform it into a URL. That's what we get from
-    // window.location.href. Not sure if this happens in all browsers.
-    let query = /\?([^#]+)/.exec(window.location.href)
-    if (query != null) {
-        params = {}
+    if (expanded_note_id === undefined) {
+        expanded_note_id = note_ids[note_ids.length - 1] 
+    }
 
-        let parameter_components = query[1].split("&")
-        for (let i=0; i<parameter_components.length; i++) {
-            // This regex allows distinguishing between a query component being:
-            // 1. "key" -> "key" is a flag
-            // 2. "key=" -> "key" parameter is set to "" (empty string)
-            // 3. "key=value" -> "key" parameter is set to "value"
-            let key_value = /([^=]+)(?:=(.*))?/.exec(parameter_components[i])
-            if (key_value[2] != undefined) {
-                let key = decodeURIComponent(key_value[1])
-                if (params[key] == undefined) {
-                    params[key] = []
-                }
-                params[key].push(decodeURIComponent(key_value[2]))
+    ajax_get ("notes/" + expanded_note_id,
+        function(response) {
+            let note_container = document.getElementById("note-container")
+            note_container.innerHTML = ''
 
-            } else if (flags != undefined && flags != null) {
-                let flag = decodeURIComponent(key_value[1])
-                if (!flags.includes(flag)) {
-                    flags.push(flag)
-                }
+            let i = 0
+            for (; note_ids[i] !== expanded_note_id; i++) {
+                let new_collapsed_note = note_element_new(i*collapsed_note_width)
+                new_collapsed_note.classList.add("collapsed")
+                let collapsed_title = collapsed_element_new(note_ids[i])
+                new_collapsed_note.appendChild(collapsed_title)
+
+                note_container.appendChild(new_collapsed_note)
             }
+
+            note_container.appendChild(note_text_to_element(response, i*collapsed_note_width))
+            i++
+
+            for (; i<note_ids.length; i++) {
+                let new_collapsed_note = note_element_new(i*collapsed_note_width + expanded_note_width)
+                new_collapsed_note.classList.add("collapsed")
+                let collapsed_title = collapsed_element_new(note_ids[i])
+                new_collapsed_note.appendChild(collapsed_title)
+
+                note_container.appendChild(new_collapsed_note)
+            }
+
         }
-    }
-
-    return params
+    )
 }
 
-let params = url_parameters()
-if (params != null) {
-    opened_notes = params["n"]
-    reset_and_open_note(opened_notes[0])
-    for (let i=1; i<opened_notes.length; i++) {
-        open_note(opened_notes[i])
-    }
+function navigate_to_current_url() {
+    let params = url_parameters()
+    if (params != null) {
+        open_notes (params["n"])
 
-} else {
-    // By default open the first note
-    reset_and_open_note(title_notes[0])
+    } else {
+        // By default open the first note
+        reset_and_open_note(title_notes[0])
+    }
 }
+
+window.addEventListener('popstate', (event) => {
+    navigate_to_current_url()
+});
+
+navigate_to_current_url()
