@@ -1,14 +1,9 @@
-var collapsed_note_width = 40 // px
-var opened_notes = []
-
-function instantiate_template(id)
-{
-    return document.getElementById(id).content.firstElementChild.cloneNode(true)
-}
+let collapsed_note_width = 40 // px
+let opened_notes = []
 
 function ajax_get (url, callback)
 {
-    var request = new XMLHttpRequest();
+    let request = new XMLHttpRequest();
     request.onreadystatechange = function() { 
         if (this.readyState == 4) {
             callback(request.responseText);
@@ -18,7 +13,7 @@ function ajax_get (url, callback)
     request.send(null);
 }
 
-var TokenType = {
+let TokenType = {
     UNKNOWN: 0,
     PARAGRAPH: 1,
     BULLET_LIST: 2,
@@ -30,7 +25,7 @@ var TokenType = {
 }
 
 token_type_names = []
-for (var e in TokenType) {
+for (let e in TokenType) {
     if (TokenType.hasOwnProperty(e)) {
         token_type_names.push('' + e)
     }
@@ -51,7 +46,7 @@ function ParserState (str) {
 // are passing an incomplete regex, sigh..
 function char_in_str (c, chars)
 {
-    for (var i=0; i<chars.length; i++) {
+    for (let i=0; i<chars.length; i++) {
         if (chars.charAt(i) === c) {
             return true
         }
@@ -61,15 +56,15 @@ function char_in_str (c, chars)
 }
 
 function ps_next(ps) {
-    var pos_is_operator = function(ps) {
+    let pos_is_operator = function(ps) {
         return char_in_str(ps.str.charAt(ps.pos), "#[]{}\n")
     }
 
-    var pos_is_space = function(ps) {
+    let pos_is_space = function(ps) {
         return char_in_str(ps.str.charAt(ps.pos), " \t")
     }
 
-    var pos_is_eof = function(ps) {
+    let pos_is_eof = function(ps) {
         return ps.pos >= ps.str.length
     }
 
@@ -79,14 +74,14 @@ function ps_next(ps) {
     } else if (ps.str.charAt(ps.pos) === "\n") {
         ps.pos++
 
-        var pos_backup = ps.pos
+        let pos_backup = ps.pos
         while (!pos_is_eof(ps) && pos_is_space(ps)) {
             ps.pos++
         }
 
         // Skip until we find something different to space or newline
-        var margin = 0
-        var multiple_newline = false
+        let margin = 0
+        let multiple_newline = false
         while (!pos_is_eof(ps) && (pos_is_space(ps) || ps.str.charAt(ps.pos) === "\n")) {
             if (ps.str.charAt(ps.pos) === "\n") {
                 multiple_newline = true
@@ -117,7 +112,7 @@ function ps_next(ps) {
             ps.margin = margin
 
         } else {
-            var start = ps.pos
+            let start = ps.pos
             while (!pos_is_eof(ps) && pos_is_space(ps)) {
                 ps.pos++
             }
@@ -130,7 +125,7 @@ function ps_next(ps) {
     } else if (ps.str.charAt(ps.pos) === "\\") {
         ps.pos++
 
-        var start = ps.pos
+        let start = ps.pos
         while (!pos_is_eof(ps) && !pos_is_operator(ps) && !pos_is_space(ps)) {
             ps.pos++
         }
@@ -148,7 +143,7 @@ function ps_next(ps) {
         ps.pos++
 
     } else {
-        var start = ps.pos
+        let start = ps.pos
         while (!pos_is_eof(ps) && !pos_is_operator(ps) && !pos_is_space(ps)) {
             ps.pos++
         }
@@ -166,7 +161,7 @@ function ps_next(ps) {
 
 function ps_match(ps, type, value)
 {
-    var match = false;
+    let match = false;
 
     if (type == ps.type) {
         if (value == null) {
@@ -218,7 +213,7 @@ function ps_consume_spaces_or_newline (ps)
     }
 }
 
-var ContextType = {
+let ContextType = {
     ROOT: 0,
     PARAGRAPH: 1,
     LIST: 2,
@@ -235,42 +230,42 @@ function ParseContext (type, margin, dom_element) {
 
 function push_new_context (context_stack, type, margin, element_name)
 {
-    var curr_ctx = context_stack[context_stack.length - 1]
-    var dom_element = document.createElement(element_name)
+    let curr_ctx = context_stack[context_stack.length - 1]
+    let dom_element = document.createElement(element_name)
     curr_ctx.dom_element.appendChild(dom_element)
-    var new_context = new ParseContext(type, margin, dom_element)
+    let new_context = new ParseContext(type, margin, dom_element)
     context_stack.push(new_context)
     return new_context
 }
 
 function note_text_to_element (note_text)
 {
-    var new_expanded_note = document.createElement("div")
+    let new_expanded_note = document.createElement("div")
     new_expanded_note.classList.add("note")
     new_expanded_note.classList.add("expanded")
     new_expanded_note.style.left = (opened_notes.length)*collapsed_note_width + "px"
 
-    var ps = new ParserState(note_text)
+    let ps = new ParserState(note_text)
 
     // Parse title
-    var title = ""
+    let title = ""
     ps_expect (ps, TokenType.OPERATOR, "#")
     ps_consume_spaces (ps)
     while (!ps.is_eof && !ps.error && ((ps_match(ps, TokenType.TEXT, null) || ps_match(ps, TokenType.SPACE, null)))) {
         title += ps.value
         ps_next (ps)
     }
-    var title_element = document.createElement("h1")
+    let title_element = document.createElement("h1")
     title_element.innerHTML = title
     new_expanded_note.appendChild(title_element)
 
     // Parse note's content
-    var FLAG = true
-    var context_type = ContextType.CONSUME_SPACES_AND_NEWLINE
-    var newline_count = 0
-    var paragraph = ""
-    var list_element = null
-    var context_stack = [new ParseContext(ContextType.PARAGRAPH, 0, new_expanded_note)]
+    let FLAG = true
+    let context_type = ContextType.CONSUME_SPACES_AND_NEWLINE
+    let newline_count = 0
+    let paragraph = ""
+    let list_element = null
+    let context_stack = [new ParseContext(ContextType.PARAGRAPH, 0, new_expanded_note)]
     while (!ps.is_eof && !ps.error) {
         if (!FLAG) {
             ps_next (ps)
@@ -279,7 +274,7 @@ function note_text_to_element (note_text)
         }
 
         if (ps_match(ps, TokenType.PARAGRAPH, null)) {
-            var curr_ctx = context_stack.pop()
+            let curr_ctx = context_stack.pop()
             while (context_stack.length > 0 &&
                    (curr_ctx.margin > ps.margin || curr_ctx.type == ContextType.PARAGRAPH)) {
                 curr_ctx = context_stack.pop()
@@ -289,7 +284,7 @@ function note_text_to_element (note_text)
             push_new_context (context_stack, ContextType.PARAGRAPH, ps.margin, "p")
 
         } else if (ps_match(ps, TokenType.BULLET_LIST, null)) {
-            var curr_ctx = context_stack.pop()
+            let curr_ctx = context_stack.pop()
             while (context_stack.length > 0) {
                 if (curr_ctx.type == ContextType.LIST || curr_ctx.type == ContextType.ROOT) {
                     break
@@ -300,7 +295,7 @@ function note_text_to_element (note_text)
             context_stack.push(curr_ctx)
 
             if (curr_ctx.type != ContextType.LIST) {
-                var list_context = push_new_context (context_stack, ContextType.LIST, ps.margin, "ul")
+                let list_context = push_new_context (context_stack, ContextType.LIST, ps.margin, "ul")
                 list_context.list_type = TokenType.BULLET_LIST
             }
 
@@ -308,13 +303,13 @@ function note_text_to_element (note_text)
             push_new_context (context_stack, ContextType.PARAGRAPH, ps.margin, "p")
 
         } else if (ps_match(ps, TokenType.TEXT, null) || ps_match(ps, TokenType.SPACE, null)) {
-            var curr_ctx = context_stack[context_stack.length - 1]
+            let curr_ctx = context_stack[context_stack.length - 1]
             curr_ctx.dom_element.innerHTML += ps.value
 
         } else if (ps_match(ps, TokenType.TAG, "link")) {
             ps_expect (ps, TokenType.OPERATOR, "{")
 
-            var content = ""
+            let content = ""
             ps_next(ps)
             while (!ps.is_eof && !ps.error && !ps_match(ps, TokenType.OPERATOR, "}")) {
                 content += ps.value
@@ -328,48 +323,48 @@ function note_text_to_element (note_text)
             // TODO: Support another syntax for the rare case of a user that
             // wants a > character in a URL. Or make sure URLs are URL encoded
             // from the UI that will be used to edit this.
-            var pos = content.length - 1
+            let pos = content.length - 1
             while (pos > 1 && content.charAt(pos) != ">") {
                 pos--
             }
 
-            var url = content
-            var title = content
+            let url = content
+            let title = content
             if (pos != 1 && content.charAt(pos - 1) === "-") {
                 pos--
                 url = content.substr(pos + 2).trim()
                 title = content.substr(0, pos).trim()
             }
 
-            var link_element = document.createElement("a")
+            let link_element = document.createElement("a")
             link_element.setAttribute("href", url)
             link_element.setAttribute("target", "_blank")
             link_element.innerHTML = title
 
-            var curr_ctx = context_stack[context_stack.length - 1]
+            let curr_ctx = context_stack[context_stack.length - 1]
             curr_ctx.dom_element.appendChild(link_element)
 
         } else if (ps_match(ps, TokenType.TAG, "note")) {
             ps_expect (ps, TokenType.OPERATOR, "{")
 
-            var note_title = ""
+            let note_title = ""
             ps_next(ps)
             while (!ps.is_eof && !ps.error && !ps_match(ps, TokenType.OPERATOR, "}")) {
                 note_title += ps.value
                 ps_next(ps)
             }
 
-            var link_element = document.createElement("a")
+            let link_element = document.createElement("a")
             link_element.setAttribute("onclick", "return open_note('" + note_title_to_id[note_title] + "');")
             link_element.setAttribute("href", "#")
             link_element.innerHTML = note_title
 
-            var curr_ctx = context_stack[context_stack.length - 1]
+            let curr_ctx = context_stack[context_stack.length - 1]
             curr_ctx.dom_element.appendChild(link_element)
 
         } else if (ps_match(ps, TokenType.OPERATOR, null) || ps_match(ps, TokenType.TAG, null)) {
             // TODO: Implement this...
-            var curr_ctx = context_stack[context_stack.length - 1]
+            let curr_ctx = context_stack[context_stack.length - 1]
             curr_ctx.dom_element.innerHTML += ps.value
         }
 
@@ -379,11 +374,14 @@ function note_text_to_element (note_text)
     return new_expanded_note
 }
 
+// NOTE: This pushes a new state. Intended for use in places where we handle
+// user interaction that causes navigation to a new note.
+// :pushes_state
 function reset_and_open_note(note_id)
 {
     ajax_get ("notes/" + note_id,
         function(response) {
-            var note_container = document.getElementById("note-container")
+            let note_container = document.getElementById("note-container")
             note_container.innerHTML = ''
             opened_notes = []
             note_container.appendChild(note_text_to_element(response))
@@ -395,19 +393,22 @@ function reset_and_open_note(note_id)
     return false
 }
 
+// :pushes_state
 function open_note(note_id)
 {
-    var expanded_note = document.querySelector(".expanded")
+    let expanded_note = document.querySelector(".expanded")
     expanded_note.classList.remove ("expanded")
     expanded_note.classList.add("collapsed")
     expanded_note.innerHTML = ''
-    var collapsed_title = instantiate_template("collapsed-title")
+
+    let collapsed_title = document.createElement("h3")
+    collapsed_title.classList.add("collapsed-label")
     collapsed_title.innerHTML = id_to_note_title[opened_notes[opened_notes.length - 1]]
     expanded_note.appendChild(collapsed_title)
 
     ajax_get ("notes/" + note_id,
         function(response) {
-            var note_container = document.getElementById("note-container")
+            let note_container = document.getElementById("note-container")
             note_container.appendChild(note_text_to_element(response))
             opened_notes.push(note_id)
             history.pushState(null, "", "?n=" + opened_notes.join("&n="))
@@ -415,4 +416,96 @@ function open_note(note_id)
     )
 
     return false
+}
+
+// Compute a dictionary of URL paramer keys to an array of values mapped to
+// that key.
+//
+// These are relevant implementation details:
+//  - Return null if there are no query parameters.
+//  - Optionally pass a "flags" array where parameters that don't have a value
+//    (like "...&flag&...") will be pushed once.
+//  - Keys and values are URL decoded.
+//  - Query parameters like "...&key=&..." will get the empty string as value.
+//  - For each key, its array of values is guaranteed to be in the order they
+//    were in the URL.
+//  - Percent encoding of UTF-8 octets will be correctly decoded (%C3%B1 is
+//    decoded to é).
+//  - If a flags array is passed, flags not already present will be added in
+//    the order they were in the URL. Flags already present are left in the
+//    original position.
+//  - Don't replace + with space.
+//
+// TODO: Test all these details are true in most browsers. Tested in Chrome.
+//
+// Why + isn't replaced to space
+// -----------------------------
+//
+// The use of + characters as space is specific to the context where URL
+// parameters are being parsed. The URI specification [1] never mentions that
+// the + should be translated to the space character. It is the HTML
+// specification that defines + as space in the form data serialization
+// (it uses the application/x-www-form-urlencoded [2] serialization format).
+// When using forms with the GET method [3], form data is sent appended to the
+// URI [4], as query parameters (this is different from a form that uses POST,
+// where form data is sent as the body of the HTTP request [5]).
+//
+// This function was written for the use case of client side parsing of URL
+// parameters. In this case, we can't know if the query component of the URI
+// has been serialized with the application/x-www-form-urlencoded format, so we
+// don't replace + to space.
+//
+// [1]: https://tools.ietf.org/html/rfc3986
+// [2]: https://url.spec.whatwg.org/#application/x-www-form-urlencoded
+// [3]: https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#form-submission-algorithm
+// [4]: https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#submit-mutate-action
+// [5]: https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#submit-body
+function url_parameters(flags)
+{
+    let params = null
+
+    // NOTE: At least in Chrome, when using an IRI, its UTF-8 characters get
+    // percent encoded to transform it into a URL. That's what we get from
+    // window.location.href. Not sure if this happens in all browsers.
+    let query = /\?([^#]+)/.exec(window.location.href)
+    if (query != null) {
+        params = {}
+
+        let parameter_components = query[1].split("&")
+        for (let i=0; i<parameter_components.length; i++) {
+            // This regex allows distinguishing between a query component being:
+            // 1. "key" -> "key" is a flag
+            // 2. "key=" -> "key" parameter is set to "" (empty string)
+            // 3. "key=value" -> "key" parameter is set to "value"
+            let key_value = /([^=]+)(?:=(.*))?/.exec(parameter_components[i])
+            if (key_value[2] != undefined) {
+                let key = decodeURIComponent(key_value[1])
+                if (params[key] == undefined) {
+                    params[key] = []
+                }
+                params[key].push(decodeURIComponent(key_value[2]))
+
+            } else if (flags != undefined && flags != null) {
+                let flag = decodeURIComponent(key_value[1])
+                if (!flags.includes(flag)) {
+                    flags.push(flag)
+                }
+            }
+        }
+    }
+
+    return params
+}
+
+let params = url_parameters()
+if (params != null) {
+    opened_notes = params["n"]
+    reset_and_open_note(opened_notes[0])
+    for (let i=1; i<opened_notes.length; i++) {
+        open_note(opened_notes[i])
+    }
+
+} else {
+    // By default open the first note
+    reset_and_open_note(title_notes[0])
 }

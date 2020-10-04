@@ -11,39 +11,12 @@
           <a onclick='return reset_and_open_note("{{ note_id }}")' href="#">{{ id_to_note_title[note_id] }}</a>
           {% endfor %}
       </header>
-      <div id="note-container">
-          <div class="note collapsed" style="left: 0px">
-              <h3 class="collapsed-label">Title 1</h3>
-          </div>
-          <div class="note collapsed" style="left: 40px">
-              <h3 class="collapsed-label">Title 2</h3>
-          </div>
-          <div class="note collapsed" style="left: 80px">
-              <h3 class="collapsed-label">Title 3</h3>
-          </div>
-          <div class="note collapsed" style="left: 120px">
-              <h3 class="collapsed-label">Title 4</h3>
-          </div>
-          <div class="note expanded" style="left: 160px">
-              <h1>My Title</h1>
 
-              <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.</p>
+      <div id="note-container"></div>
 
-              <h2>A subtitle</h2>
-
-              <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Aliquam sem fringilla ut morbi tincidunt augue interdum velit. Et malesuada fames ac turpis egestas. Tristique magna sit amet purus gravida. Pretium lectus quam id leo in vitae turpis massa sed. Convallis tellus id interdum velit laoreet id donec ultrices. Proin sed libero enim sed faucibus turpis in eu. Eget est lorem ipsum dolor. Facilisi nullam vehicula ipsum a arcu cursus. A condimentum vitae sapien pellentesque habitant morbi. Condimentum vitae sapien pellentesque habitant morbi tristique senectus. Ultrices vitae auctor eu augue ut lectus arcu bibendum at. Ut morbi tincidunt augue interdum velit euismod.</p>
-
-              <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Porta non pulvinar neque laoreet suspendisse interdum. Aliquam faucibus purus in massa tempor nec feugiat.</p>
-
-              <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ac auctor augue mauris augue neque gravida in fermentum. Eros in cursus turpis massa tincidunt dui. Dignissim diam quis enim lobortis. Diam ut venenatis tellus in metus. Consequat ac felis donec et odio pellentesque. Lacinia at quis risus sed vulputate odio ut enim. Enim nulla aliquet porttitor lacus luctus accumsan tortor posuere. Sagittis vitae et leo duis. Nam libero justo laoreet sit amet cursus sit.</p>
-          </div>
-      </div>
       <script src="note_data.js"></script>
       <script src="computed_css.js"></script>
       <script src="note_renderer.js"></script>
       <script src="lib/sprintf.js"></script>
-      <template id="collapsed-title">
-          <h3 class="collapsed-label">Title 4</h3>
-      </template>
   </body>
 </html>
