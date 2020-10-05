@@ -5,15 +5,21 @@ css_property_set ("--note-container-height", screen_height - header_height + "px
 let collapsed_note_width = 40 // px
 css_property_set ("--collapsed-note-width", collapsed_note_width + "px");
 
-let expanded_note_width = 480 // px
+let expanded_note_width = 520 // px
 css_property_set ("--expanded-note-width", expanded_note_width + "px");
+
+let note_link_color = "#0d52bf"
+css_property_set ("--note-link-color", note_link_color);
+css_property_set ("--note-link-color-bg", note_link_color + "0f");
+css_property_set ("--note-link-color-sh", note_link_color + "1f");
 
 
 let opened_notes = []
 
-function note_element_new(x)
+function note_element_new(id, x)
 {
     let new_note = document.createElement("div")
+    new_note.id = id
     new_note.classList.add("note")
     new_note.style.left = x + "px"
 
@@ -245,9 +251,9 @@ function push_new_context (context_stack, type, margin, element_name)
     return new_context
 }
 
-function note_text_to_element (note_text, x)
+function note_text_to_element (id, note_text, x)
 {
-    let new_expanded_note = note_element_new (x)
+    let new_expanded_note = note_element_new (id, x)
     new_expanded_note.classList.add("expanded")
 
     let ps = new ParserState(note_text)
@@ -362,6 +368,7 @@ function note_text_to_element (note_text, x)
             let link_element = document.createElement("a")
             link_element.setAttribute("onclick", "return open_note('" + note_title_to_id[note_title] + "');")
             link_element.setAttribute("href", "#")
+            link_element.classList.add("note-link")
             link_element.innerHTML = note_title
 
             let curr_ctx = context_stack[context_stack.length - 1]
@@ -389,7 +396,7 @@ function reset_and_open_note(note_id)
             let note_container = document.getElementById("note-container")
             note_container.innerHTML = ''
             opened_notes = []
-            note_container.appendChild(note_text_to_element(response, opened_notes.length*collapsed_note_width))
+            note_container.appendChild(note_text_to_element(note_id, response, opened_notes.length*collapsed_note_width))
             opened_notes.push(note_id)
             history.pushState(null, "", "?n=" + opened_notes.join("&n="))
         }
@@ -410,22 +417,29 @@ function collapsed_element_new (note_id)
 // :pushes_state
 function open_note(note_id)
 {
-    let expanded_note = document.querySelector(".expanded")
-    expanded_note.classList.remove ("expanded")
-    expanded_note.classList.add("collapsed")
-    expanded_note.innerHTML = ''
+    if (opened_notes.includes(note_id)) {
+        let params = url_parameters()
+        open_notes (params["n"], note_id)
 
-    let collapsed_title = collapsed_element_new (opened_notes[opened_notes.length - 1])
-    expanded_note.appendChild(collapsed_title)
+    } else {
+        let expanded_note = document.querySelector(".expanded")
+        expanded_note.classList.remove ("expanded")
+        expanded_note.classList.add("collapsed")
+        expanded_note.classList.add("right-shadow")
+        expanded_note.innerHTML = ''
 
-    ajax_get ("notes/" + note_id,
-        function(response) {
-            let note_container = document.getElementById("note-container")
-            note_container.appendChild(note_text_to_element(response, opened_notes.length*collapsed_note_width))
-            opened_notes.push(note_id)
-            history.pushState(null, "", "?n=" + opened_notes.join("&n="))
-        }
-    )
+        let collapsed_title = collapsed_element_new (expanded_note.id)
+        expanded_note.appendChild(collapsed_title)
+
+        ajax_get ("notes/" + note_id,
+                  function(response) {
+                      let note_container = document.getElementById("note-container")
+                      note_container.appendChild(note_text_to_element(note_id, response, opened_notes.length*collapsed_note_width))
+                      opened_notes.push(note_id)
+                      history.pushState(null, "", "?n=" + opened_notes.join("&n="))
+                  }
+        )
+    }
 
     return false
 }
@@ -449,20 +463,22 @@ function open_notes(note_ids, expanded_note_id)
 
             let i = 0
             for (; note_ids[i] !== expanded_note_id; i++) {
-                let new_collapsed_note = note_element_new(i*collapsed_note_width)
+                let new_collapsed_note = note_element_new(note_ids[i], i*collapsed_note_width)
                 new_collapsed_note.classList.add("collapsed")
+                new_collapsed_note.classList.add("right-shadow")
                 let collapsed_title = collapsed_element_new(note_ids[i])
                 new_collapsed_note.appendChild(collapsed_title)
 
                 note_container.appendChild(new_collapsed_note)
             }
 
-            note_container.appendChild(note_text_to_element(response, i*collapsed_note_width))
+            note_container.appendChild(note_text_to_element(expanded_note_id, response, i*collapsed_note_width))
             i++
 
             for (; i<note_ids.length; i++) {
-                let new_collapsed_note = note_element_new(i*collapsed_note_width + expanded_note_width)
+                let new_collapsed_note = note_element_new(note_ids[i], (i-1)*collapsed_note_width + expanded_note_width)
                 new_collapsed_note.classList.add("collapsed")
+                new_collapsed_note.classList.add("left-shadow")
                 let collapsed_title = collapsed_element_new(note_ids[i])
                 new_collapsed_note.appendChild(collapsed_title)
 
