@@ -13,6 +13,15 @@ css_property_set ("--note-link-color", note_link_color);
 css_property_set ("--note-link-color-bg", note_link_color + "0f");
 css_property_set ("--note-link-color-sh", note_link_color + "1f");
 
+let note_button_width = 22 // px
+css_property_set ("--note-button-width", note_button_width + "px");
+
+// There doesn't seem to be a way to get the scrollbar's width in all cases. If
+// the browser has hidden scrollbars we can't use the trick of creating hidden
+// divs that force scrollbars and compute the difference between the client and
+// offsed widths. So... we just set a fixed value of what we think should be
+// the maximum width of a scrollbar.
+let max_scrollbar_width = 15 // px
 
 let opened_notes = []
 
@@ -251,10 +260,15 @@ function push_new_context (context_stack, type, margin, element_name)
     return new_context
 }
 
-function note_text_to_element (id, note_text, x)
+function note_text_to_element (container, id, note_text, x)
 {
     let new_expanded_note = note_element_new (id, x)
     new_expanded_note.classList.add("expanded")
+
+    // NOTE: We append this at the beginning so we get the correct client and
+    // scroll height at the end.
+    // :element_size_computation
+    container.appendChild(new_expanded_note)
 
     let ps = new ParserState(note_text)
 
@@ -383,6 +397,32 @@ function note_text_to_element (id, note_text, x)
         // console.log(token_type_names[ps.type] + ": " + ps.value)
     }
 
+    // Create button to start editing the note
+    {
+        let margin = 5
+
+        let new_edit_button_icon = document.createElement("img")
+        new_edit_button_icon.src = "edit.svg"
+
+        let new_edit_button = document.createElement("button")
+        new_edit_button.style.position = "absolute"
+        new_edit_button.style.top = margin + "px"
+
+        // :element_size_computation
+        let x_pos = expanded_note_width - margin - note_button_width
+        if (new_expanded_note.scrollHeight != new_expanded_note.clientHeight) {
+            // If the note has a scrollbar then move the button to the left.
+            x_pos -= max_scrollbar_width
+        }
+        new_edit_button.style.left = x_pos + "px"
+
+        new_edit_button.appendChild(new_edit_button_icon)
+
+        // Insert at the start
+        new_expanded_note.insertBefore(new_edit_button, new_expanded_note.firstChild)
+    }
+
+
     return new_expanded_note
 }
 
@@ -396,7 +436,7 @@ function reset_and_open_note(note_id)
             let note_container = document.getElementById("note-container")
             note_container.innerHTML = ''
             opened_notes = []
-            note_container.appendChild(note_text_to_element(note_id, response, opened_notes.length*collapsed_note_width))
+            note_text_to_element(note_container, note_id, response, opened_notes.length*collapsed_note_width)
             opened_notes.push(note_id)
             history.pushState(null, "", "?n=" + opened_notes.join("&n="))
         }
@@ -434,7 +474,7 @@ function open_note(note_id)
         ajax_get ("notes/" + note_id,
                   function(response) {
                       let note_container = document.getElementById("note-container")
-                      note_container.appendChild(note_text_to_element(note_id, response, opened_notes.length*collapsed_note_width))
+                      note_text_to_element(note_container, note_id, response, opened_notes.length*collapsed_note_width)
                       opened_notes.push(note_id)
                       history.pushState(null, "", "?n=" + opened_notes.join("&n="))
                   }
@@ -472,7 +512,7 @@ function open_notes(note_ids, expanded_note_id)
                 note_container.appendChild(new_collapsed_note)
             }
 
-            note_container.appendChild(note_text_to_element(expanded_note_id, response, i*collapsed_note_width))
+            note_text_to_element(note_container, expanded_note_id, response, i*collapsed_note_width)
             i++
 
             for (; i<note_ids.length; i++) {
