@@ -407,6 +407,7 @@ function note_text_to_element (container, id, note_text, x)
         let new_edit_button = document.createElement("button")
         new_edit_button.style.position = "absolute"
         new_edit_button.style.top = margin + "px"
+        new_edit_button.setAttribute("onclick", "copy_note_cmd('" + id + "');")
 
         // :element_size_computation
         let x_pos = expanded_note_width - margin - note_button_width
@@ -424,6 +425,23 @@ function note_text_to_element (container, id, note_text, x)
 
 
     return new_expanded_note
+}
+
+function copy_note_cmd (id)
+{
+    let dummy_input = document.createElement("input");
+    // Is this necessary?...
+    document.body.appendChild(dummy_input);
+
+    dummy_input.value = "gvim notes/" + id
+    dummy_input.select();
+    dummy_input.setSelectionRange(0, 99999);
+
+    document.execCommand("copy");
+
+    document.body.removeChild(dummy_input);
+
+    // TODO: Show some feedback.
 }
 
 // NOTE: This pushes a new state. Intended for use in places where we handle
