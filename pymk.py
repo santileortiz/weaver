@@ -14,8 +14,7 @@ templates_dir = 'templates'
 static_dir = 'static'
 
 def default ():
-    target = store_get ('last_snip', default='new_note')
-    call_user_function(target)
+    generate()
 
 def open_browser ():
     # So... AJAX GET requests are forbidden to URLs using the file:// protocol,
