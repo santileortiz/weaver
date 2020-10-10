@@ -946,9 +946,31 @@ def file_is_elf (fname):
 def file_exists (fname):
     return pathlib.Path(fname).exists()
 
+g_skip_snip_cache = []
+def no_cache(f):
+    """"
+    Decorator that makes the decorated snip function not be stored as the last
+    called one. Only useful when using a default snip that reads the
+    'last_snip' key in the cache.
+    """
+
+    # TODO: I like this solution better than the argument being passed to
+    # pymk_default() which is an alternative implementation I used before.
+    # The main reason I like this more, is that we don't repeat the function's
+    # name in multiple places, so changing the function's name doesn't break
+    # the behavior, on the other hand passing the array to pymk_default() would
+    # break if the function name changes and it wasn't updated in the passed
+    # array.
+    global g_skip_snip_cache
+    g_skip_snip_cache.append (f.__name__)
+    return f
+
 def pymk_default (skip_snip_cache=[]):
     global ex_cmds
     t = get_snip()
+
+    global g_skip_snip_cache
+    skip_snip_cache += g_skip_snip_cache
 
     if '--get_run_deps' in builtin_completions and get_cli_bool_opt ('--get_run_deps'):
         # Look for all gcc commands that generate an executable and get the
