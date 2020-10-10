@@ -37,13 +37,14 @@ function note_element_new(id, x)
 
 let TokenType = {
     UNKNOWN: 0,
-    PARAGRAPH: 1,
-    BULLET_LIST: 2,
-    TAG: 3,
-    OPERATOR: 4,
-    SPACE: 5,
-    TEXT: 6,
-    EOF: 7
+    TITLE: 1,
+    PARAGRAPH: 2,
+    BULLET_LIST: 3,
+    TAG: 4,
+    OPERATOR: 5,
+    SPACE: 6,
+    TEXT: 7,
+    EOF: 8
 }
 
 token_type_names = []
@@ -79,7 +80,7 @@ function char_in_str (c, chars)
 
 function ps_next(ps) {
     let pos_is_operator = function(ps) {
-        return char_in_str(ps.str.charAt(ps.pos), "#[]{}\n")
+        return char_in_str(ps.str.charAt(ps.pos), "[]{}\n\\")
     }
 
     let pos_is_space = function(ps) {
@@ -93,8 +94,10 @@ function ps_next(ps) {
     if (pos_is_eof(ps)) {
         ps.is_eof = true
 
-    } else if (ps.str.charAt(ps.pos) === "\n") {
-        ps.pos++
+    } else if (ps.pos === 0 || ps.str.charAt(ps.pos) === "\n") {
+        if (ps.pos != 0) {
+            ps.pos++
+        }
 
         let pos_backup = ps.pos
         while (!pos_is_eof(ps) && pos_is_space(ps)) {
@@ -127,6 +130,23 @@ function ps_next(ps) {
             ps.type = TokenType.BULLET_LIST
             ps.value = null
             ps.margin = ps.pos - pos_backup
+
+        } else if (ps.str.charAt(ps.pos) === "#") {
+            ps.pos++
+            let margin = 1
+            while (ps.str.charAt(ps.pos) === "#") {
+                margin++
+                ps.pos++
+            }
+
+            let start = ps.pos
+            while (ps.str.charAt(ps.pos) !== "\n") {
+                ps.pos++
+            }
+
+            ps.value = ps.str.substr(start, ps.pos - start).trim()
+            ps.margin = Math.min (6, margin)
+            ps.type = TokenType.TITLE
 
         } else if (multiple_newline) {
             ps.type = TokenType.PARAGRAPH
@@ -185,7 +205,7 @@ function ps_match(ps, type, value)
 {
     let match = false;
 
-    if (type == ps.type) {
+    if (type === ps.type) {
         if (value == null) {
             match = true;
 
@@ -215,23 +235,6 @@ function ps_expect(ps, type, value)
             // Value didn't match.
             ps.error_msg = sprintf("Expected '%s', got '%s'.", value, ps.value);
         }
-    }
-}
-
-function ps_consume_spaces (ps)
-{
-    ps_next (ps)
-    while (!ps.is_eof && !ps.error && ps_match(ps, TokenType.SPACE, null)) {
-        ps_next (ps)
-    }
-}
-
-function ps_consume_spaces_or_newline (ps)
-{
-    ps_next (ps)
-    while (!ps.is_eof && !ps.error &&
-           (ps_match(ps, TokenType.SPACE, null) || ps_match(ps, TokenType.OPERATOR, "\n"))) {
-        ps_next (ps)
     }
 }
 
@@ -272,17 +275,8 @@ function note_text_to_element (container, id, note_text, x)
 
     let ps = new ParserState(note_text)
 
-    // Parse title
-    let title = ""
-    ps_expect (ps, TokenType.OPERATOR, "#")
-    ps_consume_spaces (ps)
-    while (!ps.is_eof && !ps.error && ((ps_match(ps, TokenType.TEXT, null) || ps_match(ps, TokenType.SPACE, null)))) {
-        title += ps.value
-        ps_next (ps)
-    }
-    let title_element = document.createElement("h1")
-    title_element.innerHTML = title
-    new_expanded_note.appendChild(title_element)
+    // Expect a title as the start of the note, fail if no title is found.
+    ps_expect (ps, TokenType.TITLE, null)
 
     // Parse note's content
     let FLAG = true
@@ -298,10 +292,21 @@ function note_text_to_element (container, id, note_text, x)
             FLAG = false
         }
 
-        if (ps_match(ps, TokenType.PARAGRAPH, null)) {
+        if (ps_match(ps, TokenType.TITLE, null)) {
+            let curr_ctx = context_stack.pop()
+            while (context_stack.length > 0 && curr_ctx.type !== ContextType.ROOT) {
+                curr_ctx = context_stack.pop()
+            }
+            context_stack.push(curr_ctx)
+
+            let title_element = document.createElement("h" + ps.margin)
+            title_element.innerHTML = ps.value
+            new_expanded_note.appendChild(title_element)
+
+        } else if (ps_match(ps, TokenType.PARAGRAPH, null)) {
             let curr_ctx = context_stack.pop()
             while (context_stack.length > 0 &&
-                   (curr_ctx.margin > ps.margin || curr_ctx.type == ContextType.PARAGRAPH)) {
+                   (curr_ctx.margin > ps.margin || curr_ctx.type === ContextType.PARAGRAPH)) {
                 curr_ctx = context_stack.pop()
             }
             context_stack.push(curr_ctx)
@@ -311,7 +316,7 @@ function note_text_to_element (container, id, note_text, x)
         } else if (ps_match(ps, TokenType.BULLET_LIST, null)) {
             let curr_ctx = context_stack.pop()
             while (context_stack.length > 0) {
-                if (curr_ctx.type == ContextType.LIST || curr_ctx.type == ContextType.ROOT) {
+                if (curr_ctx.type == ContextType.LIST || curr_ctx.type === ContextType.ROOT) {
                     break
                 } else {
                     curr_ctx = context_stack.pop()
