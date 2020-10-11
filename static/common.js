@@ -116,7 +116,135 @@ function url_parameters(flags)
 }
 
 // Color Utilities
-function color_overlay (bg, overlay)
+
+// This function parses the CSS syntax for colors and returns an array of 4
+// numbers. First 3 values are red, green and blue (0 - 255), the last one ir
+// the alpha channel (0 - 1).
+//
+// color_css_parse ("rgb(255, 255, 255)") // -> [255,255,255]
+// color_css_parse ("rgba( 255, 255 , 255 , 1)") // -> [255,255,255,1]
+// color_css_parse ("rgba(255,255,255,100%)") // -> [255,255,255,1]
+// color_css_parse ("#FF00FF00") // -> [255,0,255,0]
+// color_css_parse ("#00FF00") // -> [0,255,0,1]
+function color_css_parse (str)
 {
-    return bg
+    let ColorType = {
+        UNKNOWN: 0,
+        RGB: 1,
+        RGBA: 2,
+        HEX: 3
+    }
+
+    str = str.trim()
+
+    let pos = 0
+    let color_type = ColorType.UNKNOWN
+    {
+        is_keyword = false
+        let keywords = ["rgb(", "rgba(", "#"]
+        let type = [ColorType.RGB, ColorType.RGBA, ColorType.HEX]
+        let i = 0
+        for (; i<keywords.length; i++) {
+            if (str.startsWith(keywords[i], pos)) {
+                is_keyword = true
+                break;
+            }
+        }
+
+        pos += keywords[i].length
+        if (is_keyword) {
+            color_type = type[i]
+        }
+    }
+
+    let color = []
+    if (color_type === ColorType.RGB || color_type === ColorType.RGBA) {
+        let end = str.indexOf(")")
+        if (end != -1) {
+            let content = str.substr(pos, end - pos)
+            let arr = content.split (",")
+
+            if (arr.length >= 3) {
+                for (let i=0; i<3; i++) {
+                    color.push (Number(arr[i]))
+                }
+
+                if (arr.length == 4) {
+                    let alpha_str = arr[3]
+                    if (color_type === ColorType.RGBA) {
+                        let percent_idx = alpha_str.trim().search("%")
+                        if (percent_idx != -1) {
+                            color.push (Number(alpha_str.substr(0, percent_idx))/100)
+                        } else {
+                            color.push (Number(alpha_str))
+                        }
+
+                    } else {
+                        color = null
+                    }
+
+                } else if (color_type !== ColorType.RGB) {
+                    color = null
+                }
+            }
+        }
+
+    } else if (color_type === ColorType.HEX && (str.length === 7 || str.length === 9)) {
+        let hex = str.substr(1)
+
+        for (let i=0; i<3; i++) {
+            color.push(parseInt(hex.substr(i*2, 2), 16))
+        }
+
+        if (str.length === 9) {
+            color.push(parseInt(hex.substr(6, 2), 16)/255)
+        } else {
+            color.push(1)
+        }
+
+    } else {
+        color = null
+    }
+
+    // TODO: Maybe the internal representation should premultiply the alpha so
+    // that the alpha blending computation is simpler.
+    // :premultiply_alpha
+
+    //console.log("color_css_parse (\"" + str + "\") // -> [" + color + "]")
+    return color
+}
+
+function color_rgba (color)
+{
+    return "rgba(" + color.join(",") + ")"
+}
+
+// Color Operations
+// ----------------
+//
+// Functions prefixed by _ use an internal array representation of color.
+// Functions without the prefix parse the input from a string and serialize the
+// output back to a string.
+
+// Alpha blending
+function _alpha_blend (bg, fg)
+{
+    let out_a = fg[3] + bg[3]*(1 - fg[3])
+
+    // :premultiply_alpha
+    let res = [0, 0, 0, out_a]
+    if (out_a > 0) {
+        for (let i=0; i<3; i++) {
+            res[i] = (fg[i]*fg[3] + bg[i]*bg[3]*(1 - fg[3])) / out_a
+        }
+    }
+
+    return res
+}
+
+function alpha_blend (bg_str, fg_str)
+{
+    let bg = color_css_parse (bg_str)
+    let fg = color_css_parse (fg_str)
+    return color_rgba (_alpha_blend(bg, fg))
 }

@@ -16,7 +16,7 @@ css_property_set ("--note-link-color-sh", note_link_color + "1F");
 let code_color = "#FDF6E3"
 css_property_set ("--code-block-color", code_color);
 css_property_set ("--code-inline-color", code_color);
-css_property_set ("--code-inline-border-color", color_overlay(code_color, "#0000000D"));
+css_property_set ("--code-inline-border-color", alpha_blend(code_color, "rgba(0,0,0,0.05)"));
 
 let note_button_width = 22 // px
 css_property_set ("--note-button-width", note_button_width + "px");
@@ -40,7 +40,7 @@ function note_element_new(id, x)
     return new_note;
 }
 
-let TokenType = {
+let NoteTokenType = {
     UNKNOWN: 0,
     TITLE: 1,
     PARAGRAPH: 2,
@@ -55,8 +55,8 @@ let TokenType = {
 }
 
 token_type_names = []
-for (let e in TokenType) {
-    if (TokenType.hasOwnProperty(e)) {
+for (let e in NoteTokenType) {
+    if (NoteTokenType.hasOwnProperty(e)) {
         token_type_names.push('' + e)
     }
 }
@@ -65,7 +65,7 @@ function ParserState (str) {
     this.pos = 0,
     this.str = str
     this.value = ''
-    this.type = TokenType.UNKNOWN
+    this.type = NoteTokenType.UNKNOWN
     this.error = false
     this.error_msg = false
     this.is_eof = false
@@ -134,7 +134,7 @@ function ps_next(ps) {
                 ps.pos++
             }
 
-            ps.type = TokenType.BULLET_LIST
+            ps.type = NoteTokenType.BULLET_LIST
             ps.value = null
             ps.margin = ps.pos - pos_backup
 
@@ -153,7 +153,7 @@ function ps_next(ps) {
 
             ps.value = ps.str.substr(start, ps.pos - start).trim()
             ps.margin = Math.min (6, margin)
-            ps.type = TokenType.TITLE
+            ps.type = NoteTokenType.TITLE
 
         } else if (ps.str.charAt(ps.pos) === "|") {
             ps.pos++
@@ -164,10 +164,10 @@ function ps_next(ps) {
             }
 
             ps.value = ps.str.substr(start, ps.pos - start)
-            ps.type = TokenType.CODE_LINE
+            ps.type = NoteTokenType.CODE_LINE
 
         } else if (multiple_newline) {
-            ps.type = TokenType.PARAGRAPH
+            ps.type = NoteTokenType.PARAGRAPH
             ps.value = null
             ps.margin = margin
 
@@ -179,7 +179,7 @@ function ps_next(ps) {
 
             // Here is where single newline characters become a single space character.
             ps.value = " " + ps.str.substr(start, ps.pos - start)
-            ps.type = TokenType.TEXT
+            ps.type = NoteTokenType.TEXT
         }
 
     } else if (ps.str.charAt(ps.pos) === "\\") {
@@ -191,15 +191,15 @@ function ps_next(ps) {
             ps.pos++
         }
         ps.value = ps.str.substr(start, ps.pos - start)
-        ps.type = TokenType.TAG
+        ps.type = NoteTokenType.TAG
 
     } else if (pos_is_operator(ps)) {
-        ps.type = TokenType.OPERATOR
+        ps.type = NoteTokenType.OPERATOR
         ps.value = ps.str.charAt(ps.pos)
         ps.pos++
 
     } else if (pos_is_space(ps)) {
-        ps.type = TokenType.SPACE
+        ps.type = NoteTokenType.SPACE
         ps.value = ps.str.charAt(ps.pos)
         ps.pos++
 
@@ -210,12 +210,12 @@ function ps_next(ps) {
         }
 
         ps.value = ps.str.substr(start, ps.pos - start)
-        ps.type = TokenType.TEXT
+        ps.type = NoteTokenType.TEXT
     }
 
     if (pos_is_eof(ps)) {
         ps.is_eof = true
-        ps.type = TokenType.EOF
+        ps.type = NoteTokenType.EOF
         ps.value = null
     }
 
@@ -391,7 +391,7 @@ function start_paragraph (ps, context_stack)
 function ps_literal_token (ps)
 {
     let res = ps.value != null ? ps.value : ""
-    if (ps_match (ps, TokenType.TAG, null)) {
+    if (ps_match (ps, NoteTokenType.TAG, null)) {
         res = "\\" + ps.value
     }
 
@@ -411,7 +411,7 @@ function note_text_to_element (container, id, note_text, x)
     let ps = new ParserState(note_text)
 
     // Expect a title as the start of the note, fail if no title is found.
-    ps_expect (ps, TokenType.TITLE, null)
+    ps_expect (ps, NoteTokenType.TITLE, null)
 
     // Parse note's content
     let FLAG = true
@@ -427,7 +427,7 @@ function note_text_to_element (container, id, note_text, x)
             FLAG = false
         }
 
-        if (ps_match(ps, TokenType.TITLE, null)) {
+        if (ps_match(ps, NoteTokenType.TITLE, null)) {
             let curr_ctx = array_end (context_stack)
             while (context_stack.length > 0 && curr_ctx.type !== ContextType.ROOT) {
                 curr_ctx = pop_context (context_stack)
@@ -437,10 +437,10 @@ function note_text_to_element (container, id, note_text, x)
             title_element.innerHTML = ps.value
             new_expanded_note.appendChild(title_element)
 
-        } else if (ps_match(ps, TokenType.PARAGRAPH, null)) {
+        } else if (ps_match(ps, NoteTokenType.PARAGRAPH, null)) {
             start_paragraph (ps, context_stack)
 
-        } else if (ps_match(ps, TokenType.BULLET_LIST, null)) {
+        } else if (ps_match(ps, NoteTokenType.BULLET_LIST, null)) {
             let curr_ctx = array_end (context_stack)
             while (context_stack.length > 0 &&
                    (curr_ctx.type !== ContextType.LIST && curr_ctx.type !== ContextType.ROOT)) {
@@ -449,22 +449,22 @@ function note_text_to_element (container, id, note_text, x)
 
             if (curr_ctx.type != ContextType.LIST) {
                 let list_context = push_new_context (context_stack, ContextType.LIST, ps.margin, "ul")
-                list_context.list_type = TokenType.BULLET_LIST
+                list_context.list_type = NoteTokenType.BULLET_LIST
             }
 
             push_new_context (context_stack, ContextType.LIST_ITEM, ps.margin, "li")
             push_new_context (context_stack, ContextType.PARAGRAPH, ps.margin, "p")
 
-        } else if (ps_match(ps, TokenType.TEXT, null) || ps_match(ps, TokenType.SPACE, null)) {
+        } else if (ps_match(ps, NoteTokenType.TEXT, null) || ps_match(ps, NoteTokenType.SPACE, null)) {
             let curr_ctx = context_stack[context_stack.length - 1]
             curr_ctx.dom_element.innerHTML += ps.value
 
-        } else if (ps_match(ps, TokenType.TAG, "link")) {
-            ps_expect (ps, TokenType.OPERATOR, "{")
+        } else if (ps_match(ps, NoteTokenType.TAG, "link")) {
+            ps_expect (ps, NoteTokenType.OPERATOR, "{")
 
             let content = ""
             ps_next(ps)
-            while (!ps.is_eof && !ps.error && !ps_match(ps, TokenType.OPERATOR, "}")) {
+            while (!ps.is_eof && !ps.error && !ps_match(ps, NoteTokenType.OPERATOR, "}")) {
                 content += ps.value
                 ps_next(ps)
             }
@@ -497,12 +497,12 @@ function note_text_to_element (container, id, note_text, x)
             let curr_ctx = context_stack[context_stack.length - 1]
             curr_ctx.dom_element.appendChild(link_element)
 
-        } else if (ps_match(ps, TokenType.TAG, "note")) {
-            ps_expect (ps, TokenType.OPERATOR, "{")
+        } else if (ps_match(ps, NoteTokenType.TAG, "note")) {
+            ps_expect (ps, NoteTokenType.OPERATOR, "{")
 
             let note_title = ""
             ps_next(ps)
-            while (!ps.is_eof && !ps.error && !ps_match(ps, TokenType.OPERATOR, "}")) {
+            while (!ps.is_eof && !ps.error && !ps_match(ps, NoteTokenType.OPERATOR, "}")) {
                 note_title += ps.value
                 ps_next(ps)
             }
@@ -516,24 +516,24 @@ function note_text_to_element (container, id, note_text, x)
             let curr_ctx = context_stack[context_stack.length - 1]
             curr_ctx.dom_element.appendChild(link_element)
 
-        } else if (ps_match(ps, TokenType.TAG, "code")) {
+        } else if (ps_match(ps, NoteTokenType.TAG, "code")) {
             let attributes = {
                 positional: [],
                 named: {}
             }
             if (ps.str.charAt(ps.pos) === "[") {
-                ps_expect(ps, TokenType.OPERATOR, "[")
+                ps_expect(ps, NoteTokenType.OPERATOR, "[")
 
-                while (!ps_match (ps, TokenType.OPERATOR, "]")) {
-                    ps_expect (ps, TokenType.TEXT, null)
+                while (!ps_match (ps, NoteTokenType.OPERATOR, "]")) {
+                    ps_expect (ps, NoteTokenType.TEXT, null)
                     let text = ps.value
 
                     ps_next(ps)
-                    if (ps_match (ps, TokenType.OPERATOR, ",")) {
+                    if (ps_match (ps, NoteTokenType.OPERATOR, ",")) {
                         attributes.positional.push (text)
 
-                    } else if (ps_match (ps, TokenType.OPERATOR, "=")) {
-                        ps_match (ps, TokenType.TEXT, null)
+                    } else if (ps_match (ps, NoteTokenType.OPERATOR, "=")) {
+                        ps_match (ps, NoteTokenType.TEXT, null)
                         let value = ps.value
                         attributes.named[text] = value
                     }
@@ -545,13 +545,13 @@ function note_text_to_element (container, id, note_text, x)
             if (ps.str.charAt(ps.pos) === "{") {
                 let content = ""
                 let brace_level = 1
-                ps_expect (ps, TokenType.OPERATOR, "{")
+                ps_expect (ps, NoteTokenType.OPERATOR, "{")
 
                 while (!ps.is_eof && brace_level != 0) {
                     ps_next (ps)
-                    if (ps_match (ps, TokenType.OPERATOR, "{")) {
+                    if (ps_match (ps, NoteTokenType.OPERATOR, "{")) {
                         brace_level++
-                    } else if (ps_match (ps, TokenType.OPERATOR, "}")) {
+                    } else if (ps_match (ps, NoteTokenType.OPERATOR, "}")) {
                         brace_level--
                     }
 
@@ -564,7 +564,7 @@ function note_text_to_element (container, id, note_text, x)
                 pop_context(context_stack)
             }
 
-        } else if (ps_match(ps, TokenType.CODE_LINE, null)) {
+        } else if (ps_match(ps, NoteTokenType.CODE_LINE, null)) {
             let curr_ctx = context_stack[context_stack.length - 1]
             if (curr_ctx.type !== ContextType.CODE) {
                 start_paragraph (ps, context_stack)
