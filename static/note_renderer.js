@@ -8,10 +8,15 @@ css_property_set ("--collapsed-note-width", collapsed_note_width + "px");
 let expanded_note_width = 520 // px
 css_property_set ("--expanded-note-width", expanded_note_width + "px");
 
-let note_link_color = "#0d52bf"
+let note_link_color = "#0D52BF"
 css_property_set ("--note-link-color", note_link_color);
-css_property_set ("--note-link-color-bg", note_link_color + "0f");
-css_property_set ("--note-link-color-sh", note_link_color + "1f");
+css_property_set ("--note-link-color-bg", note_link_color + "0F");
+css_property_set ("--note-link-color-sh", note_link_color + "1F");
+
+let code_color = "#FDF6E3"
+css_property_set ("--code-block-color", code_color);
+css_property_set ("--code-inline-color", code_color);
+css_property_set ("--code-inline-border-color", color_overlay(code_color, "#0000000D"));
 
 let note_button_width = 22 // px
 css_property_set ("--note-button-width", note_button_width + "px");
@@ -44,7 +49,9 @@ let TokenType = {
     OPERATOR: 5,
     SPACE: 6,
     TEXT: 7,
-    EOF: 8
+    CODE_HEADER: 8,
+    CODE_LINE: 9,
+    EOF: 10
 }
 
 token_type_names = []
@@ -80,7 +87,7 @@ function char_in_str (c, chars)
 
 function ps_next(ps) {
     let pos_is_operator = function(ps) {
-        return char_in_str(ps.str.charAt(ps.pos), "[]{}\n\\")
+        return char_in_str(ps.str.charAt(ps.pos), ",=[]{}\n\\")
     }
 
     let pos_is_space = function(ps) {
@@ -148,6 +155,17 @@ function ps_next(ps) {
             ps.margin = Math.min (6, margin)
             ps.type = TokenType.TITLE
 
+        } else if (ps.str.charAt(ps.pos) === "|") {
+            ps.pos++
+
+            let start = ps.pos
+            while (ps.str.charAt(ps.pos) !== "\n") {
+                ps.pos++
+            }
+
+            ps.value = ps.str.substr(start, ps.pos - start)
+            ps.type = TokenType.CODE_LINE
+
         } else if (multiple_newline) {
             ps.type = TokenType.PARAGRAPH
             ps.value = null
@@ -165,6 +183,7 @@ function ps_next(ps) {
         }
 
     } else if (ps.str.charAt(ps.pos) === "\\") {
+        // :tag_parsing
         ps.pos++
 
         let start = ps.pos
@@ -199,6 +218,8 @@ function ps_next(ps) {
         ps.type = TokenType.EOF
         ps.value = null
     }
+
+    //console.log(token_type_names[ps.type] + ": " + ps.value)
 }
 
 function ps_match(ps, type, value)
@@ -242,7 +263,8 @@ let ContextType = {
     ROOT: 0,
     PARAGRAPH: 1,
     LIST: 2,
-    LIST_ITEM: 3
+    LIST_ITEM: 3,
+    CODE: 4
 }
 
 function ParseContext (type, margin, dom_element) {
@@ -253,6 +275,16 @@ function ParseContext (type, margin, dom_element) {
     this.list_type = null
 }
 
+function array_end(array)
+{
+    return array[array.length - 1]
+}
+
+function html_escape (str)
+{
+    return str.replaceAll("<", "&lt;").replaceAll(">", "&gt;")
+}
+
 function push_new_context (context_stack, type, margin, element_name)
 {
     let curr_ctx = context_stack[context_stack.length - 1]
@@ -261,6 +293,109 @@ function push_new_context (context_stack, type, margin, element_name)
     let new_context = new ParseContext(type, margin, dom_element)
     context_stack.push(new_context)
     return new_context
+}
+
+// Code is handled differently because we can't know the mapping into DOM
+// elements before the context of type CODE is popped from the stack. This
+// happens because we can't know if a \code[] tag is followed by a {} block or
+// a | block until after we process the \code tag. This means that when
+// processing the \code tag we can't know which DOM elements to add.
+//
+// To work around this we store the content ina variable inside the context,
+// and create the DOM elements in pop_context().
+function push_new_code_context (context_stack, attributes)
+{
+    let new_context = new ParseContext(ContextType.CODE, 0, null)
+    new_context.code = ""
+    new_context.is_block = false
+    new_context.empty = true
+    new_context.min_leading_spaces = Infinity
+
+    if (attributes != null) {
+        if (attributes.positional[0] === "plain") {
+            new_context.language = attributes.positional[0]
+        }
+
+        // TODO: Also support receiving a filename as argument and infer the
+        // language from it.
+    }
+
+    context_stack.push(new_context)
+    return new_context
+}
+
+function pop_context (context_stack)
+{
+    let curr_ctx = context_stack.pop()
+    let next_ctx = array_end(context_stack)
+    if (curr_ctx.type === ContextType.CODE) {
+        let code_dom = document.createElement("code")
+        next_ctx.dom_element.appendChild(code_dom)
+
+        if (curr_ctx.is_block) {
+            // NOTE: Currently code blocks are wrapped inside <p></p>, not sure
+            // if this is a good approach but I think if we were to remove it,
+            // we would have to do so here, after the PARAGRAPH context has
+            // been pushed. We sould need to detect that the inly child of the
+            // <p> tag is a code block, then remove the extra parent.
+            code_dom.classList.add("code-block")
+            code_dom.style.paddingLeft = "1em"
+
+            // If we use line numbers, this should be the padding WRT the
+            // column containing the numbers.
+            // code_dom.style.paddingLeft = "0.25em"
+
+            if (curr_ctx.min_leading_spaces != Infinity && curr_ctx.min_leading_spaces > 0) {
+                // Remove the most leading spaces we can remove. I call this
+                // automatic space normalization.
+                curr_ctx.code = curr_ctx.code.substr(curr_ctx.min_leading_spaces)
+                curr_ctx.code = curr_ctx.code.replaceAll("\n" + " ".repeat(curr_ctx.min_leading_spaces), "\n")
+            }
+
+            let preformatted_dom = document.createElement("pre")
+            preformatted_dom.innerHTML = curr_ctx.code
+            code_dom.appendChild(preformatted_dom)
+
+        } else {
+            code_dom.classList.add("code-inline")
+            code_dom.innerHTML = curr_ctx.code
+        }
+
+    }
+
+    return next_ctx
+}
+
+// This function ends th current paragraph and starts a new one.
+// I think the margin conditional needs some more testing...
+function start_paragraph (ps, context_stack)
+{
+    let curr_ctx = array_end (context_stack)
+    while (context_stack.length > 0 &&
+           (curr_ctx.margin > ps.margin ||
+               curr_ctx.type === ContextType.PARAGRAPH ||
+               curr_ctx.type === ContextType.CODE)) {
+        curr_ctx = pop_context (context_stack)
+    }
+
+    push_new_context (context_stack, ContextType.PARAGRAPH, ps.margin, "p")
+}
+
+// This function returns the same string that was parsed as the current token.
+// It's used as fallback, for example in the case of , an # characters in the
+// middle of paragraphs, or unrecognized tag sequences.
+//
+// TODO: I fell that using this for operators isn't nice, we should probably
+// have a stateful tokenizer that will consider ',' as part of a TEXT token
+// sometimes and as operators other times.
+function ps_literal_token (ps)
+{
+    let res = ps.value != null ? ps.value : ""
+    if (ps_match (ps, TokenType.TAG, null)) {
+        res = "\\" + ps.value
+    }
+
+    return res
 }
 
 function note_text_to_element (container, id, note_text, x)
@@ -284,7 +419,7 @@ function note_text_to_element (container, id, note_text, x)
     let newline_count = 0
     let paragraph = ""
     let list_element = null
-    let context_stack = [new ParseContext(ContextType.PARAGRAPH, 0, new_expanded_note)]
+    let context_stack = [new ParseContext(ContextType.ROOT, 0, new_expanded_note)]
     while (!ps.is_eof && !ps.error) {
         if (!FLAG) {
             ps_next (ps)
@@ -293,36 +428,24 @@ function note_text_to_element (container, id, note_text, x)
         }
 
         if (ps_match(ps, TokenType.TITLE, null)) {
-            let curr_ctx = context_stack.pop()
+            let curr_ctx = array_end (context_stack)
             while (context_stack.length > 0 && curr_ctx.type !== ContextType.ROOT) {
-                curr_ctx = context_stack.pop()
+                curr_ctx = pop_context (context_stack)
             }
-            context_stack.push(curr_ctx)
 
             let title_element = document.createElement("h" + ps.margin)
             title_element.innerHTML = ps.value
             new_expanded_note.appendChild(title_element)
 
         } else if (ps_match(ps, TokenType.PARAGRAPH, null)) {
-            let curr_ctx = context_stack.pop()
-            while (context_stack.length > 0 &&
-                   (curr_ctx.margin > ps.margin || curr_ctx.type === ContextType.PARAGRAPH)) {
-                curr_ctx = context_stack.pop()
-            }
-            context_stack.push(curr_ctx)
-
-            push_new_context (context_stack, ContextType.PARAGRAPH, ps.margin, "p")
+            start_paragraph (ps, context_stack)
 
         } else if (ps_match(ps, TokenType.BULLET_LIST, null)) {
-            let curr_ctx = context_stack.pop()
-            while (context_stack.length > 0) {
-                if (curr_ctx.type == ContextType.LIST || curr_ctx.type === ContextType.ROOT) {
-                    break
-                } else {
-                    curr_ctx = context_stack.pop()
-                }
+            let curr_ctx = array_end (context_stack)
+            while (context_stack.length > 0 &&
+                   (curr_ctx.type !== ContextType.LIST && curr_ctx.type !== ContextType.ROOT)) {
+                curr_ctx = pop_context (context_stack)
             }
-            context_stack.push(curr_ctx)
 
             if (curr_ctx.type != ContextType.LIST) {
                 let list_context = push_new_context (context_stack, ContextType.LIST, ps.margin, "ul")
@@ -393,13 +516,80 @@ function note_text_to_element (container, id, note_text, x)
             let curr_ctx = context_stack[context_stack.length - 1]
             curr_ctx.dom_element.appendChild(link_element)
 
-        } else if (ps_match(ps, TokenType.OPERATOR, null) || ps_match(ps, TokenType.TAG, null)) {
-            // TODO: Implement this...
-            let curr_ctx = context_stack[context_stack.length - 1]
-            curr_ctx.dom_element.innerHTML += ps.value
-        }
+        } else if (ps_match(ps, TokenType.TAG, "code")) {
+            let attributes = {
+                positional: [],
+                named: {}
+            }
+            if (ps.str.charAt(ps.pos) === "[") {
+                ps_expect(ps, TokenType.OPERATOR, "[")
 
-        // console.log(token_type_names[ps.type] + ": " + ps.value)
+                while (!ps_match (ps, TokenType.OPERATOR, "]")) {
+                    ps_expect (ps, TokenType.TEXT, null)
+                    let text = ps.value
+
+                    ps_next(ps)
+                    if (ps_match (ps, TokenType.OPERATOR, ",")) {
+                        attributes.positional.push (text)
+
+                    } else if (ps_match (ps, TokenType.OPERATOR, "=")) {
+                        ps_match (ps, TokenType.TEXT, null)
+                        let value = ps.value
+                        attributes.named[text] = value
+                    }
+                }
+            }
+
+            let code_ctx = push_new_code_context (context_stack, attributes)
+
+            if (ps.str.charAt(ps.pos) === "{") {
+                let content = ""
+                let brace_level = 1
+                ps_expect (ps, TokenType.OPERATOR, "{")
+
+                while (!ps.is_eof && brace_level != 0) {
+                    ps_next (ps)
+                    if (ps_match (ps, TokenType.OPERATOR, "{")) {
+                        brace_level++
+                    } else if (ps_match (ps, TokenType.OPERATOR, "}")) {
+                        brace_level--
+                    }
+
+                    // Avoid appending the closing }
+                    if (brace_level != 0) {
+                        code_ctx.code += html_escape(ps_literal_token(ps))
+                    }
+                }
+
+                pop_context(context_stack)
+            }
+
+        } else if (ps_match(ps, TokenType.CODE_LINE, null)) {
+            let curr_ctx = context_stack[context_stack.length - 1]
+            if (curr_ctx.type !== ContextType.CODE) {
+                start_paragraph (ps, context_stack)
+                curr_ctx = push_new_code_context (context_stack)
+            }
+
+            curr_ctx.is_block = true
+
+            // NOTE: This conditional strips all trailing empty lines in the
+            // code block.
+            if (ps.value.trim() !== "") {
+                curr_ctx.empty = false
+            }
+
+            if (!curr_ctx.empty) {
+                curr_ctx.min_leading_spaces = Math.min (curr_ctx.min_leading_spaces, ps.value.search(/\S/))
+                // Here we don't need ps_literal_token() because the tokenizer
+                // considered the whole line as a single token.
+                curr_ctx.code += html_escape(ps.value) + "\n"
+            }
+
+        } else {
+            let curr_ctx = context_stack[context_stack.length - 1]
+            curr_ctx.dom_element.innerHTML += ps_literal_token(ps)
+        }
     }
 
     // Create button to start editing the note

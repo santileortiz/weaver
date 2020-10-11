@@ -82,6 +82,44 @@ header > a {
     color: var(--header-fg-color);
 }
 
+pre {
+    background-color: inherit;
+}
+
+code {
+    font-family: monospace;
+}
+
+.code-block {
+    font-size: 0.85em;
+    line-height: 1.33em;
+    background-color: var(--code-block-color);
+    display: table;
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.05), 0 2px 2px rgba(0,0,0,0.22);
+    border-radius: 5px;
+    margin: auto;
+}
+
+.code-inline {
+    font-size: 0.95em;
+    line-height: 1.33em;
+    background-color: var(--code-inline-color);
+    border-radius: 3px;
+
+    border: solid 1px rgba(0,0,0,0.05);
+    box-shadow: 0 0 0 1px var(--code-inline-border-color)/*#F0E9D7*/;
+}
+
+.code-block > pre {
+    padding-left: 0.25em;
+    padding-right: 1em;
+}
+
+
+.code-inline {
+    background-color: var(--code-inline-color);
+}
+
 .note {
     box-sizing: border-box;
     height: var(--note-container-height);

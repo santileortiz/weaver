@@ -115,3 +115,8 @@ function url_parameters(flags)
     return params
 }
 
+// Color Utilities
+function color_overlay (bg, overlay)
+{
+    return bg
+}
