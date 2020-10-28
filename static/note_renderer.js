@@ -5,7 +5,7 @@ css_property_set ("--note-container-height", screen_height - header_height + "px
 let collapsed_note_width = 40 // px
 css_property_set ("--collapsed-note-width", collapsed_note_width + "px");
 
-let expanded_note_width = 520 // px
+let expanded_note_width = 620 // px
 css_property_set ("--expanded-note-width", expanded_note_width + "px");
 
 let note_link_color = "#0D52BF"
