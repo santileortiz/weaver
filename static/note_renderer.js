@@ -398,6 +398,138 @@ function ps_literal_token (ps)
     return res
 }
 
+function ps_next_content(ps)
+{
+    let pos_is_operator = function(ps) {
+        return char_in_str(ps.str.charAt(ps.pos), ",=[]{}\\")
+    }
+
+    let pos_is_space = function(ps) {
+        return char_in_str(ps.str.charAt(ps.pos), " \t")
+    }
+
+    let pos_is_eof = function(ps) {
+        return ps.pos >= ps.str.length
+    }
+
+    if (pos_is_eof(ps)) {
+        ps.is_eof = true
+
+    } else if (ps.str.charAt(ps.pos) === "\\") {
+        // :tag_parsing
+        ps.pos++
+
+        let start = ps.pos
+        while (!pos_is_eof(ps) && !pos_is_operator(ps) && !pos_is_space(ps)) {
+            ps.pos++
+        }
+        ps.value = ps.str.substr(start, ps.pos - start)
+        ps.type = NoteTokenType.TAG
+
+    } else if (pos_is_operator(ps)) {
+        ps.type = NoteTokenType.OPERATOR
+        ps.value = ps.str.charAt(ps.pos)
+        ps.pos++
+
+    } else {
+        let start = ps.pos
+        while (!pos_is_eof(ps) && !pos_is_operator(ps)) {
+            ps.pos++
+        }
+
+        ps.value = ps.str.substr(start, ps.pos - start)
+        ps.type = NoteTokenType.TEXT
+    }
+
+    if (pos_is_eof(ps)) {
+        ps.is_eof = true
+    }
+
+    //console.log(token_type_names[ps.type] + ": " + ps.value)
+}
+
+// This function parses the content of a block of text. The formatting is
+// limited to tags that affect the formating inline. This parsing functiuon
+// will not add nested blocks like paragraphs, lists, code blocks etc.
+//
+// TODO: How do we handle the prescence of nested blocks here?, ignore them and
+// print them or raise an error and stop parsing.
+function block_content_parse_text (container, content)
+{
+    let ps = new ParserState(content)
+
+    let context_stack = [new ParseContext(ContextType.ROOT, 0, container)]
+    while (!ps.is_eof && !ps.error) {
+        ps_next_content (ps)
+
+        if (ps_match(ps, NoteTokenType.TEXT, null) || ps_match(ps, NoteTokenType.SPACE, null)) {
+            let curr_ctx = context_stack[context_stack.length - 1]
+            curr_ctx.dom_element.innerHTML += ps.value
+
+        } else if (ps_match(ps, NoteTokenType.TAG, "link")) {
+            ps_expect (ps, NoteTokenType.OPERATOR, "{")
+
+            let content = ""
+            ps_next_content(ps)
+            while (!ps.is_eof && !ps.error && !ps_match(ps, NoteTokenType.OPERATOR, "}")) {
+                content += ps.value
+                ps_next_content(ps)
+            }
+
+            // We parse the URL from the title starting at the end. I thinkg is
+            // far less likely to have a non URL encoded > character in the
+            // URL, than a user wanting to use > inside their title.
+            //
+            // TODO: Support another syntax for the rare case of a user that
+            // wants a > character in a URL. Or make sure URLs are URL encoded
+            // from the UI that will be used to edit this.
+            let pos = content.length - 1
+            while (pos > 1 && content.charAt(pos) != ">") {
+                pos--
+            }
+
+            let url = content
+            let title = content
+            if (pos != 1 && content.charAt(pos - 1) === "-") {
+                pos--
+                url = content.substr(pos + 2).trim()
+                title = content.substr(0, pos).trim()
+            }
+
+            let link_element = document.createElement("a")
+            link_element.setAttribute("href", url)
+            link_element.setAttribute("target", "_blank")
+            link_element.innerHTML = title
+
+            let curr_ctx = context_stack[context_stack.length - 1]
+            curr_ctx.dom_element.appendChild(link_element)
+
+        } else if (ps_match(ps, NoteTokenType.TAG, "note")) {
+            ps_expect (ps, NoteTokenType.OPERATOR, "{")
+
+            let note_title = ""
+            ps_next_content(ps)
+            while (!ps.is_eof && !ps.error && !ps_match(ps, NoteTokenType.OPERATOR, "}")) {
+                note_title += ps.value
+                ps_next_content(ps)
+            }
+
+            let link_element = document.createElement("a")
+            link_element.setAttribute("onclick", "return open_note('" + note_title_to_id[note_title] + "');")
+            link_element.setAttribute("href", "#")
+            link_element.classList.add("note-link")
+            link_element.innerHTML = note_title
+
+            let curr_ctx = context_stack[context_stack.length - 1]
+            curr_ctx.dom_element.appendChild(link_element)
+
+        } else {
+            let curr_ctx = context_stack[context_stack.length - 1]
+            curr_ctx.dom_element.innerHTML += ps_literal_token(ps)
+        }
+    }
+}
+
 function note_text_to_element (container, id, note_text, x)
 {
     let new_expanded_note = note_element_new (id, x)
@@ -434,8 +566,8 @@ function note_text_to_element (container, id, note_text, x)
             }
 
             let title_element = document.createElement("h" + ps.margin)
-            title_element.innerHTML = ps.value
             new_expanded_note.appendChild(title_element)
+            block_content_parse_text (title_element, ps.value)
 
         } else if (ps_match(ps, NoteTokenType.PARAGRAPH, null)) {
             start_paragraph (ps, context_stack)
