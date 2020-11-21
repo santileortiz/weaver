@@ -51,7 +51,8 @@ let NoteTokenType = {
     TEXT: 7,
     CODE_HEADER: 8,
     CODE_LINE: 9,
-    EOF: 10
+    BLANK_LINE: 10,
+    EOF: 11
 }
 
 token_type_names = []
@@ -70,6 +71,23 @@ function ParserState (str) {
     this.error_msg = false
     this.is_eof = false
     this.margin = 0
+    this.heading_number = 0
+}
+
+let pos_is_eof = function(ps) {
+    return ps.pos >= ps.str.length
+}
+
+let pos_is_operator = function(ps) {
+    return !pos_is_eof(ps) && char_in_str(ps.str.charAt(ps.pos), ",=[]{}\n\\")
+}
+
+let pos_is_digit = function(ps) {
+    return !pos_is_eof(ps) && char_in_str(ps.str.charAt(ps.pos), "1234567890")
+}
+
+let pos_is_space = function(ps) {
+    return !pos_is_eof(ps) && char_in_str(ps.str.charAt(ps.pos), " \t")
 }
 
 // NOTE: chars.search() doesn't work if chars contains \ because it assumes we
@@ -83,6 +101,107 @@ function char_in_str (c, chars)
     }
 
     return false
+}
+
+function str_at(haystack, pos, needle)
+{
+    let found = true;
+    let i = 0;
+    while (i < needle.length) {
+        if (haystack.charAt(pos+i) !== needle.charAt(i)) {
+            found = false;
+            break;
+        }
+        i++;
+    }
+
+    return found;
+}
+
+function advance_line(ps)
+{
+    let start = ps.pos;
+    while (!pos_is_eof(ps) && ps.str.charAt(ps.pos) !== "\n") {
+        ps.pos++;
+    }
+
+    let line_content = ps.str.substr(start, ps.pos - start);
+    ps.pos++; // Skip the \n character
+
+    return line_content;
+}
+
+function ps_next_block(ps) {
+    let backup_pos = ps.pos;
+    while (pos_is_space(ps)) {
+        ps.pos++
+    }
+
+    ps.value = null;
+    ps.type = NoteTokenType.PARAGRAPH;
+    let non_space_pos = ps.pos;
+    if (pos_is_eof(ps)) {
+        ps.is_eof = true;
+
+    } else if (str_at(ps.str, ps.pos, "- ") || str_at(ps.str, ps.pos, "* ")) {
+        ps.pos++;
+        while (pos_is_space(ps)) {
+            ps.pos++;
+        }
+
+        ps.type = NoteTokenType.BULLET_LIST;
+        ps.value = ps.str.charAt(non_space_pos);
+        ps.margin = ps.pos - backup_pos;
+
+    } else if (pos_is_digit(ps)) {
+        while (pos_is_digit(ps)) {
+            ps.pos++;
+        }
+
+        let number_end = ps.pos;
+        if (str_at(ps.str, ps.pos, ". ") && ps.pos - non_space_pos <= 9) {
+            ps.pos++;
+            while (pos_is_space(ps)) {
+                ps.pos++;
+            }
+
+            ps.type = NoteTokenType.NUMBERED_LIST;
+            ps.value = ps.str.substr(start, number_end - non_space_pos);
+            ps.margin = ps.pos - backup_pos;
+        }
+
+    } else if (ps.str.charAt(ps.pos) === "#") {
+        let heading_number = 1;
+        ps.pos++
+        while (ps.str.charAt(ps.pos) === "#") {
+            heading_number++;
+            ps.pos++
+        }
+
+        if (pos_is_space (ps) && heading_number <= 6) {
+            while (pos_is_space(ps)) {
+                ps.pos++;
+            }
+
+            ps.value = advance_line (ps).trim();
+            ps.margin = non_space_pos - backup_pos;
+            ps.type = NoteTokenType.TITLE;
+            ps.heading_number = heading_number;
+        }
+
+    } else if (ps.str.charAt(ps.pos) === "|") {
+        ps.pos++;
+        ps.value = advance_line (ps);
+        ps.type = NoteTokenType.CODE_LINE;
+
+    } else if (ps.str.charAt(ps.pos) === "\n") {
+        ps.pos++;
+        ps.type = NoteTokenType.BLANK_LINE;
+    }
+
+    if (ps.type === NoteTokenType.PARAGRAPH) {
+        ps.value = advance_line (ps);
+    }
 }
 
 function ps_next(ps) {
@@ -530,6 +649,139 @@ function block_content_parse_text (container, content)
     }
 }
 
+let BlockType = {
+    ROOT: 0,
+    LIST: 1,
+    LIST_ITEM: 2,
+
+    HEADING: 3,
+    PARAGRAPH: 4,
+    CODE: 5
+}
+
+function Block (type, margin, block_content, inline_content, list_marker)
+{
+    this.type = type;
+    this.margin = margin;
+
+    this.block_content = block_content;
+    this.inline_content = inline_content;
+
+    this.list_marker = list_marker;
+}
+
+function leaf_block_new(type, margin, inline_content)
+{
+    return new Block(type, margin, null, inline_content, null);
+}
+
+function container_block_new(type, margin, list_marker=null, block_content=[])
+{
+    return new Block(type, margin, block_content, null, list_marker);
+}
+
+function push_block (block_stack, new_block)
+{
+    let curr_block = array_end(block_stack);
+
+    console.assert (curr_block.block_content != null, "Pushing nested block to non-container block.");
+    curr_block.block_content.push(new_block);
+
+    block_stack.push(new_block);
+    return new_block;
+}
+
+function block_tree_to_dom (root)
+{
+    return null;
+}
+
+function note_text_to_element_block (container, id, note_text, x)
+{
+    let new_expanded_note = note_element_new (id, x)
+    new_expanded_note.classList.add("expanded")
+
+    // NOTE: We append this at the beginning so we get the correct client and
+    // scroll height at the end.
+    // :element_size_computation
+    container.appendChild(new_expanded_note)
+
+    let ps = new ParserState(note_text)
+
+    let root_block = new container_block_new(BlockType.ROOT, 0);
+
+    // Expect a title as the start of the note, fail if no title is found.
+    //ps_expect (ps, NoteTokenType.TITLE, null)
+
+    // Parse note's content
+    let block_stack = [root_block];
+    while (!ps.is_eof && !ps.error) {
+        let curr_block_idx = 0;
+
+        // Match open blocks
+        do {
+            ps_next_block(ps);
+
+            if (curr_block_idx+1 < block_stack.length) {
+                let next_stack_block = block_stack[curr_block_idx+1]
+                if (next_stack_block.type == BlockType.LIST) {
+                    if (ps_match(ps, NoteTokenType.LIST, null)) {
+                        if (ps.margin >= next_stack_block.margin) {
+                            curr_block_idx++;
+                        }
+
+                    } else if (ps_match(ps, NoteTokenType.PARAGRAPH, null)) {
+                        if (ps.margin == next_stack_block.margin) {
+                            curr_block_idx++;
+                        }
+                    }
+
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+
+        } while (true);
+
+        // Pop all blocks after the current index
+        block_stack.length = curr_block_idx+1;
+
+        console.log (ps.type + ": " + "'" + ps.value + "'");
+        if (ps_match(ps, NoteTokenType.TITLE, null)) {
+            let prnt = block_stack[curr_block_idx];
+            push_block (block_stack, leaf_block_new(BlockType.HEADING, ps.margin, ps.value));
+
+        } else if (ps_match(ps, NoteTokenType.PARAGRAPH, null)) {
+            let prnt = block_stack[curr_block_idx];
+            if (prnt.type == BlockType.PARAGRAPH) {
+                prnt.inline_content += " " + ps.value;
+            } else {
+                push_block (block_stack, leaf_block_new(BlockType.PARAGRAPH, ps.margin, ps.value));
+            }
+
+        } else if (ps_match(ps, NoteTokenType.CODE_LINE, null)) {
+            let prnt = block_stack[curr_block_idx];
+            if (prnt.type == BlockType.CODE) {
+                prnt.inline_content += "\n" + ps.value;
+            } else {
+                push_block (block_stack, leaf_block_new(BlockType.CODE, ps.margin, ps.value));
+            }
+
+        } else if (ps_match(ps, NoteTokenType.BULLET_LIST, null)) {
+            let prnt = block_stack[curr_block_idx];
+            if (prnt.type != BlockType.LIST) {
+                push_block (block_stack, container_block_new(BlockType.LIST, ps.margin, ps.value));
+            }
+
+            push_block(block_stack, container_block_new(BlockType.LIST_ITEM, ps.margin, ps.value));
+        }
+    }
+
+    block_tree_to_dom(root_block);
+}
+
 function note_text_to_element (container, id, note_text, x)
 {
     let new_expanded_note = note_element_new (id, x)
@@ -539,6 +791,8 @@ function note_text_to_element (container, id, note_text, x)
     // scroll height at the end.
     // :element_size_computation
     container.appendChild(new_expanded_note)
+
+    let root_block = new Block(BlockType.ROOT, 0)
 
     let ps = new ParserState(note_text)
 
@@ -551,6 +805,7 @@ function note_text_to_element (container, id, note_text, x)
     let newline_count = 0
     let paragraph = ""
     let list_element = null
+    let block_stack = [root_block]
     let context_stack = [new ParseContext(ContextType.ROOT, 0, new_expanded_note)]
     while (!ps.is_eof && !ps.error) {
         if (!FLAG) {
@@ -781,7 +1036,7 @@ function reset_and_open_note(note_id)
             let note_container = document.getElementById("note-container")
             note_container.innerHTML = ''
             opened_notes = []
-            note_text_to_element(note_container, note_id, response, opened_notes.length*collapsed_note_width)
+            note_text_to_element_block(note_container, note_id, response, opened_notes.length*collapsed_note_width)
             opened_notes.push(note_id)
             history.pushState(null, "", "?n=" + opened_notes.join("&n="))
         }
@@ -819,7 +1074,7 @@ function open_note(note_id)
         ajax_get ("notes/" + note_id,
                   function(response) {
                       let note_container = document.getElementById("note-container")
-                      note_text_to_element(note_container, note_id, response, opened_notes.length*collapsed_note_width)
+                      note_text_to_element_block(note_container, note_id, response, opened_notes.length*collapsed_note_width)
                       opened_notes.push(note_id)
                       history.pushState(null, "", "?n=" + opened_notes.join("&n="))
                   }
@@ -857,7 +1112,7 @@ function open_notes(note_ids, expanded_note_id)
                 note_container.appendChild(new_collapsed_note)
             }
 
-            note_text_to_element(note_container, expanded_note_id, response, i*collapsed_note_width)
+            note_text_to_element_block(note_container, expanded_note_id, response, i*collapsed_note_width)
             i++
 
             for (; i<note_ids.length; i++) {
