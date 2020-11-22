@@ -725,15 +725,22 @@ function note_text_to_element_block (container, id, note_text, x)
             if (curr_block_idx+1 < block_stack.length) {
                 let next_stack_block = block_stack[curr_block_idx+1]
                 if (next_stack_block.type == BlockType.LIST) {
-                    if (ps_match(ps, NoteTokenType.LIST, null)) {
+                    if (ps_match(ps, NoteTokenType.BULLET_LIST, null)) {
                         if (ps.margin >= next_stack_block.margin) {
                             curr_block_idx++;
                         }
 
                     } else if (ps_match(ps, NoteTokenType.PARAGRAPH, null)) {
                         if (ps.margin == next_stack_block.margin) {
+
                             curr_block_idx++;
+                            next_stack_block = block_stack[curr_block_idx+1];
+                            if (ps.margin == next_stack_block.margin) {
+                                curr_block_idx++;
+                            }
                         }
+
+
                     }
 
                 } else {
