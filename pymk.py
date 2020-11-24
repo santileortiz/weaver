@@ -6,10 +6,23 @@ import uuid
 import json
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-out_dir = 'build'
-notes_dir = 'notes'
-note_data = 'note_data.js'
+# This directory contains user data/configuration. It's essentially what needs
+# to be backed up if you want to restore functionality after a OS reinstall.
+base_dir = os.path.abspath(path_resolve('~/.weaver'))
+ensure_dir(base_dir)
 
+notes_dir = 'notes'
+source_notes_dir = path_cat(base_dir, notes_dir)
+ensure_dir (source_notes_dir)
+
+# This directory contains data that is automatically generated from user's data
+# in the base directory.
+cache_dir = os.path.abspath(path_resolve('~/.cache/weaver/'))
+out_dir = path_cat(cache_dir, 'build')
+ensure_dir(out_dir)
+
+# These directories are part of the code checkout and are used to generate the
+# static website.
 templates_dir = 'templates'
 static_dir = 'static'
 
@@ -24,15 +37,15 @@ def open_browser ():
     #
     # TODO: What happens if we don't use --user-data-dir and there's a chrome
     # session already open?
-    chrome_data_dir = 'mkpy/chrome_data'
+    chrome_data_dir = path_cat (cache_dir, 'chrome_data')
     ensure_dir (chrome_data_dir)
-    ex ('google-chrome --user-data-dir=' + chrome_data_dir + ' --allow-file-access-from-files build/index.html&')
+    ex (f'google-chrome --user-data-dir={chrome_data_dir} --allow-file-access-from-files {path_cat(out_dir,"index.html")}&')
 
 def new_note ():
     is_vim_mode = get_cli_bool_opt('--vim')
-    ensure_dir(notes_dir)
+    ensure_dir(source_notes_dir)
 
-    new_note_path = path_cat(notes_dir, str(uuid.uuid4()))
+    new_note_path = path_cat(source_notes_dir, str(uuid.uuid4()))
 
     if not is_vim_mode:
         ex ('touch ' + new_note_path)
@@ -42,11 +55,11 @@ def new_note ():
         print (new_note_path)
 
 def list_notes ():
-    folder = os.fsencode(notes_dir)
+    folder = os.fsencode(source_notes_dir)
     for fname_os in os.listdir(folder):
         fname = os.fsdecode(fname_os)
 
-        note_f = open(path_cat(notes_dir, fname), 'r')
+        note_f = open(path_cat(source_notes_dir, fname), 'r')
         note_display = fname + ' - ' + note_f.readline()[2:-1] # Remove starting "# " and ending \n
         print (note_display)
         note_f.close()
@@ -56,14 +69,14 @@ def search_notes ():
     args = get_cli_no_opt()
 
     if args != None and len(args) > 0:
-        # args[0] is the snip's name. Also make lowercase to search case insensitive.
+        # args[0] is the snip's name. Also make lowercase to make search case insensitive.
         arg = args[0].lower()
 
-        folder = os.fsencode(notes_dir)
+        folder = os.fsencode(source_notes_dir)
         for fname_os in os.listdir(folder):
             fname = os.fsdecode(fname_os)
 
-            note_path = path_cat(notes_dir, fname)
+            note_path = path_cat(source_notes_dir, fname)
             note_f = open(note_path, 'r')
             note_title = note_f.readline()[2:-1] # Remove starting "# " and ending \n
 
@@ -117,10 +130,8 @@ def sort_title_notes ():
     store ('title_notes', new_title_notes)
 
 def generate ():
-    ensure_dir (out_dir)
-
     title_notes = store_get ('title_notes', [])
-    note_title_to_id, id_to_note_title = gn.get_note_maps(notes_dir)
+    note_title_to_id, id_to_note_title = gn.get_note_maps(source_notes_dir)
 
     env = Environment(
         loader=FileSystemLoader(templates_dir),
@@ -138,7 +149,7 @@ def generate ():
         template.stream(locals()).dump(out_path)
 
     gn.copy_changed(static_dir, out_dir)
-    gn.copy_changed(notes_dir, path_cat(out_dir, notes_dir))
+    gn.copy_changed(source_notes_dir, path_cat(out_dir, notes_dir))
 
 if __name__ == "__main__":
     # Everything above this line will be executed for each TAB press.

@@ -1,0 +1,20 @@
+# List Tests
+
+Introductory paragraph
+
+1. 1st numbered item
+2. 2nd numbered item
+3. 3rd numbered item
+   1. Nested numebred
+   2. Another numebred nested
+      1. An a 3rd level of nesting
+   3. Go up partialy in nesting
+
+- 1st Item
+- 2nd Item
+  - Nested Item 1
+  - Nested Item 2
+    - 3rd nesting level
+- Return to original list level
+
+Ending paragraph

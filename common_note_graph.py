@@ -21,7 +21,7 @@ def get_note_maps(notes_dir):
     return note_to_id, id_to_title
 
 def replace_subpath(path, old_path, new_path):
-    return path.replace(old_path.strip(os.sep), new_path.strip(os.sep), 1)
+    return path.replace(old_path.rstrip(os.sep), new_path.rstrip(os.sep), 1)
 
 def copy_changed(src, dst):
     paths = glob.glob(path_cat(src, '/**'), recursive=True)

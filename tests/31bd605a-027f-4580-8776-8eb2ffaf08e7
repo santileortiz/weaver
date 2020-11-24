@@ -1,0 +1,24 @@
+# Code Test
+
+Some initial paragraph with \code{inline} code.
+
+\code[plain]
+| $ echo "Hello world"; echo \casa{}
+
+\code[plain]
+|   
+|
+|   
+|               
+| Trailing
+|
+| empty lines are removed
+
+\code[plain]
+|   
+|    Trailing spaces are
+|       normalized,
+|   everything     else is  verbatim
+
+A multiline paragraph that starts with
+\code{inline} code.
