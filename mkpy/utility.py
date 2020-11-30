@@ -1,4 +1,4 @@
-import sys, subprocess, os, ast, shutil, platform, json
+import sys, subprocess, os, ast, shutil, platform, json, pickle
 
 import importlib.util, inspect, pathlib, filecmp
 
@@ -134,7 +134,7 @@ def handle_tab_complete ():
     if not check_completions ():
         if get_cli_bool_opt('--install_completions'):
             print ('Installing tab completions...')
-            ex ('cp mkpy/pymk.py {}'.format(completion_script, get_completions_path()))
+            ex ('cp mkpy/pymk.py {}'.format(get_completions_path()))
             exit ()
 
         else:
@@ -268,8 +268,8 @@ def get_cli_bool_opt(opts, has_argument=False, unique_option=False):
 # starting with '-', but when there is, then the function name is not returned.
 # This is broken because now callers have to use diferent indices in the array
 # depending on the presence of - options. Instead assume this will always be
-# called from within a snip and trim the first value by defaúlt. That's what
-# get_cli_no_opt() does.
+# called from within a snip and trim the first value by default. That's what
+# the new get_cli_no_opt() does.
 #
 #def get_cli_rest ():
 #    """
@@ -290,7 +290,7 @@ def get_cli_no_opt ():
     Returns an array of all argv values that are after options processed by
     get_cli_arg_opt() or get_cli_bool_opt().
 
-    This assumes the calling command line is always something like 
+    This assumes the calling command line is always something like
 
     ./pymk.py <snip-name> [OPTS] [REST]
 
@@ -305,8 +305,9 @@ def get_cli_no_opt ():
     while i<len(sys.argv):
         if sys.argv[i].startswith ('-'):
             if sys.argv[i] in cli_arg_options and len(sys.argv) > i+1:
+                i = i+2
+            elif sys.argv[i] in cli_bool_options and len(sys.argv) > i:
                 i = i+1
-            i = i+1
         else:
             return sys.argv[i:]
     return None
@@ -408,6 +409,8 @@ def ex (cmd, no_stdout=False, ret_stdout=False, echo=True):
             pass
         return result
 
+# TODO: Rename this because it has the same name as one of the default logging
+# functions in python.
 def info (s):
     # The following code can be used to se available colors
     #for i in range (8):
@@ -427,6 +430,14 @@ def warn (s):
     color = '\033[1;33m\033[K'
     default_color = '\033[m\033[K'
     print (color+s+default_color)
+
+def pickle_load(fname):
+    with open (fname, 'rb') as f:
+        return pickle.load(f)
+
+def pickle_dump(obj, fname):
+    with open (fname, 'wb') as f:
+        pickle.dump(obj, f)
 
 def py_literal_load(fname):
     with open (fname, 'r') as f:
@@ -838,8 +849,8 @@ def get_pkg_manager_type ():
                     return True
                 elif i == os_id_like:
                     return True
-                else:
-                    return False
+
+            return False
 
         deb_oses = ['elementary', 'ubuntu', 'debian']
         rpm_oses = ['fedora']
@@ -871,7 +882,7 @@ def prune_pkg_list (pkg_list):
     a = set()
     b = set(pkg_list)
 
-    while b:
+    while b and find_deps != None:
         dep = b.pop ()
         curr_deps = find_deps (dep)
         #print ('Pruning {}: {}\n'.format(dep, " ".join(curr_deps)))
@@ -886,11 +897,15 @@ def prune_pkg_list (pkg_list):
                 b.remove (d)
         a.add (dep)
 
-        if len(removed) > 1:
+        if len(removed) > 0:
             print ('Removes: ' + ' '.join(removed))
         else:
             print ()
+
+    if find_deps == None:
+        print (f'No find_deps() function, trying to use package manager type: {pkg_manager_type}')
     print ()
+
     return list (a)
 
 def gcc_used_system_includes (cmd):
@@ -1077,4 +1092,49 @@ def pymk_default (skip_snip_cache=[]):
         call_user_function (t)
         if t != 'default' and t != 'install' and t not in skip_snip_cache:
             store ('last_snip', value=t)
+
+##########################
+# Custom status logger API
+#
+# This is a simpler logging API than the default logger that allows to easily
+# get the result of a single call.
+_level_enum = {
+    'ERROR': 1,
+    'WARNING': 2,
+    'INFO': 3,
+    'DEBUG': 4
+}
+_level_to_name = {}
+
+# Create variables for the level enum above and a dictionary to get the names
+_g = globals()
+for varname, value in _level_enum.items():
+    _g[varname] = value
+    _g['_level_to_name'][value] = varname
+
+class StatusEvent():
+    def __init__(self, message, level=INFO):
+        self.message = message
+        self.level = level
+
+class Status():
+    def __init__(self, level=WARNING):
+        self.events = []
+        self.level = level
+
+    def __str__(self):
+        events_str_arr = [f'{_level_to_name[e.level]}: {e.message}' for e in self.events if e.level <= self.level]
+        return '\n'.join(events_str_arr)
+
+def log_clsr(level_value):
+    def log_generic(status, message, echo=False):
+        if echo:
+            print (message)
+
+        if status != None and status.level >= level_value:
+            status.events.append (StatusEvent(message, level=level_value))
+    return log_generic
+
+for level_name, level_value in _level_enum.items():
+    _g[f'log_{level_name.lower()}'] = log_clsr(level_value)
 
