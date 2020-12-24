@@ -939,7 +939,7 @@ function copy_note_cmd (id)
     // Is this necessary?...
     document.body.appendChild(dummy_input);
 
-    dummy_input.value = "gvim notes/" + id
+    dummy_input.value = "gvim ~/.weaver/notes/" + id
     dummy_input.select();
     dummy_input.setSelectionRange(0, 99999);
 
