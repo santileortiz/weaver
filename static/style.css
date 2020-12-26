@@ -126,7 +126,7 @@ code {
     height: var(--note-container-height);
     width: var(--expanded-note-width);
     margin: 0 auto;
-    padding: 0 1rem;
+    padding: 0 var(--content-padding);
     display: block;
     position: absolute;
     line-height: 1.50em;

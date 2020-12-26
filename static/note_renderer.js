@@ -8,6 +8,10 @@ css_property_set ("--collapsed-note-width", collapsed_note_width + "px");
 let expanded_note_width = 620 // px
 css_property_set ("--expanded-note-width", expanded_note_width + "px");
 
+let content_width = 588 // px
+css_property_set ("--content-width", content_width + "px");
+css_property_set ("--content-padding", (expanded_note_width - content_width)/2 + "px");
+
 let note_link_color = "#0D52BF"
 css_property_set ("--note-link-color", note_link_color);
 css_property_set ("--note-link-color-bg", note_link_color + "0F");
@@ -26,6 +30,9 @@ css_property_set ("--note-button-width", note_button_width + "px");
 // divs that force scrollbars and compute the difference between the client and
 // offsed widths. So... we just set a fixed value of what we think should be
 // the maximum width of a scrollbar.
+//
+// TODO: Probably a better approach will be to have our own scrollbar style
+// with a known width.
 let max_scrollbar_width = 15 // px
 
 let opened_notes = []
@@ -586,6 +593,22 @@ function block_content_parse_text (container, content)
 
             append_dom_element(context_stack, link_element);
 
+        } else if (ps_match(ps, NoteTokenType.TAG, "image")) {
+            ps_expect_content (ps, NoteTokenType.OPERATOR, "{")
+
+            let path = ""
+            tok = ps_next_content(ps)
+            while (!ps.is_eof && !ps.error && !ps_match(ps, NoteTokenType.OPERATOR, "}")) {
+                path += tok.value
+                tok = ps_next_content(ps)
+            }
+
+            let img_element = document.createElement("img")
+            img_element.setAttribute("src", "files/" + path)
+            img_element.setAttribute("width", content_width)
+            append_dom_element(context_stack, img_element);
+
+        } else if (ps_match(ps, NoteTokenType.TAG, "code")) {
         } else if (ps_match(ps, NoteTokenType.TAG, "code")) {
             let attributes = ps_parse_tag_attributes(ps);
 
@@ -874,18 +897,31 @@ function note_text_to_element (container, id, note_text, x)
         new_edit_button.style.top = margin + "px"
         new_edit_button.setAttribute("onclick", "copy_note_cmd('" + id + "');")
 
-        // :element_size_computation
-        let x_pos = expanded_note_width - margin - note_button_width
-        if (new_expanded_note.scrollHeight != new_expanded_note.clientHeight) {
-            //// If the note has a scrollbar then move the button to the left.
-            x_pos -= max_scrollbar_width
-        }
-        new_edit_button.style.left = x_pos + "px"
+        new_edit_button.style.left = expanded_note_width - margin - note_button_width + "px";
 
         new_edit_button.appendChild(new_edit_button_icon)
 
         // Insert at the start
         new_expanded_note.insertBefore(new_edit_button, new_expanded_note.firstChild)
+    }
+
+    // The width of the note element contains the width of the scrollbar. If
+    // there is a scrollbar make the note element wider to compensate. This way
+    // the "content" (never including the scrollbar's width), will be
+    // expanded_note_width.
+    //
+    // TODO: What I now thing would be better is to put all the remaining space
+    // allocated to the note, so that we can have a big editor UI like Notion
+    // does. Then the additional spacing added by the scrollbar won't be
+    // noticeable.
+    {
+        // :element_size_computation
+        if (new_expanded_note.scrollHeight != new_expanded_note.clientHeight) {
+            //// If the note has a scrollbar then move the button to the left.
+            css_property_set ("--expanded-note-width", expanded_note_width + max_scrollbar_width + "px");
+        } else {
+            css_property_set ("--expanded-note-width", expanded_note_width + "px");
+        }
     }
 
     return new_expanded_note;

@@ -15,6 +15,10 @@ notes_dir = 'notes'
 source_notes_dir = path_cat(base_dir, notes_dir)
 ensure_dir (source_notes_dir)
 
+files_dir = 'files'
+source_files_dir = path_cat(base_dir, files_dir)
+ensure_dir (source_files_dir)
+
 # This directory contains data that is automatically generated from user's data
 # in the base directory.
 cache_dir = os.path.abspath(path_resolve('~/.cache/weaver/'))
@@ -149,6 +153,7 @@ def generate ():
         template.stream(locals()).dump(out_path)
 
     gn.copy_changed(static_dir, out_dir)
+    gn.copy_changed(source_files_dir, path_cat(out_dir, files_dir))
     gn.copy_changed(source_notes_dir, path_cat(out_dir, notes_dir))
 
 if __name__ == "__main__":
