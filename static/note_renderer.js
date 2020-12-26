@@ -329,7 +329,7 @@ function ps_next(ps) {
     ps.token = ps.token_peek;
     ps.token_peek = null;
 
-    console.log (ps.token.type + ": " + "'" + ps.token.value + "'");
+    //console.log (ps.token.type + ": " + "'" + ps.token.value + "'");
 
     return ps.token;
 }
@@ -352,15 +352,11 @@ function ps_match(ps, type, value)
 
 let ContextType = {
     ROOT: 0,
-    PARAGRAPH: 1,
-    LIST: 2,
-    LIST_ITEM: 3,
-    CODE: 4
+    HTML: 1,
 }
 
-function ParseContext (type, margin, dom_element) {
+function ParseContext (type, dom_element) {
     this.type = type
-    this.margin = margin
     this.dom_element = dom_element
 
     this.list_type = null
@@ -371,80 +367,31 @@ function array_end(array)
     return array[array.length - 1]
 }
 
+function append_dom_element (context_stack, dom_element)
+{
+    let head_ctx = array_end(context_stack)
+    head_ctx.dom_element.appendChild(dom_element)
+}
+
 function html_escape (str)
 {
     return str.replaceAll("<", "&lt;").replaceAll(">", "&gt;")
 }
 
-// Code is handled differently because we can't know the mapping into DOM
-// elements before the context of type CODE is popped from the stack. This
-// happens because we can't know if a \code[] tag is followed by a {} block or
-// a | block until after we process the \code tag. This means that when
-// processing the \code tag we can't know which DOM elements to add.
-//
-// To work around this we store the content ina variable inside the context,
-// and create the DOM elements in pop_context().
-function push_new_code_context (context_stack, attributes)
+function push_new_html_context (context_stack, tag)
 {
-    let new_context = new ParseContext(ContextType.CODE, 0, null)
-    new_context.code = ""
-    new_context.is_block = false
-    new_context.empty = true
-    new_context.min_leading_spaces = Infinity
+    let dom_element = document.createElement(tag);
+    append_dom_element (context_stack, dom_element);
 
-    if (attributes != null) {
-        if (attributes.positional[0] === "plain") {
-            new_context.language = attributes.positional[0]
-        }
-
-        // TODO: Also support receiving a filename as argument and infer the
-        // language from it.
-    }
-
-    context_stack.push(new_context)
-    return new_context
+    let new_context = new ParseContext(ContextType.HTML, dom_element);
+    context_stack.push(new_context);
+    return new_context;
 }
 
 function pop_context (context_stack)
 {
     let curr_ctx = context_stack.pop()
-    let next_ctx = array_end(context_stack)
-    if (curr_ctx.type === ContextType.CODE) {
-        let code_dom = document.createElement("code")
-        next_ctx.dom_element.appendChild(code_dom)
-
-        if (curr_ctx.is_block) {
-            // NOTE: Currently code blocks are wrapped inside <p></p>, not sure
-            // if this is a good approach but I think if we were to remove it,
-            // we would have to do so here, after the PARAGRAPH context has
-            // been pushed. We sould need to detect that the inly child of the
-            // <p> tag is a code block, then remove the extra parent.
-            code_dom.classList.add("code-block")
-            code_dom.style.paddingLeft = "1em"
-
-            // If we use line numbers, this should be the padding WRT the
-            // column containing the numbers.
-            // code_dom.style.paddingLeft = "0.25em"
-
-            if (curr_ctx.min_leading_spaces != Infinity && curr_ctx.min_leading_spaces > 0) {
-                // Remove the most leading spaces we can remove. I call this
-                // automatic space normalization.
-                curr_ctx.code = curr_ctx.code.substr(curr_ctx.min_leading_spaces)
-                curr_ctx.code = curr_ctx.code.replaceAll("\n" + " ".repeat(curr_ctx.min_leading_spaces), "\n")
-            }
-
-            let preformatted_dom = document.createElement("pre")
-            preformatted_dom.innerHTML = curr_ctx.code
-            code_dom.appendChild(preformatted_dom)
-
-        } else {
-            code_dom.classList.add("code-inline")
-            code_dom.innerHTML = curr_ctx.code
-        }
-
-    }
-
-    return next_ctx
+    return array_end(context_stack)
 }
 
 // This function returns the same string that was parsed as the current token.
@@ -550,6 +497,32 @@ function ps_expect_content(ps, type, value)
     }
 }
 
+function parse_balanced_brace_block(ps)
+{
+    let content = null
+
+    if (ps.str.charAt(ps.pos) === "{") {
+        content = "";
+        let brace_level = 1;
+        ps_expect_content (ps, NoteTokenType.OPERATOR, "{");
+
+        while (!ps.is_eof && brace_level != 0) {
+            ps_next_content (ps);
+            if (ps_match (ps, NoteTokenType.OPERATOR, "{")) {
+                brace_level++;
+            } else if (ps_match (ps, NoteTokenType.OPERATOR, "}")) {
+                brace_level--;
+            }
+
+            if (brace_level != 0) { // Avoid appending the closing }
+                content += html_escape(ps_literal_token(ps));
+            }
+        }
+    }
+
+    return content;
+}
+
 // This function parses the content of a block of text. The formatting is
 // limited to tags that affect the formating inline. This parsing functiuon
 // will not add nested blocks like paragraphs, lists, code blocks etc.
@@ -560,13 +533,21 @@ function block_content_parse_text (container, content)
 {
     let ps = new ParserState(content)
 
-    let context_stack = [new ParseContext(ContextType.ROOT, 0, container)]
+    let context_stack = [new ParseContext(ContextType.ROOT, container)]
     while (!ps.is_eof && !ps.error) {
         let tok = ps_next_content (ps)
 
         if (ps_match(ps, NoteTokenType.TEXT, null) || ps_match(ps, NoteTokenType.SPACE, null)) {
-            let curr_ctx = context_stack[context_stack.length - 1]
-            curr_ctx.dom_element.innerHTML += tok.value
+            let curr_ctx = array_end(context_stack);
+            curr_ctx.dom_element.innerHTML += tok.value;
+
+        } else if (ps_match(ps, NoteTokenType.OPERATOR, "}") && array_end(context_stack).type !== ContextType.ROOT) {
+            pop_context (context_stack);
+
+        } else if (ps_match(ps, NoteTokenType.TAG, "i") || ps_match(ps, NoteTokenType.TAG, "b")) {
+            let tag = ps.token.value;
+            ps_expect_content (ps, NoteTokenType.OPERATOR, "{");
+            push_new_html_context (context_stack, tag)
 
         } else if (ps_match(ps, NoteTokenType.TAG, "link")) {
             ps_expect_content (ps, NoteTokenType.OPERATOR, "{")
@@ -603,33 +584,18 @@ function block_content_parse_text (container, content)
             link_element.setAttribute("target", "_blank")
             link_element.innerHTML = title
 
-            let curr_ctx = context_stack[context_stack.length - 1]
-            curr_ctx.dom_element.appendChild(link_element)
+            append_dom_element(context_stack, link_element);
 
         } else if (ps_match(ps, NoteTokenType.TAG, "code")) {
             let attributes = ps_parse_tag_attributes(ps);
-            let code_ctx = push_new_code_context (context_stack, attributes)
 
-            if (ps.str.charAt(ps.pos) === "{") {
-                let content = ""
-                let brace_level = 1
-                ps_expect_content (ps, NoteTokenType.OPERATOR, "{")
+            let code_content = parse_balanced_brace_block(ps)
+            if (code_content != null) {
+                let code_element = document.createElement("code");
+                code_element.classList.add("code-inline");
+                code_element.innerHTML = code_content;
 
-                while (!ps.is_eof && brace_level != 0) {
-                    ps_next_content (ps)
-                    if (ps_match (ps, NoteTokenType.OPERATOR, "{")) {
-                        brace_level++
-                    } else if (ps_match (ps, NoteTokenType.OPERATOR, "}")) {
-                        brace_level--
-                    }
-
-                    // Avoid appending the closing }
-                    if (brace_level != 0) {
-                        code_ctx.code += html_escape(ps_literal_token(ps))
-                    }
-                }
-
-                pop_context(context_stack)
+                append_dom_element(context_stack, code_element);
             }
 
         } else if (ps_match(ps, NoteTokenType.TAG, "note")) {
@@ -648,12 +614,11 @@ function block_content_parse_text (container, content)
             link_element.classList.add("note-link")
             link_element.innerHTML = note_title
 
-            let curr_ctx = context_stack[context_stack.length - 1]
-            curr_ctx.dom_element.appendChild(link_element)
+            append_dom_element(context_stack, link_element);
 
         } else {
-            let curr_ctx = context_stack[context_stack.length - 1]
-            curr_ctx.dom_element.innerHTML += ps_literal_token(ps)
+            let head_ctx = array_end(context_stack);
+            head_ctx.dom_element.innerHTML += ps_literal_token(ps);
         }
     }
 }
@@ -734,18 +699,11 @@ function block_tree_to_dom (block, dom_element)
     } else if (block.type === BlockType.CODE) {
         let new_dom_element = document.createElement("code");
         new_dom_element.classList.add("code-block")
-        new_dom_element.style.paddingLeft = "1em"
 
         // If we use line numbers, this should be the padding WRT the
         // column containing the numbers.
         // code_dom.style.paddingLeft = "0.25em"
-
-        if (block.min_leading_spaces != Infinity && block.min_leading_spaces > 0) {
-            // Remove the most leading spaces we can remove. I call this
-            // automatic space normalization.
-            curr_ctx.code = curr_ctx.code.substr(curr_ctx.min_leading_spaces)
-            curr_ctx.code = curr_ctx.code.replaceAll("\n" + " ".repeat(curr_ctx.min_leading_spaces), "\n")
-        }
+        new_dom_element.style.paddingLeft = "1em"
 
         dom_element.appendChild(new_dom_element);
 
