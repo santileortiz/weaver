@@ -25,6 +25,9 @@ css_property_set ("--code-inline-border-color", alpha_blend(code_color, "rgba(0,
 let note_button_width = 22 // px
 css_property_set ("--note-button-width", note_button_width + "px");
 
+let code_block_padding = 12 // px
+css_property_set ("--code-block-padding", code_block_padding + "px");
+
 // There doesn't seem to be a way to get the scrollbar's width in all cases. If
 // the browser has hidden scrollbars we can't use the trick of creating hidden
 // divs that force scrollbars and compute the difference between the client and
@@ -790,19 +793,33 @@ function block_tree_to_dom (block, dom_element)
         new_dom_element.innerHTML.trim();
 
     } else if (block.type === BlockType.CODE) {
-        let new_dom_element = document.createElement("code");
-        new_dom_element.classList.add("code-block")
+        let pre_element = document.createElement("pre");
+        dom_element.appendChild(pre_element);
 
+        let code_element = document.createElement("code")
+        code_element.classList.add("code-block")
         // If we use line numbers, this should be the padding WRT the
         // column containing the numbers.
         // code_dom.style.paddingLeft = "0.25em"
-        new_dom_element.style.paddingLeft = "1em"
+        code_element.style.display = "table";
 
-        dom_element.appendChild(new_dom_element);
+        code_element.innerHTML = block.inline_content;
+        pre_element.appendChild(code_element);
 
-        let preformatted_dom = document.createElement("pre")
-        preformatted_dom.innerHTML = block.inline_content;
-        new_dom_element.appendChild(preformatted_dom)
+        // This is a hack. It's the only way I found to show tight, centered
+        // code blocks if they are smaller than content_width and at the same
+        // time show horizontal scrolling if they are wider.
+        //
+        // We need to do this because "display: table", disables scrolling, but
+        // "display: block" sets width to be the maximum possible. Here we
+        // first create the element with "display: table", compute its width,
+        // then change it to "display: block" but if it was smaller than
+        // content_width, we explicitly set its width.
+        let tight_width = code_element.scrollWidth;
+        code_element.style.display = "block";
+        if (tight_width < content_width) {
+            code_element.style.width = tight_width - code_block_padding*2 + "px";
+        }
 
     } else if (block.type === BlockType.ROOT) {
         block.block_content.forEach (function(sub_block) {
@@ -898,7 +915,11 @@ function note_text_to_element (container, id, note_text, x)
                 if (!is_start || !is_empty_line(tok_peek.value)) {
                     is_start = false;
 
-                    min_leading_spaces = Math.min (min_leading_spaces, tok_peek.value.search(/\S/))
+                    let space_count = tok_peek.value.search(/\S/)
+                    if (space_count >= 0) { // Ignore empty where we couldn't find any non-whitespace character.
+                        min_leading_spaces = Math.min (min_leading_spaces, space_count)
+                    }
+
                     new_code_block.inline_content += html_escape(tok_peek.value);
                 }
 
