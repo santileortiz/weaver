@@ -187,7 +187,7 @@ function ps_parse_tag_attributes (ps)
                 attributes.positional.push (value)
 
             } else {
-                let name = ps.str.substr(ps.pos - start).trim();
+                let name = ps.str.substr(start, ps.pos - start).trim();
 
                 ps.pos++;
                 let value_start = ps.pos;
@@ -196,7 +196,7 @@ function ps_parse_tag_attributes (ps)
                     ps.pos++;
                 }
 
-                let value = ps.str.substr(start, ps.pos - value_start).trim();
+                let value = ps.str.substr(value_start, ps.pos - value_start).trim();
 
                 attributes.named[name] = value
             }
@@ -530,6 +530,43 @@ function parse_balanced_brace_block(ps)
     return content;
 }
 
+function compute_media_size (attributes, aspect_ratio, max_width)
+{
+    let a_width = undefined;
+    if (attributes.named.width != undefined) {
+        a_width = Number(attributes.named.width)
+    }
+
+    let a_height = undefined;
+    if (attributes.named.height != undefined) {
+        a_height = Number(attributes.named.height)
+    }
+
+
+    let width, height;
+    if (a_height == undefined &&
+        a_width != undefined && a_width <= max_width) {
+        width = a_width;
+        height = width/aspect_ratio;
+
+    } else if (a_width == undefined &&
+               a_height != undefined && a_height <= max_width/aspect_ratio) {
+        height = a_height;
+        width = height*aspect_ratio;
+
+    } else if (a_width != undefined && a_width <= max_width &&
+               a_height != undefined && a_height <= max_width/aspect_ratio) {
+        width = a_width;
+        height = a_height;
+
+    } else {
+        width = max_width;
+        height = width/aspect_ratio;
+    }
+
+    return [width, height];
+}
+
 // This function parses the content of a block of text. The formatting is
 // limited to tags that affect the formating inline. This parsing functiuon
 // will not add nested blocks like paragraphs, lists, code blocks etc.
@@ -593,7 +630,41 @@ function block_content_parse_text (container, content)
 
             append_dom_element(context_stack, link_element);
 
+        } else if (ps_match(ps, NoteTokenType.TAG, "youtube")) {
+            let attributes = ps_parse_tag_attributes(ps);
+            ps_expect_content (ps, NoteTokenType.OPERATOR, "{")
+
+            let url = ""
+            tok = ps_next_content(ps)
+            while (!ps.is_eof && !ps.error && !ps_match(ps, NoteTokenType.OPERATOR, "}")) {
+                url += tok.value
+                tok = ps_next_content(ps)
+            }
+
+            let video_id;
+            let regex = /^.*(youtu.be\/|youtube(-nocookie)?.com\/(v\/|.*u\/\w\/|embed\/|.*v=))([\w-]{11}).*/
+            var match = url.match(regex);
+            if (match) {
+                video_id = match[4];
+            } else {
+                video_id = "";
+            }
+
+            // Assume 16:9 aspect ratio
+            let size = compute_media_size(attributes, 16/9, content_width - 30);
+
+            let dom_element = document.createElement("iframe")
+            dom_element.setAttribute("width", size[0]);
+            dom_element.setAttribute("height", size[1]);
+            dom_element.setAttribute("style", "margin: 0 auto; display: block;");
+            dom_element.setAttribute("src", "https://www.youtube-nocookie.com/embed/" + video_id);
+            dom_element.setAttribute("frameborder", "0");
+            dom_element.setAttribute("allow", "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture");
+            dom_element.setAttribute("allowfullscreen", "");
+            append_dom_element(context_stack, dom_element);
+
         } else if (ps_match(ps, NoteTokenType.TAG, "image")) {
+            let attributes = ps_parse_tag_attributes(ps);
             ps_expect_content (ps, NoteTokenType.OPERATOR, "{")
 
             let path = ""
@@ -608,7 +679,6 @@ function block_content_parse_text (container, content)
             img_element.setAttribute("width", content_width)
             append_dom_element(context_stack, img_element);
 
-        } else if (ps_match(ps, NoteTokenType.TAG, "code")) {
         } else if (ps_match(ps, NoteTokenType.TAG, "code")) {
             let attributes = ps_parse_tag_attributes(ps);
 
