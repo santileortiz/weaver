@@ -11,6 +11,9 @@
 
 :root {
     --ui-font: Content-font, Roboto, sans-serif;
+    /*--ui-font: Inter, "Open Sans", "Noto Sans", "Roboto", "Droid Sans", sans-serif;*/
+    --text-font: "Noto Serif", "Droid Serif", serif;
+    --heading-font: Inter, Raleway, var(--ui-font)
 }
 
 body, html {
@@ -24,7 +27,12 @@ body, html {
 }
 
 h1, h2, h3, h4, h5, h6 {
-  font-family: var(--ui-font);
+    font-family: var(--heading-font);
+}
+
+h2, h3, h4, h5, h6 {
+    margin-top: 1.25em;
+    margin-bottom: 0;
 }
 
 h1 {
@@ -40,6 +48,7 @@ h2 {
 }
 
 p, ul, ol {
+    font-family: var(--text-font);
     margin-top: 0.5em;
     margin-bottom: 1.0em;
 }
