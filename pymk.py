@@ -137,6 +137,14 @@ def generate ():
     title_notes = store_get ('title_notes', [])
     note_title_to_id, id_to_note_title = gn.get_note_maps(source_notes_dir)
 
+    orphan_notes = gn.get_orphans(source_notes_dir, note_title_to_id.keys())
+    orphan_notes = [n for n in orphan_notes if note_title_to_id[n] not in title_notes]
+    if len (orphan_notes) > 0:
+        print ("Orphan notes:")
+        for orphan in orphan_notes:
+            print (f"{path_cat(source_notes_dir, note_title_to_id[orphan])} - {orphan}")
+        print()
+
     env = Environment(
         loader=FileSystemLoader(templates_dir),
         autoescape=select_autoescape(['html']),
