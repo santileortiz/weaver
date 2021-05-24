@@ -20,6 +20,11 @@ def get_note_maps(notes_dir):
 
     return note_to_id, id_to_title
 
+def find_linking_tag(tag_name, note_title, orphan_names, note_data):
+    search_str = "\\" + tag_name + "{" + str(note_title) + "}"
+    if note_title in orphan_names and search_str in note_data:
+        orphan_names.remove(note_title)
+
 def get_orphans(notes_dir, note_titles_in):
     """
     This is a very quick and dirty implementation, it's O(n^2)!!! In reality we
@@ -43,10 +48,8 @@ def get_orphans(notes_dir, note_titles_in):
         note_data = note_f.read()
 
         for note_title in note_titles:
-            note_title = note_title
-            search_str = "\\note{" + str(note_title) + "}"
-            if note_title in orphan_names and search_str in note_data:
-                orphan_names.remove(note_title)
+            find_linking_tag("note", note_title, orphan_names, note_data)
+            find_linking_tag("summary", note_title, orphan_names, note_data)
 
         note_f.close()
 

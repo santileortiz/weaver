@@ -38,7 +38,19 @@ css_property_set ("--code-block-padding", code_block_padding + "px");
 // with a known width.
 let max_scrollbar_width = 15 // px
 
-let opened_notes = []
+let opened_notes = [];
+let __g_user_tags = {};
+
+function UserTag (tag_name, callback, user_data) {
+    this.name = tag_name;
+    this.callback = callback;
+    this.user_data = user_data;
+}
+
+function new_user_tag (tag_name, callback, user_data)
+{
+    __g_user_tags[tag_name] = new UserTag(tag_name, callback, user_data);
+}
 
 function note_element_new(id, x)
 {
@@ -214,6 +226,32 @@ function ps_parse_tag_attributes (ps)
 
     return attributes;
 }
+
+function ps_parse_tag (ps)
+{
+    let tag = {
+        attributes: null,
+        content: null,
+    };
+
+    let attributes = ps_parse_tag_attributes(ps);
+    let content = "";
+
+    ps_expect_content (ps, NoteTokenType.OPERATOR, "{")
+    tok = ps_next_content(ps)
+    while (!ps.is_eof && !ps.error && !ps_match(ps, NoteTokenType.OPERATOR, "}")) {
+        content += tok.value
+        tok = ps_next_content(ps)
+    }
+
+    if (!ps.error) {
+        tag.attributes = attributes;
+        tag.content = content;
+    }
+
+    return tag;
+}
+
 
 function ps_next_peek(ps)
 {
@@ -571,18 +609,18 @@ function compute_media_size (attributes, aspect_ratio, max_width)
 }
 
 // This function parses the content of a block of text. The formatting is
-// limited to tags that affect the formating inline. This parsing functiuon
+// limited to tags that affect the formating inline. This parsing function
 // will not add nested blocks like paragraphs, lists, code blocks etc.
 //
 // TODO: How do we handle the prescence of nested blocks here?, ignore them and
 // print them or raise an error and stop parsing.
 function block_content_parse_text (container, content)
 {
-    let ps = new ParserState(content)
+    let ps = new ParserState(content);
 
     let context_stack = [new ParseContext(ContextType.ROOT, container)]
     while (!ps.is_eof && !ps.error) {
-        let tok = ps_next_content (ps)
+        let tok = ps_next_content (ps);
 
         if (ps_match(ps, NoteTokenType.TEXT, null) || ps_match(ps, NoteTokenType.SPACE, null)) {
             let curr_ctx = array_end(context_stack);
@@ -597,14 +635,7 @@ function block_content_parse_text (container, content)
             push_new_html_context (context_stack, tag)
 
         } else if (ps_match(ps, NoteTokenType.TAG, "link")) {
-            ps_expect_content (ps, NoteTokenType.OPERATOR, "{")
-
-            let content = ""
-            tok = ps_next_content(ps)
-            while (!ps.is_eof && !ps.error && !ps_match(ps, NoteTokenType.OPERATOR, "}")) {
-                content += tok.value
-                tok = ps_next_content(ps)
-            }
+            let tag = ps_parse_tag (ps);
 
             // We parse the URL from the title starting at the end. I thinkg is
             // far less likely to have a non URL encoded > character in the
@@ -613,17 +644,17 @@ function block_content_parse_text (container, content)
             // TODO: Support another syntax for the rare case of a user that
             // wants a > character in a URL. Or make sure URLs are URL encoded
             // from the UI that will be used to edit this.
-            let pos = content.length - 1
-            while (pos > 1 && content.charAt(pos) != ">") {
+            let pos = tag.content.length - 1
+            while (pos > 1 && tag.content.charAt(pos) != ">") {
                 pos--
             }
 
-            let url = content
-            let title = content
-            if (pos != 1 && content.charAt(pos - 1) === "-") {
+            let url = tag.content
+            let title = tag.content
+            if (pos != 1 && tag.content.charAt(pos - 1) === "-") {
                 pos--
-                url = content.substr(pos + 2).trim()
-                title = content.substr(0, pos).trim()
+                url = tag.content.substr(pos + 2).trim()
+                title = tag.content.substr(0, pos).trim()
             }
 
             let link_element = document.createElement("a")
@@ -634,19 +665,11 @@ function block_content_parse_text (container, content)
             append_dom_element(context_stack, link_element);
 
         } else if (ps_match(ps, NoteTokenType.TAG, "youtube")) {
-            let attributes = ps_parse_tag_attributes(ps);
-            ps_expect_content (ps, NoteTokenType.OPERATOR, "{")
-
-            let url = ""
-            tok = ps_next_content(ps)
-            while (!ps.is_eof && !ps.error && !ps_match(ps, NoteTokenType.OPERATOR, "}")) {
-                url += tok.value
-                tok = ps_next_content(ps)
-            }
+            let tag = ps_parse_tag (ps);
 
             let video_id;
             let regex = /^.*(youtu.be\/|youtube(-nocookie)?.com\/(v\/|.*u\/\w\/|embed\/|.*v=))([\w-]{11}).*/
-            var match = url.match(regex);
+            var match = tag.content.match(regex);
             if (match) {
                 video_id = match[4];
             } else {
@@ -654,7 +677,7 @@ function block_content_parse_text (container, content)
             }
 
             // Assume 16:9 aspect ratio
-            let size = compute_media_size(attributes, 16/9, content_width - 30);
+            let size = compute_media_size(tag.attributes, 16/9, content_width - 30);
 
             let dom_element = document.createElement("iframe")
             dom_element.setAttribute("width", size[0]);
@@ -667,23 +690,16 @@ function block_content_parse_text (container, content)
             append_dom_element(context_stack, dom_element);
 
         } else if (ps_match(ps, NoteTokenType.TAG, "image")) {
-            let attributes = ps_parse_tag_attributes(ps);
-            ps_expect_content (ps, NoteTokenType.OPERATOR, "{")
-
-            let path = ""
-            tok = ps_next_content(ps)
-            while (!ps.is_eof && !ps.error && !ps_match(ps, NoteTokenType.OPERATOR, "}")) {
-                path += tok.value
-                tok = ps_next_content(ps)
-            }
+            let tag = ps_parse_tag (ps);
 
             let img_element = document.createElement("img")
-            img_element.setAttribute("src", "files/" + path)
+            img_element.setAttribute("src", "files/" + tag.content)
             img_element.setAttribute("width", content_width)
             append_dom_element(context_stack, img_element);
 
         } else if (ps_match(ps, NoteTokenType.TAG, "code")) {
             let attributes = ps_parse_tag_attributes(ps);
+            // TODO: Actually do something with the passed language name
 
             let code_content = parse_balanced_brace_block(ps)
             if (code_content != null) {
@@ -695,14 +711,8 @@ function block_content_parse_text (container, content)
             }
 
         } else if (ps_match(ps, NoteTokenType.TAG, "note")) {
-            ps_expect_content (ps, NoteTokenType.OPERATOR, "{")
-
-            let note_title = ""
-            tok = ps_next_content(ps)
-            while (!ps.is_eof && !ps.error && !ps_match(ps, NoteTokenType.OPERATOR, "}")) {
-                note_title += tok.value
-                tok = ps_next_content(ps)
-            }
+            let tag = ps_parse_tag (ps);
+            let note_title = tag.content;
 
             let link_element = document.createElement("a")
             link_element.setAttribute("onclick", "return open_note('" + note_title_to_id[note_title] + "');")
@@ -778,6 +788,40 @@ function push_block (block_stack, new_block)
     return new_block;
 }
 
+// TODO: User callbacks will be modifying the tree. It's possible the user
+// messes up and for example adds a cycle into the tree, we should detect such
+// problem and avoid maybe later entering an infinite loop.
+function block_tree_user_callbacks (root, block=null, containing_array=null, index=-1)
+{
+    // Convenience so just a single parameter is required in the initial call
+    if (block === null) block = root;
+
+    if (block.block_content != null) {
+        block.block_content.forEach (function(sub_block, index) {
+            block_tree_user_callbacks (root, sub_block, block.block_content, index);
+        });
+
+    } else {
+        let ps = new ParserState(block.inline_content);
+
+        while (!ps.is_eof && !ps.error) {
+            let tok = ps_next_content (ps);
+            if (ps_match(ps, NoteTokenType.TAG, null) && __g_user_tags[tok.value] !== undefined) {
+                let user_tag = __g_user_tags[tok.value];
+                let new_block = user_tag.callback (ps, root, block, user_tag.user_data);
+                if (new_block !== null) {
+                    containing_array[index] = new_block;
+                    break;
+                }
+            }
+        }
+
+        // TODO: What will happen if a parse erro occurs here?. We should print
+        // some details about which user function failed by checking if there
+        // is an error in ps.
+    }
+}
+
 function block_tree_to_dom (block, dom_element)
 {
     if (block.type === BlockType.PARAGRAPH) {
@@ -847,7 +891,7 @@ function block_tree_to_dom (block, dom_element)
     }
 }
 
-function note_text_to_element (container, id, note_text, x)
+function parse_note_text(note_text)
 {
     let ps = new ParserState(note_text)
 
@@ -887,20 +931,16 @@ function note_text_to_element (container, id, note_text, x)
 
         } else if (ps_match(ps, NoteTokenType.PARAGRAPH, null)) {
             let prnt = block_stack[curr_block_idx];
-            if (prnt.type == BlockType.PARAGRAPH) {
-                prnt.inline_content += " " + tok.value;
-            } else {
-                let new_paragraph = push_block (block_stack, leaf_block_new(BlockType.PARAGRAPH, tok.margin, tok.value));
-                
-                // Append all paragraph continuation lines. This ensures all paragraphs
-                // found at the beginning of the iteration followed an empty line.
-                let tok_peek = ps_next_peek(ps);
-                while (tok_peek.is_eol && tok_peek.type == NoteTokenType.PARAGRAPH) {
-                    new_paragraph.inline_content += tok_peek.value;
-                    ps_next(ps);
+            let new_paragraph = push_block (block_stack, leaf_block_new(BlockType.PARAGRAPH, tok.margin, tok.value));
 
-                    tok_peek = ps_next_peek(ps);
-                }
+            // Append all paragraph continuation lines. This ensures all paragraphs
+            // found at the beginning of the iteration followed an empty line.
+            let tok_peek = ps_next_peek(ps);
+            while (tok_peek.is_eol && tok_peek.type == NoteTokenType.PARAGRAPH) {
+                new_paragraph.inline_content += tok_peek.value;
+                ps_next(ps);
+
+                tok_peek = ps_next_peek(ps);
             }
 
         } else if (ps_match(ps, NoteTokenType.CODE_HEADER, null)) {
@@ -963,17 +1003,24 @@ function note_text_to_element (container, id, note_text, x)
                 }
             }
         }
-
     }
 
-    let new_expanded_note = note_element_new (id, x)
-    new_expanded_note.classList.add("expanded")
+    block_tree_user_callbacks (root_block)
+
+    return root_block;
+}
+
+function note_text_to_element (container, id, note_text, x)
+{
+    let new_expanded_note = note_element_new (id, x);
+    new_expanded_note.classList.add("expanded");
 
     // NOTE: We append this at the beginning so we get the correct client and
     // scroll height at the end.
     // :element_size_computation
-    container.appendChild(new_expanded_note)
+    container.appendChild(new_expanded_note);
 
+    let root_block = parse_note_text(note_text);
     block_tree_to_dom(root_block, new_expanded_note);
 
     // Create button to start editing the note
@@ -1137,7 +1184,8 @@ function open_notes(note_ids, expanded_note_id)
     )
 }
 
-function navigate_to_current_url() {
+function navigate_to_current_url()
+{
     let params = url_parameters()
     if (params != null) {
         open_notes (params["n"])
@@ -1152,4 +1200,31 @@ window.addEventListener('popstate', (event) => {
     navigate_to_current_url()
 });
 
+// This is here because it's trying to emulate how users would define custom
+// tags. We use it for an internal tag just as test for the API.
+function summary_tag (ps, root, block, user_data)
+{
+    let tag = ps_parse_tag (ps);
+
+    let note_id = note_title_to_id[tag.content]
+
+    if (note_id !== undefined) {
+        ajax_get ("notes/" + note_id,
+            function(response) {
+                let response_tree = parse_note_text (response);
+
+                return;
+            }
+        ),
+        false
+    }
+
+
+    // Force replacement of the whole block
+    return leaf_block_new(BlockType.DUMMY, 0, "...");
+}
+
+new_user_tag ('summary', summary_tag, null);
+
 navigate_to_current_url()
+

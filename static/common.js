@@ -3,7 +3,7 @@ function css_property_set(property_name, value)
     document.querySelector(":root").style.setProperty(property_name, value);
 }
 
-function ajax_get (target, callback)
+function ajax_get (target, callback, async=true)
 {
     if (typeof(target) === "string") {
         let request = new XMLHttpRequest();
@@ -12,7 +12,7 @@ function ajax_get (target, callback)
                 callback(request.responseText);
             }
         }
-        request.open("GET", target, true);
+        request.open("GET", target, async);
         request.send(null);
 
     } else { // assume target is an array of URLs
