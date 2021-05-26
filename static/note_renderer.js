@@ -808,9 +808,9 @@ function block_tree_user_callbacks (root, block=null, containing_array=null, ind
             let tok = ps_next_content (ps);
             if (ps_match(ps, NoteTokenType.TAG, null) && __g_user_tags[tok.value] !== undefined) {
                 let user_tag = __g_user_tags[tok.value];
-                let new_block = user_tag.callback (ps, root, block, user_tag.user_data);
-                if (new_block !== null) {
-                    containing_array[index] = new_block;
+                let new_blocks = user_tag.callback (ps, root, block, user_tag.user_data);
+                if (new_blocks !== null) {
+                    containing_array.splice(index, 1, ...new_blocks);
                     break;
                 }
             }
@@ -1204,24 +1204,26 @@ window.addEventListener('popstate', (event) => {
 // tags. We use it for an internal tag just as test for the API.
 function summary_tag (ps, root, block, user_data)
 {
-    let tag = ps_parse_tag (ps);
+    //let tag = ps_parse_tag (ps);
 
-    let note_id = note_title_to_id[tag.content]
+    //let note_id = note_title_to_id[tag.content]
 
-    if (note_id !== undefined) {
-        ajax_get ("notes/" + note_id,
-            function(response) {
-                let response_tree = parse_note_text (response);
+    //let result_blocks = null;
+    //if (note_id !== undefined) {
+    //    let note_content = get_note_by_id (note_id);
+    //    let note_tree = parse_note_text (note_content);
 
-                return;
-            }
-        ),
-        false
-    }
+    //    note_tree.block_content[0].heading_number = 2;
+    //    result_blocks = [note_tree.block_content[0]];
+
+    //    if (note_tree.block_content[1].type === BlockType.PARAGRAPH) {
+    //        result_blocks.push(note_tree.block_content[1]);
+    //    }
+    //}
 
 
-    // Force replacement of the whole block
-    return leaf_block_new(BlockType.DUMMY, 0, "...");
+    // Force replacement of original block with following sequence
+    return [leaf_block_new(BlockType.PARAGRAPH, 0, "HEY"), leaf_block_new(BlockType.PARAGRAPH, 0, "THERE")];
 }
 
 new_user_tag ('summary', summary_tag, null);
