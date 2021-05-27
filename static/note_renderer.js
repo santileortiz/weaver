@@ -40,6 +40,7 @@ let max_scrollbar_width = 15 // px
 
 let opened_notes = [];
 let __g_user_tags = {};
+let __g_related_notes = [];
 
 function UserTag (tag_name, callback, user_data) {
     this.name = tag_name;
@@ -47,9 +48,9 @@ function UserTag (tag_name, callback, user_data) {
     this.user_data = user_data;
 }
 
-function new_user_tag (tag_name, callback, user_data)
+function new_user_tag (tag_name, callback)
 {
-    __g_user_tags[tag_name] = new UserTag(tag_name, callback, user_data);
+    __g_user_tags[tag_name] = new UserTag(tag_name, callback);
 }
 
 function note_element_new(id, x)
@@ -1082,12 +1083,46 @@ function copy_note_cmd (id)
     // TODO: Show some feedback.
 }
 
+// NOTE: This doesn't get the note from the server, it has to have been queried
+// previously and added to the related notes global state. By default when
+// opening a note, all linked notes will be requested too.
+function get_note_by_id (note_id)
+{
+    return __g_related_notes[note_id];
+}
+
+// This queries the content of the passed note and all notes liked from it,
+// after all data has been received the callback is called, the content of the
+// passed note will be passed as parameter. Text for the loaded notes can be
+// retrieved by calling get_note_by_id().
+function get_notes_and_run (note_id, callback)
+{
+    note_ids = [note_id];
+    if (note_links[note_id] !== undefined) {
+        note_ids = note_ids.concat(note_links[note_id]);
+    }
+
+    let note_urls = note_ids.map ( function (id) {
+        return "notes/" + id;
+    });
+
+    ajax_get (note_urls,
+        function(responses) {
+            note_ids.forEach (function (id, idx) {
+                __g_related_notes[id] = responses[idx];
+            });
+
+            callback (responses[0]);
+        }
+    )
+}
+
 // NOTE: This pushes a new state. Intended for use in places where we handle
 // user interaction that causes navigation to a new note.
 // :pushes_state
 function reset_and_open_note(note_id)
 {
-    ajax_get ("notes/" + note_id,
+    get_notes_and_run (note_id,
         function(response) {
             let note_container = document.getElementById("note-container")
             note_container.innerHTML = ''
@@ -1127,14 +1162,14 @@ function open_note(note_id)
         let collapsed_title = collapsed_element_new (expanded_note.id)
         expanded_note.appendChild(collapsed_title)
 
-        ajax_get ("notes/" + note_id,
-                  function(response) {
-                      let note_container = document.getElementById("note-container")
-                      note_text_to_element(note_container, note_id, response, opened_notes.length*collapsed_note_width)
-                      opened_notes.push(note_id)
-                      history.pushState(null, "", "?n=" + opened_notes.join("&n="))
-                  }
-        )
+        get_notes_and_run (note_id,
+            function(response) {
+                let note_container = document.getElementById("note-container")
+                note_text_to_element(note_container, note_id, response, opened_notes.length*collapsed_note_width)
+                opened_notes.push(note_id)
+                history.pushState(null, "", "?n=" + opened_notes.join("&n="))
+            }
+        );
     }
 
     return false
@@ -1151,7 +1186,7 @@ function open_notes(note_ids, expanded_note_id)
         expanded_note_id = note_ids[note_ids.length - 1] 
     }
 
-    ajax_get ("notes/" + expanded_note_id,
+    get_notes_and_run (expanded_note_id,
         function(response) {
             let note_container = document.getElementById("note-container")
             note_container.innerHTML = ''
@@ -1202,31 +1237,42 @@ window.addEventListener('popstate', (event) => {
 
 // This is here because it's trying to emulate how users would define custom
 // tags. We use it for an internal tag just as test for the API.
-function summary_tag (ps, root, block, user_data)
+function summary_tag (ps, root, block)
 {
-    //let tag = ps_parse_tag (ps);
+    let tag = ps_parse_tag (ps);
 
-    //let note_id = note_title_to_id[tag.content]
+    let note_id = note_title_to_id[tag.content]
 
-    //let result_blocks = null;
-    //if (note_id !== undefined) {
-    //    let note_content = get_note_by_id (note_id);
-    //    let note_tree = parse_note_text (note_content);
+    let result_blocks = null;
+    if (note_id !== undefined) {
+        let note_content = get_note_by_id (note_id);
+        let note_tree = parse_note_text (note_content);
 
-    //    note_tree.block_content[0].heading_number = 2;
-    //    result_blocks = [note_tree.block_content[0]];
+        let heading_block = note_tree.block_content[0];
+        // NOTE: We can use inline tags because they are processed at a later step.
+        heading_block.inline_content = "\\note{" + heading_block.inline_content + "}"
+        // TODO: Don't use fixed heading of 2, instead look at the context
+        // where the tag is used and use the highest heading so far. This will
+        // be an interesting excercise in making sure this context is easy to
+        // access from user defined tags.
+        heading_block.heading_number = 2;
+        result_blocks = [heading_block];
 
-    //    if (note_tree.block_content[1].type === BlockType.PARAGRAPH) {
-    //        result_blocks.push(note_tree.block_content[1]);
-    //    }
-    //}
+        if (note_tree.block_content[1].type === BlockType.PARAGRAPH) {
+            result_blocks.push(note_tree.block_content[1]);
+        }
 
+        // TODO: Add some user defined wrapper that allows setting a different
+        // style for blocks of summary. For example if we ever get inline
+        // editing from HTML we would like to disable editing in summary blocks
+        // and have some UI to modify the target.
+    }
 
     // Force replacement of original block with following sequence
-    return [leaf_block_new(BlockType.PARAGRAPH, 0, "HEY"), leaf_block_new(BlockType.PARAGRAPH, 0, "THERE")];
+    return result_blocks;
 }
 
-new_user_tag ('summary', summary_tag, null);
+new_user_tag ('summary', summary_tag);
 
 navigate_to_current_url()
 
