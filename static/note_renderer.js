@@ -253,6 +253,23 @@ function ps_parse_tag (ps)
     return tag;
 }
 
+function ps_parse_tag_balanced_braces (ps)
+{
+    let tag = {
+        attributes: null,
+        content: null,
+    };
+
+    let attributes = ps_parse_tag_attributes(ps);
+    let content = parse_balanced_brace_block(ps)
+
+    if (!ps.error) {
+        tag.attributes = attributes;
+        tag.content = content;
+    }
+
+    return tag;
+}
 
 function ps_next_peek(ps)
 {
@@ -723,6 +740,21 @@ function block_content_parse_text (container, content)
 
             append_dom_element(context_stack, link_element);
 
+        } else if (ps_match(ps, NoteTokenType.TAG, "html")) {
+            // TODO: How can we support '}' characters here?. I don't thing
+            // assuming there will be balanced braces is an option here, as it
+            // is in the \code tag. We most likely will need to implement user
+            // defined termintating strings.
+            let tag = ps_parse_tag (ps);
+            let dummy_element = document.createElement("span");
+            dummy_element.innerHTML = tag.content;
+
+            if (dummy_element.firstChild !== null) {
+                append_dom_element(context_stack, dummy_element.firstChild);
+            } else {
+                append_dom_element(context_stack, dummy_element);
+            }
+
         } else {
             let head_ctx = array_end(context_stack);
             head_ctx.dom_element.innerHTML += ps_literal_token(ps);
@@ -805,19 +837,31 @@ function block_tree_user_callbacks (root, block=null, containing_array=null, ind
     } else {
         let ps = new ParserState(block.inline_content);
 
+        let string_replacements = [];
         while (!ps.is_eof && !ps.error) {
+            let start = ps.pos;
             let tok = ps_next_content (ps);
             if (ps_match(ps, NoteTokenType.TAG, null) && __g_user_tags[tok.value] !== undefined) {
                 let user_tag = __g_user_tags[tok.value];
-                let new_blocks = user_tag.callback (ps, root, block, user_tag.user_data);
-                if (new_blocks !== null) {
-                    containing_array.splice(index, 1, ...new_blocks);
-                    break;
+                let result = user_tag.callback (ps, root, block, user_tag.user_data);
+
+                if (result !== null) {
+                    if (typeof(result) === "string") {
+                        string_replacements.push ([start, ps.pos, result])
+                    } else {
+                        containing_array.splice(index, 1, ...result);
+                        break;
+                    }
                 }
             }
         }
 
-        // TODO: What will happen if a parse erro occurs here?. We should print
+        for (let i=string_replacements.length - 1; i >= 0; i--) {
+            let replacement = string_replacements [i];
+            block.inline_content = block.inline_content.substring(0, replacement[0]) + replacement[2] + block.inline_content.substring(replacement[1]);
+        }
+
+        // TODO: What will happen if a parse error occurs here?. We should print
         // some details about which user function failed by checking if there
         // is an error in ps.
     }
@@ -1273,6 +1317,37 @@ function summary_tag (ps, root, block)
 }
 
 new_user_tag ('summary', summary_tag);
+
+function handle_math_tag (ps, display_mode=false)
+{
+    let tag = ps_parse_tag_balanced_braces (ps);
+    var html = katex.renderToString(tag.content, {
+        throwOnError: false,
+        displayMode: display_mode
+    });
+
+    // When katex gets an error it generates HTML with unbalanced braces.
+    // Currently \html tag doesn't allow } characters in it, HTML encode them
+    // so our parser ignores them.
+    return "\\html{" + html.replace("}", "&#125;") + "}"
+}
+
+new_user_tag ('math', function summary_tag (ps, root, block)
+{
+    return handle_math_tag (ps);
+}
+);
+
+// TODO: Is this a good way to implement display style?. I think capitalizing
+// the starting M is easier to memorize than adding an attribute with a name
+// that has to be remembered, is it display, displayMode, displat-mode=true?.
+// An alternative could be to automatically detect math tags used as whole
+// paragraphs and make these automatically display mode equations.
+new_user_tag ('Math', function summary_tag (ps, root, block)
+{
+    return handle_math_tag (ps, true);
+}
+);
 
 navigate_to_current_url()
 
