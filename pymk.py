@@ -143,7 +143,7 @@ def generate ():
     if len (orphan_notes) > 0:
         print ("Orphan notes:")
         for orphan in orphan_notes:
-            print (f"{path_cat(source_notes_dir, note_title_to_id[orphan])} - {orphan}")
+            print (f"{path_cat(source_notes_dir, id_to_note_title[orphan])} - {orphan}")
         print()
 
     env = Environment(
