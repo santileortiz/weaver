@@ -3,7 +3,12 @@ notes
 build
 mkpy/chrome_data
 
+*.swp
+*.log
+perf.data*
+bin
+gmon.out
+tags
 *__pycache__*
 *.pyc
 mkpy/cache
-usage/**/cache
