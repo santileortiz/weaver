@@ -168,172 +168,239 @@ struct user_tag_t {
 //{
 //    __g_user_tags[tag_name] = new UserTag(tag_name, callback);
 //}
-//
-//function note_element_new(id, x)
-//{
-//    let new_note = document.createElement("div")
-//    new_note.id = id
-//    new_note.classList.add("note")
-//    new_note.style.left = x + "px"
-//
-//    return new_note;
-//}
-//
-//let NoteTokenType = {
-//    UNKNOWN: 0,
-//    TITLE: 1,
-//    PARAGRAPH: 2,
-//    BULLET_LIST: 3,
-//    NUMBERED_LIST: 4,
-//    TAG: 5,
-//    OPERATOR: 6,
-//    SPACE: 7,
-//    TEXT: 8,
-//    CODE_HEADER: 9,
-//    CODE_LINE: 10,
-//    BLANK_LINE: 11,
-//    EOF: 12
-//}
-//
-//token_type_names = []
-//for (let e in NoteTokenType) {
-//    if (NoteTokenType.hasOwnProperty(e)) {
-//        token_type_names.push('' + e)
-//    }
-//}
-//
-//function Token () {
-//    this.value = '';
-//    this.type = NoteTokenType.UNKNOWN;
-//    this.margin = 0
-//    this.content_start = 0
-//    this.heading_number = 0
-//    this.is_eol = false;
-//}
-//
-//function ParserState (str) {
-//    this.error = false
-//    this.error_msg = false
-//    this.is_eof = false
-//    this.str = str;
-//
-//    this.pos = 0;
-//    this.pos_peek = 0;
-//
-//    this.token = null;
-//    this.token_peek = null;
-//}
-//
-//let pos_is_eof = function(ps) {
-//    return ps.pos >= ps.str.length
-//}
-//
-//let pos_is_operator = function(ps) {
-//    return !pos_is_eof(ps) && char_in_str(ps.str.charAt(ps.pos), ",=[]{}\n\\")
-//}
-//
-//let pos_is_digit = function(ps) {
-//    return !pos_is_eof(ps) && char_in_str(ps.str.charAt(ps.pos), "1234567890")
-//}
-//
-//let pos_is_space = function(ps) {
-//    return !pos_is_eof(ps) && char_in_str(ps.str.charAt(ps.pos), " \t")
-//}
-//
-//let is_empty_line = function(line) {
-//    let pos = 0;
-//    while (char_in_str(line.charAt(pos), " \t")) {
-//        pos++;
-//    }
-//
-//    return line.charAt(pos) === "\n" || pos+1 === line.length-1;
-//}
-//
-//// NOTE: chars.search() doesn't work if chars contains \ because it assumes we
-//// are passing an incomplete regex, sigh..
-//function char_in_str (c, chars)
-//{
-//    for (let i=0; i<chars.length; i++) {
-//        if (chars.charAt(i) === c) {
-//            return true
-//        }
-//    }
-//
-//    return false
-//}
-//
-//function str_at(haystack, pos, needle)
-//{
-//    let found = true;
-//    let i = 0;
-//    while (i < needle.length) {
-//        if (haystack.charAt(pos+i) !== needle.charAt(i)) {
-//            found = false;
-//            break;
-//        }
-//        i++;
-//    }
-//
-//    return found;
-//}
-//
-//function advance_line(ps)
-//{
-//    let start = ps.pos;
-//    while (!pos_is_eof(ps) && ps.str.charAt(ps.pos) !== "\n") {
-//        ps.pos++;
-//    }
-//
-//    // Advance over the \n character. We leave \n characters because they are
-//    // handled by the inline parser. Sometimes they are ignored (between URLs),
-//    // and sometimes they are replaced to space (multiline paragraphs).
-//    ps.pos++; 
-//
-//    return ps.str.substr(start, ps.pos - start);
-//}
-//
+
+#define TOKEN_TYPES_TABLE                      \
+    TOKEN_TYPES_ROW(TOKEN_TYPE_UNKNOWN)        \
+    TOKEN_TYPES_ROW(TOKEN_TYPE_TITLE)          \
+    TOKEN_TYPES_ROW(TOKEN_TYPE_PARAGRAPH)      \
+    TOKEN_TYPES_ROW(TOKEN_TYPE_BULLET_LIST)    \
+    TOKEN_TYPES_ROW(TOKEN_TYPE_NUMBERED_LIST)  \
+    TOKEN_TYPES_ROW(TOKEN_TYPE_TAG)            \
+    TOKEN_TYPES_ROW(TOKEN_TYPE_OPERATOR)       \
+    TOKEN_TYPES_ROW(TOKEN_TYPE_SPACE)          \
+    TOKEN_TYPES_ROW(TOKEN_TYPE_TEXT)           \
+    TOKEN_TYPES_ROW(TOKEN_TYPE_CODE_HEADER)    \
+    TOKEN_TYPES_ROW(TOKEN_TYPE_CODE_LINE)      \
+    TOKEN_TYPES_ROW(TOKEN_TYPE_BLANK_LINE)     \
+    TOKEN_TYPES_ROW(TOKEN_TYPE_END_OF_FILE)
+
+#define TOKEN_TYPES_ROW(value) value,
+enum note_token_type_t {
+    TOKEN_TYPES_TABLE
+};
+#undef TOKEN_TYPES_ROW
+
+#define TOKEN_TYPES_ROW(value) #value,
+char* token_type_names[] = {
+    TOKEN_TYPES_TABLE
+};
+#undef TOKEN_TYPES_ROW
+
+typedef struct {
+    char *s;
+    uint32_t len;
+} sstring_t;
+#define SSTRING(s,len) ((sstring_t){s,len})
+
+static inline
+sstring_t sstr_set (char *s, uint32_t len)
+{
+    return SSTRING(s, len);
+}
+
+static inline
+sstring_t sstr_trim (sstring_t str)
+{
+    while (is_space (str.s)) {
+        str.s++;
+        str.len--;
+    }
+
+    while (is_space (str.s + str.len - 1)) {
+        str.len--;
+    }
+
+    return str;
+}
+
+struct token_t {
+    sstring_t value;
+
+    enum note_token_type_t type;
+    int margin;
+    int content_start;
+    int heading_number;
+    bool is_eol;
+};
+
+struct parser_state_t {
+    bool error;
+    bool error_msg;
+    bool is_eof;
+    bool is_eol;
+    bool is_peek;
+    char *str;
+
+    char *pos;
+    char *pos_peek;
+
+    struct token_t token;
+    struct token_t token_peek;
+};
+
+void ps_init (struct parser_state_t *ps, char *str)
+{
+    ps->str = str;
+    ps->pos = str;
+}
+
+bool char_in_str (char c, char *str)
+{
+    while (*str != '\0') {
+        if (*str == c) {
+            return true;
+        }
+
+        str++;
+    }
+
+    return false;
+}
+
+static inline
+char ps_curr_char (struct parser_state_t *ps)
+{
+    return *(ps->pos);
+}
+
+bool pos_is_eof (struct parser_state_t *ps)
+{
+    return ps_curr_char(ps) == '\0';
+}
+
+bool pos_is_operator (struct parser_state_t *ps)
+{
+    return !pos_is_eof(ps) && char_in_str(ps_curr_char(ps), ",=[]{}\n\\");
+}
+
+bool pos_is_digit (struct parser_state_t *ps)
+{
+    return !pos_is_eof(ps) && char_in_str(ps_curr_char(ps), "1234567890");
+}
+
+bool pos_is_space (struct parser_state_t *ps)
+{
+    return !pos_is_eof(ps) && is_space(ps->pos);
+}
+
+bool is_empty_line (char *line)
+{
+    while (is_space(line)) {
+        line++;
+    }
+
+    return *line == '\n' || *line == '\0';
+}
+
+// NOTE: c_str MUST be null terminated!!
+bool ps_match_str(struct parser_state_t *ps, char *c_str)
+{
+    char *backup_pos = ps->pos;
+
+    bool found = true;
+    while (*c_str) {
+        if (ps_curr_char(ps) != *c_str) {
+            found = false;
+            break;
+        }
+
+        ps->pos++;
+        c_str++;
+    }
+
+    if (!found) ps->pos = backup_pos;
+
+    return found;
+}
+
+static inline
+bool ps_match_digits (struct parser_state_t *ps)
+{
+    bool found = false;
+    if (pos_is_digit(ps)) {
+        found = true;
+        while (pos_is_digit(ps)) {
+            ps->pos++;
+        }
+    }
+    return found;
+}
+
+static inline
+void ps_consume_spaces (struct parser_state_t *ps)
+{
+    while (pos_is_space(ps)) {
+        ps->pos++;
+    }
+}
+
+sstring_t advance_line(struct parser_state_t *ps)
+{
+    char *start = ps->pos;
+    while (!pos_is_eof(ps) && ps_curr_char(ps) != '\n') {
+        ps->pos++;
+    }
+
+    // Advance over the \n character. We leave \n characters because they are
+    // handled by the inline parser. Sometimes they are ignored (between URLs),
+    // and sometimes they are replaced to space (multiline paragraphs).
+    ps->pos++; 
+
+    return SSTRING(start, ps->pos - start);
+}
+
 //function ps_parse_tag_attributes (ps)
 //{
 //    let attributes = {
 //        positional: [],
 //        named: {}
 //    }
-//    if (ps.str.charAt(ps.pos) === "[") {
-//        while (!ps.is_eof && ps.str.charAt(ps.pos) !== "]") {
+//    if (ps_curr_char(ps) === "[") {
+//        while (!ps.is_eof && ps_curr_char(ps) !== "]") {
 //            ps.pos++;
 //
 //            let start = ps.pos;
-//            if (ps.str.charAt(ps.pos) !== "\"") {
+//            if (ps_curr_char(ps) !== "\"") {
 //                // TODO: Allow quote strings for values. This is to allow
 //                // values containing "," or "]".
 //            }
 //
-//            while (ps.str.charAt(ps.pos) !== "," &&
-//                   ps.str.charAt(ps.pos) !== "=" &&
-//                   ps.str.charAt(ps.pos) !== "]") {
+//            while (ps_curr_char(ps) !== "," &&
+//                   ps_curr_char(ps) !== "=" &&
+//                   ps_curr_char(ps) !== "]") {
 //                ps.pos++;
 //            }
 //
-//            if (ps.str.charAt(ps.pos) === "," || ps.str.charAt(ps.pos) === "]") {
-//                let value = ps.str.substr(start, ps.pos - start).trim();
+//            if (ps_curr_char(ps) === "," || ps_curr_char(ps) === "]") {
+//                let value = sstr_trim(SSTRING(start, ps.pos - start));
 //                attributes.positional.push (value)
 //
 //            } else {
-//                let name = ps.str.substr(start, ps.pos - start).trim();
+//                let name = sstr_trim(SSTRING(start, ps.pos - start));
 //
 //                ps.pos++;
 //                let value_start = ps.pos;
-//                while (ps.str.charAt(ps.pos) !== "," &&
-//                       ps.str.charAt(ps.pos) !== "]") {
+//                while (ps_curr_char(ps) !== "," &&
+//                       ps_curr_char(ps) !== "]") {
 //                    ps.pos++;
 //                }
 //
-//                let value = ps.str.substr(value_start, ps.pos - value_start).trim();
+//                let value = sstr_trim(SSTRING(value_start, ps.pos - value_start));
 //
 //                attributes.named[name] = value
 //            }
 //
-//            if (ps.str.charAt(ps.pos) !== "]") {
+//            if (ps_curr_char(ps) !== "]") {
 //                ps.pos++;
 //            }
 //        }
@@ -343,7 +410,122 @@ struct user_tag_t {
 //
 //    return attributes;
 //}
-//
+
+struct token_t ps_next_peek(struct parser_state_t *ps)
+{
+    struct token_t _tok = {0};
+    struct token_t *tok = &_tok;
+
+    char *backup_pos = ps->pos;
+    ps_consume_spaces (ps);
+
+    tok->type = TOKEN_TYPE_PARAGRAPH;
+    char *non_space_pos = ps->pos;
+    if (pos_is_eof(ps)) {
+        ps->is_eof = true;
+        ps->is_eol = true;
+        tok->type = TOKEN_TYPE_END_OF_FILE;
+
+    } else if (ps_match_str(ps, "- ") || ps_match_str(ps, "* ")) {
+        ps_consume_spaces (ps);
+
+        tok->type = TOKEN_TYPE_BULLET_LIST;
+        tok->value = SSTRING(non_space_pos, 1);
+        tok->margin = non_space_pos - backup_pos;
+        tok->content_start = ps->pos - non_space_pos;
+
+    } else if (ps_match_digits(ps)) {
+        char *number_end = ps->pos;
+        if (ps->pos - non_space_pos <= 9 && ps_match_str(ps, ". ")) {
+            ps_consume_spaces (ps);
+
+            tok->type = TOKEN_TYPE_NUMBERED_LIST;
+            tok->value = SSTRING(non_space_pos, number_end - non_space_pos);
+            tok->margin = non_space_pos - backup_pos;
+            tok->content_start = ps->pos - non_space_pos;
+
+        } else {
+            // It wasn't a numbered list marker, restore position.
+            ps->pos = backup_pos;
+        }
+
+    } else if (ps_match_str(ps, "#")) {
+        int heading_number = 1;
+        while (ps_curr_char(ps) == '#') {
+            heading_number++;
+            ps->pos++;
+        }
+
+        if (pos_is_space (ps) && heading_number <= 6) {
+            ps_consume_spaces (ps);
+
+            tok->value = sstr_trim(advance_line (ps));
+            tok->is_eol = true;
+            tok->margin = non_space_pos - backup_pos;
+            tok->type = TOKEN_TYPE_TITLE;
+            tok->heading_number = heading_number;
+        }
+
+    } else if (ps_match_str(ps, "\\code")) {
+        //ps_parse_tag_attributes(ps);
+
+        if (ps_match_str(ps, "{")) {
+            tok->type = TOKEN_TYPE_CODE_HEADER;
+            while (pos_is_space(ps) || ps_curr_char(ps) == '\n') {
+                ps->pos++;
+            }
+
+        } else {
+            // False alarm, this was an inline code block, restore position.
+            ps->pos = backup_pos;
+        }
+
+    } else if (ps_match_str(ps, "|")) {
+        ps->pos++;
+
+        tok->value = advance_line (ps);
+        tok->is_eol = true;
+        tok->type = TOKEN_TYPE_CODE_LINE;
+
+    } else if (ps_match_str(ps, "\n")) {
+        ps->pos++;
+
+        tok->type = TOKEN_TYPE_BLANK_LINE;
+    }
+
+    if (tok->type == TOKEN_TYPE_PARAGRAPH) {
+        tok->value = advance_line (ps);
+        tok->is_eol = true;
+    }
+
+
+    // Because we are only peeking, restore the old position and store the
+    // resulting one in a separate variable.
+    assert (!ps->is_peek && "Trying to peek more than once in a row");
+    ps->is_peek = true;
+    ps->token_peek = *tok;
+    ps->pos_peek = ps->pos;
+    ps->pos = backup_pos;
+
+    printf ("(peek) %s: '%.*s'\n", token_type_names[ps->token.type], ps->token.value.len, ps->token.value.s);
+
+    return ps->token_peek;
+}
+
+struct token_t ps_next(struct parser_state_t *ps) {
+    if (!ps->is_peek) {
+        ps_next_peek(ps);
+    }
+
+    ps->pos = ps->pos_peek;
+    ps->token = ps->token_peek;
+    ps->is_peek = false;
+
+    printf ("%s: '%.*s'\n", token_type_names[ps->token.type], ps->token.value.len, ps->token.value.s);
+
+    return ps->token;
+}
+
 //function ps_parse_tag (ps)
 //{
 //    let tag = {
@@ -354,9 +536,9 @@ struct user_tag_t {
 //    let attributes = ps_parse_tag_attributes(ps);
 //    let content = "";
 //
-//    ps_expect_content (ps, NoteTokenType.OPERATOR, "{")
+//    ps_expect_content (ps, TOKEN_TYPE_OPERATOR, "{")
 //    tok = ps_next_content(ps)
-//    while (!ps.is_eof && !ps.error && !ps_match(ps, NoteTokenType.OPERATOR, "}")) {
+//    while (!ps.is_eof && !ps.error && !ps_match(ps, TOKEN_TYPE_OPERATOR, "}")) {
 //        content += tok.value
 //        tok = ps_next_content(ps)
 //    }
@@ -368,7 +550,7 @@ struct user_tag_t {
 //
 //    return tag;
 //}
-//
+
 //function ps_parse_tag_balanced_braces (ps)
 //{
 //    let tag = {
@@ -386,136 +568,7 @@ struct user_tag_t {
 //
 //    return tag;
 //}
-//
-//function ps_next_peek(ps)
-//{
-//    // TODO: Forbid calling peek twice in a row. ps_next() must be called in
-//    // between because we don't support arbitrarily deep peeking, if we did, we
-//    // would have to implement this as a stack with push and pop.
-//
-//    let tok = new Token();
-//
-//    let backup_pos = ps.pos;
-//    while (pos_is_space(ps)) {
-//        ps.pos++
-//    }
-//
-//    tok.value = null;
-//    tok.type = NoteTokenType.PARAGRAPH;
-//    let non_space_pos = ps.pos;
-//    if (pos_is_eof(ps)) {
-//        ps.is_eof = true;
-//        ps.is_eol = true;
-//        tok.type = NoteTokenType.EOF;
-//
-//    } else if (str_at(ps.str, ps.pos, "- ") || str_at(ps.str, ps.pos, "* ")) {
-//        ps.pos++;
-//        while (pos_is_space(ps)) {
-//            ps.pos++;
-//        }
-//
-//        tok.type = NoteTokenType.BULLET_LIST;
-//        tok.value = ps.str.charAt(non_space_pos);
-//        tok.margin = non_space_pos - backup_pos;
-//        tok.content_start = ps.pos - non_space_pos;
-//
-//    } else if (pos_is_digit(ps)) {
-//        while (pos_is_digit(ps)) {
-//            ps.pos++;
-//        }
-//
-//        let number_end = ps.pos;
-//        if (str_at(ps.str, ps.pos, ". ") && ps.pos - non_space_pos <= 9) {
-//            ps.pos++;
-//            while (pos_is_space(ps)) {
-//                ps.pos++;
-//            }
-//
-//            tok.type = NoteTokenType.NUMBERED_LIST;
-//            tok.value = ps.str.substr(non_space_pos, number_end - non_space_pos);
-//            tok.margin = non_space_pos - backup_pos;
-//            tok.content_start = ps.pos - non_space_pos;
-//
-//        } else {
-//            // It wasn't a numbered list marker, restore position.
-//            ps.pos = backup_pos;
-//        }
-//
-//    } else if (ps.str.charAt(ps.pos) === "#") {
-//        let heading_number = 1;
-//        ps.pos++
-//        while (ps.str.charAt(ps.pos) === "#") {
-//            heading_number++;
-//            ps.pos++
-//        }
-//
-//        if (pos_is_space (ps) && heading_number <= 6) {
-//            while (pos_is_space(ps)) {
-//                ps.pos++;
-//            }
-//
-//            tok.value = advance_line (ps).trim();
-//            tok.is_eol = true;
-//            tok.margin = non_space_pos - backup_pos;
-//            tok.type = NoteTokenType.TITLE;
-//            tok.heading_number = heading_number;
-//        }
-//
-//    } else if (str_at(ps.str, ps.pos, "\\code")) {
-//        ps.pos += "\\code".length;
-//        let attributes = ps_parse_tag_attributes(ps);
-//
-//        if (ps.str.charAt(ps.pos) !== "{") {
-//            tok.type = NoteTokenType.CODE_HEADER;
-//            while (pos_is_space(ps) || ps.str.charAt(ps.pos) === "\n") {
-//                ps.pos++;
-//            }
-//
-//        } else {
-//            // False alarm, this was an inline code block, restore position.
-//            ps.pos = backup_pos;
-//        }
-//
-//    } else if (ps.str.charAt(ps.pos) === "|") {
-//        ps.pos++;
-//        tok.value = advance_line (ps);
-//        tok.is_eol = true;
-//        tok.type = NoteTokenType.CODE_LINE;
-//
-//    } else if (ps.str.charAt(ps.pos) === "\n") {
-//        ps.pos++;
-//        tok.type = NoteTokenType.BLANK_LINE;
-//    }
-//
-//    if (tok.type === NoteTokenType.PARAGRAPH) {
-//        tok.value = advance_line (ps);
-//        tok.is_eol = true;
-//    }
-//
-//
-//    // Because we are only peeking, restore the old position and store the
-//    // resulting one in a separate variable.
-//    ps.token_peek = tok;
-//    ps.pos_peek = ps.pos;
-//    ps.pos = backup_pos;
-//
-//    return ps.token_peek;
-//}
-//
-//function ps_next(ps) {
-//    if (ps.token_peek === null) {
-//        ps_next_peek(ps);
-//    }
-//
-//    ps.pos = ps.pos_peek;
-//    ps.token = ps.token_peek;
-//    ps.token_peek = null;
-//
-//    //console.log (ps.token.type + ": " + "'" + ps.token.value + "'");
-//
-//    return ps.token;
-//}
-//
+
 //function ps_match(ps, type, value)
 //{
 //    let match = false;
@@ -531,35 +584,35 @@ struct user_tag_t {
 //
 //    return match
 //}
-//
+
 //let ContextType = {
 //    ROOT: 0,
 //    HTML: 1,
 //}
-//
+
 //function ParseContext (type, dom_element) {
 //    this.type = type
 //    this.dom_element = dom_element
 //
 //    this.list_type = null
 //}
-//
+
 //function array_end(array)
 //{
 //    return array[array.length - 1]
 //}
-//
+
 //function append_dom_element (context_stack, dom_element)
 //{
 //    let head_ctx = array_end(context_stack)
 //    head_ctx.dom_element.appendChild(dom_element)
 //}
-//
+
 //function html_escape (str)
 //{
 //    return str.replaceAll("<", "&lt;").replaceAll(">", "&gt;")
 //}
-//
+
 //function push_new_html_context (context_stack, tag)
 //{
 //    let dom_element = document.createElement(tag);
@@ -569,13 +622,13 @@ struct user_tag_t {
 //    context_stack.push(new_context);
 //    return new_context;
 //}
-//
+
 //function pop_context (context_stack)
 //{
 //    let curr_ctx = context_stack.pop()
 //    return array_end(context_stack)
 //}
-//
+
 //// This function returns the same string that was parsed as the current token.
 //// It's used as fallback, for example in the case of ',' and '#' characters in
 //// the middle of paragraphs, or unrecognized tag sequences.
@@ -587,21 +640,21 @@ struct user_tag_t {
 //function ps_literal_token (ps)
 //{
 //    let res = ps.token.value != null ? ps.token.value : ""
-//    if (ps_match (ps, NoteTokenType.TAG, null)) {
+//    if (ps_match (ps, TOKEN_TYPE_TAG, null)) {
 //        res = "\\" + ps.token.value
 //    }
 //
 //    return res
 //}
-//
+
 //function ps_next_content(ps)
 //{
 //    let pos_is_operator = function(ps) {
-//        return char_in_str(ps.str.charAt(ps.pos), ",=[]{}\\");
+//        return char_in_str(ps_curr_char(ps), ",=[]{}\\");
 //    }
 //
 //    let pos_is_space = function(ps) {
-//        return char_in_str(ps.str.charAt(ps.pos), " \t");
+//        return char_in_str(ps_curr_char(ps), " \t");
 //    }
 //
 //    let pos_is_eof = function(ps) {
@@ -613,7 +666,7 @@ struct user_tag_t {
 //    if (pos_is_eof(ps)) {
 //        ps.is_eof = true;
 //
-//    } else if (ps.str.charAt(ps.pos) === "\\") {
+//    } else if (ps_curr_char(ps) === "\\") {
 //        // :tag_parsing
 //        ps.pos++;
 //
@@ -621,31 +674,31 @@ struct user_tag_t {
 //        while (!pos_is_eof(ps) && !pos_is_operator(ps) && !pos_is_space(ps)) {
 //            ps.pos++;
 //        }
-//        tok.value = ps.str.substr(start, ps.pos - start);
-//        tok.type = NoteTokenType.TAG;
+//        tok.value = SSTRING(start, ps.pos - start);
+//        tok.type = TOKEN_TYPE_TAG;
 //
 //    } else if (pos_is_operator(ps)) {
-//        tok.type = NoteTokenType.OPERATOR;
-//        tok.value = ps.str.charAt(ps.pos);
+//        tok.type = TOKEN_TYPE_OPERATOR;
+//        tok.value = ps_curr_char(ps);
 //        ps.pos++;
 //
-//    } else if (pos_is_space(ps) || ps.str.charAt(ps.pos) === "\n") {
+//    } else if (pos_is_space(ps) || ps_curr_char(ps) === "\n") {
 //        // This consumes consecutive spaces into a single one.
-//        while (pos_is_space(ps) || ps.str.charAt(ps.pos) === "\n") {
+//        while (pos_is_space(ps) || ps_curr_char(ps) === "\n") {
 //            ps.pos++;
 //        }
 //
 //        tok.value = " ";
-//        tok.type = NoteTokenType.SPACE;
+//        tok.type = TOKEN_TYPE_SPACE;
 //
 //    } else {
 //        let start = ps.pos;
-//        while (!pos_is_eof(ps) && !pos_is_operator(ps) && !pos_is_space(ps) && ps.str.charAt(ps.pos) !== "\n") {
+//        while (!pos_is_eof(ps) && !pos_is_operator(ps) && !pos_is_space(ps) && ps_curr_char(ps) !== "\n") {
 //            ps.pos++;
 //        }
 //
-//        tok.value = ps.str.substr(start, ps.pos - start);
-//        tok.type = NoteTokenType.TEXT;
+//        tok.value = SSTRING(start, ps.pos - start);
+//        tok.type = TOKEN_TYPE_TEXT;
 //    }
 //
 //    if (pos_is_eof(ps)) {
@@ -657,7 +710,7 @@ struct user_tag_t {
 //    //console.log(token_type_names[tok.type] + ": " + tok.value)
 //    return tok;
 //}
-//
+
 //function ps_expect_content(ps, type, value)
 //{
 //    ps_next_content (ps)
@@ -678,21 +731,21 @@ struct user_tag_t {
 //        }
 //    }
 //}
-//
+
 //function parse_balanced_brace_block(ps)
 //{
 //    let content = null
 //
-//    if (ps.str.charAt(ps.pos) === "{") {
+//    if (ps_curr_char(ps) === "{") {
 //        content = "";
 //        let brace_level = 1;
-//        ps_expect_content (ps, NoteTokenType.OPERATOR, "{");
+//        ps_expect_content (ps, TOKEN_TYPE_OPERATOR, "{");
 //
 //        while (!ps.is_eof && brace_level != 0) {
 //            ps_next_content (ps);
-//            if (ps_match (ps, NoteTokenType.OPERATOR, "{")) {
+//            if (ps_match (ps, TOKEN_TYPE_OPERATOR, "{")) {
 //                brace_level++;
-//            } else if (ps_match (ps, NoteTokenType.OPERATOR, "}")) {
+//            } else if (ps_match (ps, TOKEN_TYPE_OPERATOR, "}")) {
 //                brace_level--;
 //            }
 //
@@ -704,7 +757,7 @@ struct user_tag_t {
 //
 //    return content;
 //}
-//
+
 //function compute_media_size (attributes, aspect_ratio, max_width)
 //{
 //    let a_width = undefined;
@@ -741,7 +794,7 @@ struct user_tag_t {
 //
 //    return [width, height];
 //}
-//
+
 //// This function parses the content of a block of text. The formatting is
 //// limited to tags that affect the formating inline. This parsing function
 //// will not add nested blocks like paragraphs, lists, code blocks etc.
@@ -756,19 +809,19 @@ struct user_tag_t {
 //    while (!ps.is_eof && !ps.error) {
 //        let tok = ps_next_content (ps);
 //
-//        if (ps_match(ps, NoteTokenType.TEXT, null) || ps_match(ps, NoteTokenType.SPACE, null)) {
+//        if (ps_match(ps, TOKEN_TYPE_TEXT, null) || ps_match(ps, TOKEN_TYPE_SPACE, null)) {
 //            let curr_ctx = array_end(context_stack);
 //            curr_ctx.dom_element.innerHTML += tok.value;
 //
-//        } else if (ps_match(ps, NoteTokenType.OPERATOR, "}") && array_end(context_stack).type !== ContextType.ROOT) {
+//        } else if (ps_match(ps, TOKEN_TYPE_OPERATOR, "}") && array_end(context_stack).type !== ContextType.ROOT) {
 //            pop_context (context_stack);
 //
-//        } else if (ps_match(ps, NoteTokenType.TAG, "i") || ps_match(ps, NoteTokenType.TAG, "b")) {
+//        } else if (ps_match(ps, TOKEN_TYPE_TAG, "i") || ps_match(ps, TOKEN_TYPE_TAG, "b")) {
 //            let tag = ps.token.value;
-//            ps_expect_content (ps, NoteTokenType.OPERATOR, "{");
+//            ps_expect_content (ps, TOKEN_TYPE_OPERATOR, "{");
 //            push_new_html_context (context_stack, tag)
 //
-//        } else if (ps_match(ps, NoteTokenType.TAG, "link")) {
+//        } else if (ps_match(ps, TOKEN_TYPE_TAG, "link")) {
 //            let tag = ps_parse_tag (ps);
 //
 //            // We parse the URL from the title starting at the end. I thinkg is
@@ -798,7 +851,7 @@ struct user_tag_t {
 //
 //            append_dom_element(context_stack, link_element);
 //
-//        } else if (ps_match(ps, NoteTokenType.TAG, "youtube")) {
+//        } else if (ps_match(ps, TOKEN_TYPE_TAG, "youtube")) {
 //            let tag = ps_parse_tag (ps);
 //
 //            let video_id;
@@ -823,7 +876,7 @@ struct user_tag_t {
 //            dom_element.setAttribute("allowfullscreen", "");
 //            append_dom_element(context_stack, dom_element);
 //
-//        } else if (ps_match(ps, NoteTokenType.TAG, "image")) {
+//        } else if (ps_match(ps, TOKEN_TYPE_TAG, "image")) {
 //            let tag = ps_parse_tag (ps);
 //
 //            let img_element = document.createElement("img")
@@ -831,7 +884,7 @@ struct user_tag_t {
 //            img_element.setAttribute("width", content_width)
 //            append_dom_element(context_stack, img_element);
 //
-//        } else if (ps_match(ps, NoteTokenType.TAG, "code")) {
+//        } else if (ps_match(ps, TOKEN_TYPE_TAG, "code")) {
 //            let attributes = ps_parse_tag_attributes(ps);
 //            // TODO: Actually do something with the passed language name
 //
@@ -844,7 +897,7 @@ struct user_tag_t {
 //                append_dom_element(context_stack, code_element);
 //            }
 //
-//        } else if (ps_match(ps, NoteTokenType.TAG, "note")) {
+//        } else if (ps_match(ps, TOKEN_TYPE_TAG, "note")) {
 //            let tag = ps_parse_tag (ps);
 //            let note_title = tag.content;
 //
@@ -856,7 +909,7 @@ struct user_tag_t {
 //
 //            append_dom_element(context_stack, link_element);
 //
-//        } else if (ps_match(ps, NoteTokenType.TAG, "html")) {
+//        } else if (ps_match(ps, TOKEN_TYPE_TAG, "html")) {
 //            // TODO: How can we support '}' characters here?. I don't thing
 //            // assuming there will be balanced braces is an option here, as it
 //            // is in the \code tag. We most likely will need to implement user
@@ -876,8 +929,10 @@ struct user_tag_t {
 //            head_ctx.dom_element.innerHTML += ps_literal_token(ps);
 //        }
 //    }
-//}
 //
+//    ps_destroy (ps);
+//}
+
 //let BlockType = {
 //    ROOT: 0,
 //    LIST: 1,
@@ -887,7 +942,7 @@ struct user_tag_t {
 //    PARAGRAPH: 4,
 //    CODE: 5
 //}
-//
+
 //function Block (type, margin, block_content, inline_content, list_marker)
 //{
 //    this.type = type;
@@ -915,17 +970,17 @@ struct user_tag_t {
 //    // "   10.   C" -> 6
 //    this.content_start = 0;
 //}
-//
+
 //function leaf_block_new(type, margin, inline_content)
 //{
 //    return new Block(type, margin, null, inline_content, null);
 //}
-//
+
 //function container_block_new(type, margin, list_marker=null, block_content=[])
 //{
 //    return new Block(type, margin, block_content, null, list_marker);
 //}
-//
+
 //function push_block (block_stack, new_block)
 //{
 //    let curr_block = array_end(block_stack);
@@ -936,7 +991,7 @@ struct user_tag_t {
 //    block_stack.push(new_block);
 //    return new_block;
 //}
-//
+
 //// TODO: User callbacks will be modifying the tree. It's possible the user
 //// messes up and for example adds a cycle into the tree, we should detect such
 //// problem and avoid maybe later entering an infinite loop.
@@ -951,13 +1006,15 @@ struct user_tag_t {
 //        });
 //
 //    } else {
-//        let ps = new ParserState(block.inline_content);
+//        struct parser_state_t _ps = {0};
+//        struct parser_state_t *ps = &_ps;
+//        ps_init (block->inline_content);
 //
 //        let string_replacements = [];
 //        while (!ps.is_eof && !ps.error) {
 //            let start = ps.pos;
 //            let tok = ps_next_content (ps);
-//            if (ps_match(ps, NoteTokenType.TAG, null) && __g_user_tags[tok.value] !== undefined) {
+//            if (ps_match(ps, TOKEN_TYPE_TAG, null) && __g_user_tags[tok.value] !== undefined) {
 //                let user_tag = __g_user_tags[tok.value];
 //                let result = user_tag.callback (ps, root, block, user_tag.user_data);
 //
@@ -980,9 +1037,10 @@ struct user_tag_t {
 //        // TODO: What will happen if a parse error occurs here?. We should print
 //        // some details about which user function failed by checking if there
 //        // is an error in ps.
+//        ps_destroy (ps);
 //    }
 //}
-//
+
 //function block_tree_to_dom (block, dom_element)
 //{
 //    if (block.type === BlockType.PARAGRAPH) {
@@ -1033,7 +1091,7 @@ struct user_tag_t {
 //
 //    } else if (block.type === BlockType.LIST) {
 //        let new_dom_element = document.createElement("ul");
-//        if (block.list_type === NoteTokenType.NUMBERED_LIST) {
+//        if (block.list_type === TOKEN_TYPE_NUMBERED_LIST) {
 //            new_dom_element = document.createElement("ol");
 //        }
 //        dom_element.appendChild(new_dom_element);
@@ -1051,126 +1109,128 @@ struct user_tag_t {
 //        });
 //    }
 //}
-//
-//function parse_note_text(note_text)
-//{
-//    let ps = new ParserState(note_text)
-//
-//    let root_block = new container_block_new(BlockType.ROOT, 0);
-//
-//    // Expect a title as the start of the note, fail if no title is found.
-//    let tok = ps_next_peek (ps)
-//    if (tok.type !== NoteTokenType.TITLE) {
-//        ps.error = true;
-//        ps.error_msg = sprintf("Notes must start with a Heading 1 title.");
-//    }
-//
-//
-//    // Parse note's content
-//    let block_stack = [root_block];
-//    while (!ps.is_eof && !ps.error) {
-//        let curr_block_idx = 0;
-//        let tok = ps_next(ps);
-//
-//        // Match the indentation of the received token.
-//        let next_stack_block = block_stack[curr_block_idx+1]
-//        while (curr_block_idx+1 < block_stack.length &&
-//               next_stack_block.type === BlockType.LIST &&
-//               (tok.margin > next_stack_block.margin ||
-//                   tok.type === next_stack_block.list_type && tok.margin === next_stack_block.margin)) {
-//            curr_block_idx++;
-//            next_stack_block = block_stack[curr_block_idx+1];
-//        }
-//
-//        // Pop all blocks after the current index
-//        block_stack.length = curr_block_idx+1;
-//
-//        if (ps_match(ps, NoteTokenType.TITLE, null)) {
-//            let prnt = block_stack[curr_block_idx];
-//            let heading_block = push_block (block_stack, leaf_block_new(BlockType.HEADING, tok.margin, tok.value));
-//            heading_block.heading_number = tok.heading_number;
-//
-//        } else if (ps_match(ps, NoteTokenType.PARAGRAPH, null)) {
-//            let prnt = block_stack[curr_block_idx];
-//            let new_paragraph = push_block (block_stack, leaf_block_new(BlockType.PARAGRAPH, tok.margin, tok.value));
-//
-//            // Append all paragraph continuation lines. This ensures all paragraphs
-//            // found at the beginning of the iteration followed an empty line.
-//            let tok_peek = ps_next_peek(ps);
-//            while (tok_peek.is_eol && tok_peek.type == NoteTokenType.PARAGRAPH) {
-//                new_paragraph.inline_content += tok_peek.value;
-//                ps_next(ps);
-//
-//                tok_peek = ps_next_peek(ps);
-//            }
-//
-//        } else if (ps_match(ps, NoteTokenType.CODE_HEADER, null)) {
-//            let new_code_block = push_block (block_stack, leaf_block_new(BlockType.CODE, tok.margin, ""));
-//
-//            let min_leading_spaces = Infinity;
-//            let is_start = true; // Used to strip trailing empty lines.
-//            let tok_peek = ps_next_peek(ps);
-//            while (tok_peek.is_eol && tok_peek.type == NoteTokenType.CODE_LINE) {
-//                ps_next(ps);
-//
-//                if (!is_start || !is_empty_line(tok_peek.value)) {
-//                    is_start = false;
-//
-//                    let space_count = tok_peek.value.search(/\S/)
-//                    if (space_count >= 0) { // Ignore empty where we couldn't find any non-whitespace character.
-//                        min_leading_spaces = Math.min (min_leading_spaces, space_count)
-//                    }
-//
-//                    new_code_block.inline_content += html_escape(tok_peek.value);
-//                }
-//
-//                tok_peek = ps_next_peek(ps);
-//            }
-//
-//            // Remove the most leading spaces we can remove. I call this
-//            // automatic space normalization.
-//            if (min_leading_spaces != Infinity && min_leading_spaces > 0) {
-//                new_code_block.inline_content = new_code_block.inline_content.substr(min_leading_spaces)
-//                new_code_block.inline_content = new_code_block.inline_content.replaceAll("\n" + " ".repeat(min_leading_spaces), "\n")
-//            }
-//
-//
-//        } else if (ps_match(ps, NoteTokenType.BULLET_LIST, null) || ps_match(ps, NoteTokenType.NUMBERED_LIST, null)) {
-//            let prnt = block_stack[curr_block_idx];
-//            if (prnt.type != BlockType.LIST ||
-//                tok.margin >= prnt.margin + prnt.content_start) {
-//                let list_block = push_block (block_stack, container_block_new(BlockType.LIST, tok.margin, tok.value));
-//                list_block.content_start = tok.content_start;
-//                list_block.list_type = tok.type;
-//            }
-//
-//            push_block(block_stack, container_block_new(BlockType.LIST_ITEM, tok.margin, tok.value));
-//
-//            let tok_peek = ps_next_peek(ps);
-//            if (tok_peek.is_eol && tok_peek.type == NoteTokenType.PARAGRAPH) {
-//                ps_next(ps);
-//
-//                // Use list's margin... maybe this will never be read?...
-//                let new_paragraph = push_block(block_stack, leaf_block_new(BlockType.PARAGRAPH, tok.margin, tok_peek.value));
-//
-//                // Append all paragraph continuation lines. This ensures all paragraphs
-//                // found at the beginning of the iteration followed an empty line.
-//                tok_peek = ps_next_peek(ps);
-//                while (tok_peek.is_eol && tok_peek.type == NoteTokenType.PARAGRAPH) {
-//                    new_paragraph.inline_content += tok_peek.value;
-//                    ps_next(ps);
-//
-//                    tok_peek = ps_next_peek(ps);
-//                }
-//            }
-//        }
-//    }
-//
-//    block_tree_user_callbacks (root_block)
-//
-//    return root_block;
-//}
 
+void parse_note_text(char *note_text)
+{
+    struct parser_state_t _ps = {0};
+    struct parser_state_t *ps = &_ps;
+    ps_init (ps, note_text);
+
+    //let root_block = new container_block_new(BlockType.ROOT, 0);
+
+    // Expect a title as the start of the note, fail if no title is found.
+    struct token_t tok = ps_next_peek (ps);
+    if (tok.type != TOKEN_TYPE_TITLE) {
+        ps->error = true;
+        //ps->error_msg = sprintf("Notes must start with a Heading 1 title.");
+    }
+
+
+    //// Parse note's content
+    //let block_stack = [root_block];
+    //while (!ps.is_eof && !ps.error) {
+    //    let curr_block_idx = 0;
+    //    let tok = ps_next(ps);
+
+    //    // Match the indentation of the received token.
+    //    let next_stack_block = block_stack[curr_block_idx+1]
+    //    while (curr_block_idx+1 < block_stack.length &&
+    //           next_stack_block.type === BlockType.LIST &&
+    //           (tok.margin > next_stack_block.margin ||
+    //               tok.type === next_stack_block.list_type && tok.margin === next_stack_block.margin)) {
+    //        curr_block_idx++;
+    //        next_stack_block = block_stack[curr_block_idx+1];
+    //    }
+
+    //    // Pop all blocks after the current index
+    //    block_stack.length = curr_block_idx+1;
+
+    //    if (ps_match(ps, TOKEN_TYPE_TITLE, null)) {
+    //        let prnt = block_stack[curr_block_idx];
+    //        let heading_block = push_block (block_stack, leaf_block_new(BlockType.HEADING, tok.margin, tok.value));
+    //        heading_block.heading_number = tok.heading_number;
+
+    //    } else if (ps_match(ps, TOKEN_TYPE_PARAGRAPH, null)) {
+    //        let prnt = block_stack[curr_block_idx];
+    //        let new_paragraph = push_block (block_stack, leaf_block_new(BlockType.PARAGRAPH, tok.margin, tok.value));
+
+    //        // Append all paragraph continuation lines. This ensures all paragraphs
+    //        // found at the beginning of the iteration followed an empty line.
+    //        let tok_peek = ps_next_peek(ps);
+    //        while (tok_peek.is_eol && tok_peek.type == TOKEN_TYPE_PARAGRAPH) {
+    //            new_paragraph.inline_content += tok_peek.value;
+    //            ps_next(ps);
+
+    //            tok_peek = ps_next_peek(ps);
+    //        }
+
+    //    } else if (ps_match(ps, TOKEN_TYPE_CODE_HEADER, null)) {
+    //        let new_code_block = push_block (block_stack, leaf_block_new(BlockType.CODE, tok.margin, ""));
+
+    //        let min_leading_spaces = Infinity;
+    //        let is_start = true; // Used to strip trailing empty lines.
+    //        let tok_peek = ps_next_peek(ps);
+    //        while (tok_peek.is_eol && tok_peek.type == TOKEN_TYPE_CODE_LINE) {
+    //            ps_next(ps);
+
+    //            if (!is_start || !is_empty_line(tok_peek.value)) {
+    //                is_start = false;
+
+    //                let space_count = tok_peek.value.search(/\S/)
+    //                if (space_count >= 0) { // Ignore empty where we couldn't find any non-whitespace character.
+    //                    min_leading_spaces = Math.min (min_leading_spaces, space_count)
+    //                }
+
+    //                new_code_block.inline_content += html_escape(tok_peek.value);
+    //            }
+
+    //            tok_peek = ps_next_peek(ps);
+    //        }
+
+    //        // Remove the most leading spaces we can remove. I call this
+    //        // automatic space normalization.
+    //        if (min_leading_spaces != Infinity && min_leading_spaces > 0) {
+    //            new_code_block.inline_content = new_code_block.inline_content.substr(min_leading_spaces)
+    //            new_code_block.inline_content = new_code_block.inline_content.replaceAll("\n" + " ".repeat(min_leading_spaces), "\n")
+    //        }
+
+
+    //    } else if (ps_match(ps, TOKEN_TYPE_BULLET_LIST, null) || ps_match(ps, TOKEN_TYPE_NUMBERED_LIST, null)) {
+    //        let prnt = block_stack[curr_block_idx];
+    //        if (prnt.type != BlockType.LIST ||
+    //            tok.margin >= prnt.margin + prnt.content_start) {
+    //            let list_block = push_block (block_stack, container_block_new(BlockType.LIST, tok.margin, tok.value));
+    //            list_block.content_start = tok.content_start;
+    //            list_block.list_type = tok.type;
+    //        }
+
+    //        push_block(block_stack, container_block_new(BlockType.LIST_ITEM, tok.margin, tok.value));
+
+    //        let tok_peek = ps_next_peek(ps);
+    //        if (tok_peek.is_eol && tok_peek.type == TOKEN_TYPE_PARAGRAPH) {
+    //            ps_next(ps);
+
+    //            // Use list's margin... maybe this will never be read?...
+    //            let new_paragraph = push_block(block_stack, leaf_block_new(BlockType.PARAGRAPH, tok.margin, tok_peek.value));
+
+    //            // Append all paragraph continuation lines. This ensures all paragraphs
+    //            // found at the beginning of the iteration followed an empty line.
+    //            tok_peek = ps_next_peek(ps);
+    //            while (tok_peek.is_eol && tok_peek.type == TOKEN_TYPE_PARAGRAPH) {
+    //                new_paragraph.inline_content += tok_peek.value;
+    //                ps_next(ps);
+
+    //                tok_peek = ps_next_peek(ps);
+    //            }
+    //        }
+    //    }
+    //}
+
+    //block_tree_user_callbacks (root_block)
+    //ps_destroy (ps);
+
+    //return root_block;
+}
 
 char* markup_to_html (mem_pool_t *pool, char *markup, char *id, int x)
 {
@@ -1197,11 +1257,12 @@ char* markup_to_html (mem_pool_t *pool, char *markup, char *id, int x)
     html_builder_element_append_text (html, child, "Some Text!!");
     html_builder_element_append_child (html, root, child);
 
+    parse_note_text(markup);
     //struct markup_block_t *root_block = parse_note_text(markup);
 
     //block_tree_to_html(html, root_block);
 
-    char *res = html_builder_to_str (html, pool, 2);
+    char *res = "" /*html_builder_to_str (html, pool, 2)*/;
     //mem_pool_destroy (&html->pool);
 
     return res;
