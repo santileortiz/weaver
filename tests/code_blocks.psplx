@@ -1,4 +1,4 @@
-# Code Test
+# Code Styling
 
 Some initial paragraph with \code{inline} code.
 
@@ -20,5 +20,5 @@ Some initial paragraph with \code{inline} code.
 |       normalized,
 |   everything     else is  verbatim
 
-A multiline paragraph that starts with
+A multiline paragraph that so happens to start with an inline code tag
 \code{inline} code.
