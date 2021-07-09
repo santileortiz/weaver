@@ -12,7 +12,8 @@ int main(int argc, char** argv)
 {
     mem_pool_t pool = {0};
 
-    char *res = markup_to_html (&pool, "# TEST", "abcdefg", 0);
+    char *test_note = full_file_read (&pool, "tests/code_blocks.psplx", NULL);
+    char *res = markup_to_html (&pool, test_note, "1", 0);
     printf ("%s\n", res);
 
     return 0;

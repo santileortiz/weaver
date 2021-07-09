@@ -234,6 +234,8 @@ struct token_t {
 };
 
 struct parser_state_t {
+    mem_pool_t pool;
+
     bool error;
     bool error_msg;
     bool is_eof;
@@ -252,6 +254,11 @@ void ps_init (struct parser_state_t *ps, char *str)
 {
     ps->str = str;
     ps->pos = str;
+}
+
+void ps_destroy (struct parser_state_t *ps)
+{
+    mem_pool_destroy (&ps->pool);
 }
 
 bool char_in_str (char c, char *str)
@@ -302,6 +309,17 @@ bool is_empty_line (char *line)
     return *line == '\n' || *line == '\0';
 }
 
+static inline
+void ps_advance_char (struct parser_state_t *ps)
+{
+    if (!pos_is_eof(ps)) {
+        ps->pos++;
+
+    } else {
+        ps->is_eof = true;
+    }
+}
+
 // NOTE: c_str MUST be null terminated!!
 bool ps_match_str(struct parser_state_t *ps, char *c_str)
 {
@@ -314,7 +332,7 @@ bool ps_match_str(struct parser_state_t *ps, char *c_str)
             break;
         }
 
-        ps->pos++;
+        ps_advance_char (ps);
         c_str++;
     }
 
@@ -330,7 +348,7 @@ bool ps_match_digits (struct parser_state_t *ps)
     if (pos_is_digit(ps)) {
         found = true;
         while (pos_is_digit(ps)) {
-            ps->pos++;
+            ps_advance_char (ps);
         }
     }
     return found;
@@ -340,7 +358,7 @@ static inline
 void ps_consume_spaces (struct parser_state_t *ps)
 {
     while (pos_is_space(ps)) {
-        ps->pos++;
+        ps_advance_char (ps);
     }
 }
 
@@ -348,68 +366,86 @@ sstring_t advance_line(struct parser_state_t *ps)
 {
     char *start = ps->pos;
     while (!pos_is_eof(ps) && ps_curr_char(ps) != '\n') {
-        ps->pos++;
+        ps_advance_char (ps);
     }
 
     // Advance over the \n character. We leave \n characters because they are
     // handled by the inline parser. Sometimes they are ignored (between URLs),
     // and sometimes they are replaced to space (multiline paragraphs).
-    ps->pos++; 
+    ps_advance_char (ps);
 
     return SSTRING(start, ps->pos - start);
 }
 
-//function ps_parse_tag_attributes (ps)
-//{
-//    let attributes = {
-//        positional: [],
-//        named: {}
-//    }
-//    if (ps_curr_char(ps) === "[") {
-//        while (!ps.is_eof && ps_curr_char(ps) !== "]") {
-//            ps.pos++;
-//
-//            let start = ps.pos;
-//            if (ps_curr_char(ps) !== "\"") {
-//                // TODO: Allow quote strings for values. This is to allow
-//                // values containing "," or "]".
-//            }
-//
-//            while (ps_curr_char(ps) !== "," &&
-//                   ps_curr_char(ps) !== "=" &&
-//                   ps_curr_char(ps) !== "]") {
-//                ps.pos++;
-//            }
-//
-//            if (ps_curr_char(ps) === "," || ps_curr_char(ps) === "]") {
-//                let value = sstr_trim(SSTRING(start, ps.pos - start));
-//                attributes.positional.push (value)
-//
-//            } else {
-//                let name = sstr_trim(SSTRING(start, ps.pos - start));
-//
-//                ps.pos++;
-//                let value_start = ps.pos;
-//                while (ps_curr_char(ps) !== "," &&
-//                       ps_curr_char(ps) !== "]") {
-//                    ps.pos++;
-//                }
-//
-//                let value = sstr_trim(SSTRING(value_start, ps.pos - value_start));
-//
-//                attributes.named[name] = value
-//            }
-//
-//            if (ps_curr_char(ps) !== "]") {
-//                ps.pos++;
-//            }
-//        }
-//
-//        ps.pos++;
-//    }
-//
-//    return attributes;
-//}
+BINARY_TREE_NEW (sstring_map, sstring_t, sstring_t, strncmp(a.s, b.s, MIN(a.len, b.len)))
+
+struct sstring_ll_l {
+    sstring_t v;
+    struct sstring_ll_l *next;
+};
+
+struct tag_parameters_t {
+    struct sstring_ll_l *positional;
+    struct sstring_ll_l *positional_end;
+
+    struct sstring_map_tree_t named;
+};
+
+void ps_parse_tag_parameters (struct parser_state_t *ps, struct tag_parameters_t *parameters)
+{
+    if (parameters != NULL) {
+        parameters->named.pool = &ps->pool;
+    }
+
+    if (ps_curr_char(ps) == '[') {
+        while (!ps->is_eof && ps_curr_char(ps) != ']') {
+            ps_advance_char (ps);
+
+            char *start = ps->pos;
+            if (ps_curr_char(ps) != '\"') {
+                // TODO: Allow quote strings for values. This is to allow
+                // values containing "," or "]".
+            }
+
+            while (ps_curr_char(ps) != ',' &&
+                   ps_curr_char(ps) != '=' &&
+                   ps_curr_char(ps) != ']') {
+                ps_advance_char (ps);
+            }
+
+            if (ps_curr_char(ps) == ',' || ps_curr_char(ps) == ']') {
+                if (parameters != NULL) {
+                    LINKED_LIST_APPEND_NEW (&ps->pool, struct sstring_ll_l, parameters->positional, new_param);
+                    new_param->v = sstr_trim(SSTRING(start, ps->pos - start));
+                }
+
+            } else {
+                sstring_t name = sstr_trim(SSTRING(start, ps->pos - start));
+
+                // Advance over the '=' character
+                ps_advance_char (ps);
+
+                char *value_start = ps->pos;
+                while (ps_curr_char(ps) != ',' &&
+                       ps_curr_char(ps) != ']') {
+                    ps_advance_char (ps);
+                }
+
+                sstring_t value = sstr_trim(SSTRING(value_start, ps->pos - value_start));
+
+                if (parameters != NULL) {
+                    sstring_map_tree_insert (&parameters->named, name, value);
+                }
+            }
+
+            if (ps_curr_char(ps) != ']') {
+                ps_advance_char (ps);
+            }
+        }
+
+        ps_advance_char (ps);
+    }
+}
 
 struct token_t ps_next_peek(struct parser_state_t *ps)
 {
@@ -453,7 +489,7 @@ struct token_t ps_next_peek(struct parser_state_t *ps)
         int heading_number = 1;
         while (ps_curr_char(ps) == '#') {
             heading_number++;
-            ps->pos++;
+            ps_advance_char (ps);
         }
 
         if (pos_is_space (ps) && heading_number <= 6) {
@@ -467,12 +503,12 @@ struct token_t ps_next_peek(struct parser_state_t *ps)
         }
 
     } else if (ps_match_str(ps, "\\code")) {
-        //ps_parse_tag_attributes(ps);
+        ps_parse_tag_parameters(ps, NULL);
 
-        if (ps_match_str(ps, "{")) {
+        if (!ps_match_str(ps, "{")) {
             tok->type = TOKEN_TYPE_CODE_HEADER;
             while (pos_is_space(ps) || ps_curr_char(ps) == '\n') {
-                ps->pos++;
+                ps_advance_char (ps);
             }
 
         } else {
@@ -481,15 +517,11 @@ struct token_t ps_next_peek(struct parser_state_t *ps)
         }
 
     } else if (ps_match_str(ps, "|")) {
-        ps->pos++;
-
         tok->value = advance_line (ps);
         tok->is_eol = true;
         tok->type = TOKEN_TYPE_CODE_LINE;
 
     } else if (ps_match_str(ps, "\n")) {
-        ps->pos++;
-
         tok->type = TOKEN_TYPE_BLANK_LINE;
     }
 
@@ -507,7 +539,7 @@ struct token_t ps_next_peek(struct parser_state_t *ps)
     ps->pos_peek = ps->pos;
     ps->pos = backup_pos;
 
-    printf ("(peek) %s: '%.*s'\n", token_type_names[ps->token.type], ps->token.value.len, ps->token.value.s);
+    printf ("%s: '%.*s'\n", token_type_names[ps->token_peek.type], ps->token_peek.value.len, ps->token_peek.value.s);
 
     return ps->token_peek;
 }
@@ -521,7 +553,7 @@ struct token_t ps_next(struct parser_state_t *ps) {
     ps->token = ps->token_peek;
     ps->is_peek = false;
 
-    printf ("%s: '%.*s'\n", token_type_names[ps->token.type], ps->token.value.len, ps->token.value.s);
+    //printf ("%s: '%.*s'\n", token_type_names[ps->token.type], ps->token.value.len, ps->token.value.s);
 
     return ps->token;
 }
@@ -533,7 +565,7 @@ struct token_t ps_next(struct parser_state_t *ps) {
 //        content: null,
 //    };
 //
-//    let attributes = ps_parse_tag_attributes(ps);
+//    let attributes = ps_parse_tag_parameters(ps);
 //    let content = "";
 //
 //    ps_expect_content (ps, TOKEN_TYPE_OPERATOR, "{")
@@ -558,7 +590,7 @@ struct token_t ps_next(struct parser_state_t *ps) {
 //        content: null,
 //    };
 //
-//    let attributes = ps_parse_tag_attributes(ps);
+//    let attributes = ps_parse_tag_parameters(ps);
 //    let content = parse_balanced_brace_block(ps)
 //
 //    if (!ps.error) {
@@ -885,7 +917,7 @@ struct token_t ps_next(struct parser_state_t *ps) {
 //            append_dom_element(context_stack, img_element);
 //
 //        } else if (ps_match(ps, TOKEN_TYPE_TAG, "code")) {
-//            let attributes = ps_parse_tag_attributes(ps);
+//            let attributes = ps_parse_tag_parameters(ps);
 //            // TODO: Actually do something with the passed language name
 //
 //            let code_content = parse_balanced_brace_block(ps)
@@ -1126,11 +1158,11 @@ void parse_note_text(char *note_text)
     }
 
 
-    //// Parse note's content
+    // Parse note's content
     //let block_stack = [root_block];
-    //while (!ps.is_eof && !ps.error) {
-    //    let curr_block_idx = 0;
-    //    let tok = ps_next(ps);
+    while (!ps->is_eof && !ps->error) {
+        int curr_block_idx = 0;
+        struct token_t tok = ps_next(ps);
 
     //    // Match the indentation of the received token.
     //    let next_stack_block = block_stack[curr_block_idx+1]
@@ -1224,10 +1256,10 @@ void parse_note_text(char *note_text)
     //            }
     //        }
     //    }
-    //}
+    }
 
     //block_tree_user_callbacks (root_block)
-    //ps_destroy (ps);
+    ps_destroy (ps);
 
     //return root_block;
 }
