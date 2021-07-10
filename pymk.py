@@ -31,7 +31,8 @@ templates_dir = 'templates'
 static_dir = 'static'
 
 def default ():
-    generate()
+    target = store_get ('last_snip', default='money_flow')
+    call_user_function(target)
 
 def open_browser ():
     # So... AJAX GET requests are forbidden to URLs using the file:// protocol,

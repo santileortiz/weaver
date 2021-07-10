@@ -1,0 +1,50 @@
+# Code
+
+Some initial paragraph with \code{inline} code.
+
+\code[plain]
+| $ echo "Hello world"; echo \casa{}
+
+\code[plain]
+|   
+|
+|   
+|               
+| Leading
+|
+| empty lines are removed
+
+\code[plain]
+|   
+|    Leading spaces are
+|       normalized,
+|   everything     else is  verbatim,  
+|     including any trailing spaces
+|   and trailing line breaks 
+|
+
+\code[plain]
+|   
+|   After the first sequence of empty lines, all empty lines are left
+|   untouched:
+|   
+|    
+|     
+|   Except in the case where normalization ate all leading spaces, these will
+|   be replaced by single line breaks. Like the next lines:
+|
+| 
+|  
+
+\code[plain]
+| Single line with trailing space 
+
+A multiline paragraph with a line that happens to start with an inline code tag
+\code{inline} code.
+
+\code{A paragraph} that happens to start with an inline code tag. And is also
+multiline.
+
+\code[]{This is a paragraph with inline code.}
+
+\code{This too, but without parameters.}

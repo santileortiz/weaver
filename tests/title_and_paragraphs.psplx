@@ -1,8 +1,12 @@
 # #Title and# Paragraph Tests 
 
-Note the additional ## characters in the title!!! as well as the trailing
-space. DO NOT DELETE, they are intentional.
+Note the additional # characters in the title!!! as well as the trailing spaces.
+DO NOT DELETE, they are intentional.
+An early break in the paragraph.
 
-This is a sample second paragraph. Now some filler text: Fruitful Moving great
-every. Seed one own fish creepeth darkness us to creeping moveth days forth
-life air.
+ A second paragraph 
+with trailing spaces    
+  and some leading spaces as well.
+
+## Subtitle
+This is a paragraph not a continuation of the subtitle.

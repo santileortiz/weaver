@@ -102,16 +102,43 @@ size_t size;                                              \
 }
 
 // Console color escape sequences
+//
+// To set the style, pass a semicolon-separated list of numbers as the first
+// parameter corresponging to the desired set of styles:
+//
+//     0 - Normal
+//     1 - Bold
+//     2 - Dim
+//     3 - Italic
+//     4 - Underlined
+//     5 - Blinking
+//     7 - Reverse
+//     8 - Invisible
+//
+// for example
+//
+//     ECMA_S_RED(1;5, "Blinking error")
+//
 // TODO: Maybe add a way to detect if the output is a terminal so we don't do
 // anything in that case.
-#define ECMA_RED(str) "\033[1;31m\033[K"str"\033[m\033[K"
-#define ECMA_GREEN(str) "\033[1;32m\033[K"str"\033[m\033[K"
-#define ECMA_YELLOW(str) "\033[1;33m\033[K"str"\033[m\033[K"
-#define ECMA_BLUE(str) "\033[1;34m\033[K"str"\033[m\033[K"
-#define ECMA_MAGENTA(str) "\033[1;35m\033[K"str"\033[m\033[K"
-#define ECMA_CYAN(str) "\033[1;36m\033[K"str"\033[m\033[K"
-#define ECMA_WHITE(str) "\033[1;37m\033[K"str"\033[m\033[K"
-#define ECMA_BOLD(str) "\033[1m\033[K"str"\033[m\033[K"
+//
+#define ECMA_S_RED(s,str) "\033["#s"31m\033[K"str"\033[m\033[K"
+#define ECMA_S_GREEN(s,str) "\033["#s";32m\033[K"str"\033[m\033[K"
+#define ECMA_S_YELLOW(s,str) "\033["#s";33m\033[K"str"\033[m\033[K"
+#define ECMA_S_BLUE(s,str) "\033["#s";34m\033[K"str"\033[m\033[K"
+#define ECMA_S_MAGENTA(s,str) "\033["#s";35m\033[K"str"\033[m\033[K"
+#define ECMA_S_CYAN(s,str) "\033["#s";36m\033[K"str"\033[m\033[K"
+#define ECMA_S_WHITE(s,str) "\033["#s";37m\033[K"str"\033[m\033[K"
+
+// The most common style seems to be bold
+#define ECMA_RED(str) ECMA_S_RED(1,str)
+#define ECMA_GREEN(str) ECMA_S_GREEN(1,str)
+#define ECMA_YELLOW(str) ECMA_S_YELLOW(1,str)
+#define ECMA_BLUE(str) ECMA_S_BLUE(1,str)
+#define ECMA_MAGENTA(str) ECMA_S_MAGENTA(1,str)
+#define ECMA_CYAN(str) ECMA_S_CYAN(1,str)
+#define ECMA_WHITE(str) ECMA_S_WHITE(1,str)
+#define ECMA_BOLD(str) ECMA_S_BOLD(1,str)
 
 ////////////
 // STRINGS
@@ -2420,7 +2447,7 @@ char* pprintf (mem_pool_t *pool, const char *format, ...)
 // pool gets destroyed.
 ON_DESTROY_CALLBACK (destroy_pooled_str)
 {
-    string_t *str;
+    string_t *str = NULL;
     if (clsr != NULL) {
         assert (allocated == NULL);
         str = (string_t*)clsr;
@@ -3532,6 +3559,12 @@ ON_DESTROY_CALLBACK (pooled_free_call)
                                                                             \
     (head_name)[(head_name ## _len)++] = element;                           \
 }
+
+#define DYNAMIC_ARRAY_POP_LAST(head_name) \
+head_name[--(head_name ## _len)];
+
+#define DYNAMIC_ARRAY_GET_LAST(head_name) \
+head_name[head_name ## _len - 1];
 
 // In some cases we can't assign to a type by assigning to it, for example in
 // the case we are storing string_t structures, if we assign an empty string the
