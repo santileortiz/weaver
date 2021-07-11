@@ -3561,10 +3561,10 @@ ON_DESTROY_CALLBACK (pooled_free_call)
 }
 
 #define DYNAMIC_ARRAY_POP_LAST(head_name) \
-head_name[--(head_name ## _len)];
+head_name[--(head_name ## _len)]
 
 #define DYNAMIC_ARRAY_GET_LAST(head_name) \
-head_name[head_name ## _len - 1];
+head_name[head_name ## _len - 1]
 
 // In some cases we can't assign to a type by assigning to it, for example in
 // the case we are storing string_t structures, if we assign an empty string the

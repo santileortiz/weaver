@@ -52,11 +52,12 @@ struct html_element_t* html_new_node (struct html_t *html)
     return new_element;
 }
 
-struct html_element_t* html_new_element (struct html_t *html, char *tag_name)
+#define html_new_element(html,tag_name) html_new_element_strn (html,strlen(tag_name),tag_name)
+struct html_element_t* html_new_element_strn (struct html_t *html, ssize_t len, char *tag_name)
 {
     struct html_element_t *new_element = html_new_node (html);
 
-    str_set (&new_element->tag, tag_name);
+    strn_set (&new_element->tag, tag_name, len);
 
     if (html->root == NULL) {
         html->root = new_element;
@@ -84,10 +85,11 @@ void html_element_set_text (struct html_t *html, struct html_element_t *html_ele
     }
 }
 
-void html_element_append_text (struct html_t *html, struct html_element_t *html_element, char *text)
+#define html_element_append_cstr(html,html_element,cstr) html_element_append_strn(html, html_element, strlen(cstr), cstr);
+void html_element_append_strn (struct html_t *html, struct html_element_t *html_element, size_t len, char *text)
 {
     struct html_element_t *new_text_node = html_new_node (html);
-    str_set (&new_text_node->text, text);
+    strn_set (&new_text_node->text, text, len);
     LINKED_LIST_APPEND (html_element->children, new_text_node);
 }
 
@@ -97,17 +99,25 @@ void html_element_attribute_set (struct html_t *html, struct html_element_t *htm
 
     string_t attribute_str = {0};
     str_set (&attribute_str, attribute);
-    //str_pool (html->pool, &attribute_str);
 
-    string_t value_str = {0};
-    str_set (&value_str, value);
-    //str_pool (html->pool, &value_str);
+    struct attribute_map_tree_node_t *node;
+    attribute_map_tree_lookup (&html_element->attributes, attribute_str, &node);
+    if (node == NULL) {
+        //str_pool (html->pool, &attribute_str);
 
-    attribute_map_tree_insert (&html_element->attributes, attribute_str, value_str);
+        string_t value_str = {0};
+        str_set (&value_str, value);
+        //str_pool (html->pool, &value_str);
+
+        attribute_map_tree_insert (&html_element->attributes, attribute_str, value_str);
+
+    } else {
+        str_set (&node->value, value);
+    }
 }
 
-// NOTE: Do not pass multiple comma-separated classes as value, instead call
-// this function multiple times.
+// NOTE: Don't pass multiple comma-separated classes as value, instead call this
+// function multiple times.
 void html_element_class_add (struct html_t *html, struct html_element_t *html_element, char *value)
 {
     mem_pool_variable_ensure (html);
@@ -123,12 +133,23 @@ void html_element_class_add (struct html_t *html, struct html_element_t *html_el
     } else {
         str_cat_printf (&node->value, ",%s", value);
     }
+    str_free (&attr);
 }
 
 static inline
 bool html_element_is_text_node (struct html_element_t *element)
 {
     return str_len (&element->text) > 0;
+}
+
+static inline
+bool html_is_inline_tag (struct html_element_t *element)
+{
+    char *inline_tags[] = {"pre", "p", "i", "b", "a"};
+    for (int i=0; i<ARRAY_SIZE(inline_tags); i++) {
+        if (strcmp(str_data(&element->tag), inline_tags[i]) == 0) return true;
+    }
+    return false;
 }
 
 void str_cat_html_element (string_t *str, struct html_element_t *element, int indent, int curr_indent)
@@ -147,17 +168,20 @@ void str_cat_html_element (string_t *str, struct html_element_t *element, int in
         str_cat_printf (str, ">");
 
         if (element->children != NULL) {
-            bool was_text_node = false;
+            bool was_inlined = true;
             LINKED_LIST_FOR (struct html_element_t*, curr_child, element->children)
             {
-                if (!html_element_is_text_node (curr_child)) {
-                    was_text_node = true;
+                if (!html_element_is_text_node (curr_child) && !html_is_inline_tag(element)) {
+                    was_inlined = false;
                     str_cat_indented_printf (str, curr_indent, "\n");
+                    str_cat_html_element (str, curr_child, indent, curr_indent+indent);
+
+                } else {
+                    str_cat_html_element (str, curr_child, indent, 0);
                 }
-                str_cat_html_element (str, curr_child, indent, curr_indent+indent);
             }
 
-            if (was_text_node) {
+            if (!was_inlined) {
                 str_cat_indented_printf (str, curr_indent, "\n");
                 str_cat_indented_printf (str, curr_indent, "</%s>", str_data(&element->tag));
 

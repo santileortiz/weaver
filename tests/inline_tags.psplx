@@ -1,0 +1,12 @@
+# Inline Tags
+
+Testing \i{itallic} and \b{bold} styles of text. It should also be possible to
+\b{\i{nest}} \i{\b{them}}.
+
+A paragraph with a \link{link -> http://example.com}. Now test splitting it \link{link
+-> http://example.com}. Again \link{link ->
+http://example.com}. Another time \link{link -> http://example.com
+}. And one last time \link{
+link -> http://example.com}. Now we test splitting the name \link{li
+nk -> http://example.com} and the URL \link{link -> http://exam
+ple.com}.
