@@ -614,7 +614,7 @@ struct psx_tag_t ps_parse_tag (struct psx_parser_state_t *ps)
 //    };
 //
 //    let attributes = ps_parse_tag_parameters(ps);
-//    let content = parse_balanced_brace_block(ps)
+//    let content = html_escape(parse_balanced_brace_block(ps));
 //
 //    if (!ps.error) {
 //        tag.attributes = attributes;
@@ -688,31 +688,28 @@ void str_cat_literal_token (string_t *str, struct psx_parser_state_t *ps)
 //    return str.replaceAll("<", "&lt;").replaceAll(">", "&gt;")
 //}
 
-//function parse_balanced_brace_block(ps)
-//{
-//    let content = NULL
-//
-//    if (ps_curr_char(ps) == "{") {
-//        content = "";
-//        let brace_level = 1;
-//        ps_expect_inline (ps, TOKEN_TYPE_OPERATOR, "{");
-//
-//        while (!ps.is_eof && brace_level != 0) {
-//            ps_inline_next (ps);
-//            if (ps_match (ps, TOKEN_TYPE_OPERATOR, "{")) {
-//                brace_level++;
-//            } else if (ps_match (ps, TOKEN_TYPE_OPERATOR, "}")) {
-//                brace_level--;
-//            }
-//
-//            if (brace_level != 0) { // Avoid appending the closing }
-//                content += html_escape(str_cat_literal_token(ps));
-//            }
-//        }
-//    }
-//
-//    return content;
-//}
+void parse_balanced_brace_block(struct psx_parser_state_t *ps, string_t *str)
+{
+    assert (str != NULL);
+
+    if (ps_curr_char(ps) == '{') {
+        int brace_level = 1;
+        ps_expect_inline (ps, TOKEN_TYPE_OPERATOR, "{");
+
+        while (!ps->is_eof && brace_level != 0) {
+            ps_inline_next (ps);
+            if (ps_match (ps, TOKEN_TYPE_OPERATOR, "{")) {
+                brace_level++;
+            } else if (ps_match (ps, TOKEN_TYPE_OPERATOR, "}")) {
+                brace_level--;
+            }
+
+            if (brace_level != 0) { // Avoid appending the closing }
+                str_cat_literal_token(str, ps);
+            }
+        }
+    }
+}
 
 void compute_media_size (struct psx_tag_parameters_t *parameters, double aspect_ratio, double max_width, double *w, double *h)
 {
@@ -861,18 +858,20 @@ void block_content_parse_text (struct html_t *html, struct html_element_t *conta
             psx_append_html_element(ps, html, img_element);
             psx_tag_destroy (&tag);
 
-    //    } else if (ps_match(ps, TOKEN_TYPE_TAG, "code")) {
-    //        ps_parse_tag_parameters(ps);
-    //        // TODO: Actually do something with the passed language name
+        } else if (ps_match(ps, TOKEN_TYPE_TAG, "code")) {
+            ps_parse_tag_parameters(ps, NULL);
+            // TODO: Actually do something with the passed language name
 
-    //        let code_content = parse_balanced_brace_block(ps)
-    //        if (code_content != NULL) {
-    //            struct html_element_t *code_element = html_new_element (html, "code");
-    //            code_element.classList.add("code-inline");
-    //            code_element.innerHTML = code_content;
+            string_t code_content = {0};
+            parse_balanced_brace_block(ps, &code_content);
+            if (str_len(&code_content) > 0) {
+                struct html_element_t *code_element = html_new_element (html, "code");
+                html_element_class_add(html, code_element, "code-inline");
+                html_element_append_strn (html, code_element, str_len(&code_content), str_data(&code_content));
 
-    //            psx_append_html_element(ps, html, code_element);
-    //        }
+                psx_append_html_element(ps, html, code_element);
+            }
+            str_free (&code_content);
 
     //    } else if (ps_match(ps, TOKEN_TYPE_TAG, "note")) {
     //        let tag = ps_parse_tag (ps);
