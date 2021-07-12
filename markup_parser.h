@@ -4,6 +4,10 @@
 
 #include <limits.h>
 #include "html_builder.h"
+#include "lib/regexp.h"
+#include "lib/regexp.c"
+
+int psx_content_width = 588; // px
 
 struct html_t* markup_to_html (mem_pool_t *pool, char *markup, char *id, int x);
 
@@ -52,6 +56,7 @@ typedef struct {
     uint32_t len;
 } sstring_t;
 #define SSTRING(s,len) ((sstring_t){s,len})
+#define SSTRING_C(s) SSTRING(s,strlen(s))
 
 static inline
 sstring_t sstr_set (char *s, uint32_t len)
@@ -641,11 +646,6 @@ struct psx_block_unit_t* psx_block_unit_new(mem_pool_t *pool, enum psx_block_uni
     return new_block_unit;
 }
 
-//function html_escape (str)
-//{
-//    return str.replaceAll("<", "&lt;").replaceAll(">", "&gt;")
-//}
-
 void psx_append_html_element (struct psx_parser_state_t *ps, struct html_t *html, struct html_element_t *html_element)
 {
     struct psx_block_unit_t *head_ctx = DYNAMIC_ARRAY_GET_LAST(ps->block_unit_stack);
@@ -683,6 +683,11 @@ void str_cat_literal_token (string_t *str, struct psx_parser_state_t *ps)
     strn_cat_c (str, ps->token.value.s, ps->token.value.len);
 }
 
+//function html_escape (str)
+//{
+//    return str.replaceAll("<", "&lt;").replaceAll(">", "&gt;")
+//}
+
 //function parse_balanced_brace_block(ps)
 //{
 //    let content = NULL
@@ -709,42 +714,46 @@ void str_cat_literal_token (string_t *str, struct psx_parser_state_t *ps)
 //    return content;
 //}
 
-//function compute_media_size (attributes, aspect_ratio, max_width)
-//{
-//    let a_width = undefined;
-//    if (attributes.named.width != undefined) {
-//        a_width = Number(attributes.named.width)
-//    }
-//
-//    let a_height = undefined;
-//    if (attributes.named.height != undefined) {
-//        a_height = Number(attributes.named.height)
-//    }
-//
-//
-//    let width, height;
-//    if (a_height == undefined &&
-//        a_width != undefined && a_width <= max_width) {
-//        width = a_width;
-//        height = width/aspect_ratio;
-//
-//    } else if (a_width == undefined &&
-//               a_height != undefined && a_height <= max_width/aspect_ratio) {
-//        height = a_height;
-//        width = height*aspect_ratio;
-//
-//    } else if (a_width != undefined && a_width <= max_width &&
-//               a_height != undefined && a_height <= max_width/aspect_ratio) {
-//        width = a_width;
-//        height = a_height;
-//
-//    } else {
-//        width = max_width;
-//        height = width/aspect_ratio;
-//    }
-//
-//    return [width, height];
-//}
+void compute_media_size (struct psx_tag_parameters_t *parameters, double aspect_ratio, double max_width, double *w, double *h)
+{
+    assert (w != NULL && h != NULL);
+    sstring_t value;
+
+    double a_width = NAN;
+    if (sstring_map_maybe_get (&parameters->named, SSTRING_C("width"), &value)) {
+        a_width = strtod(value.s, NULL);
+    }
+
+    double a_height = NAN;
+    if (sstring_map_maybe_get (&parameters->named, SSTRING_C("height"), &value)) {
+        a_height = strtod(value.s, NULL);
+    }
+
+
+    double width, height;
+    if (a_height == NAN &&
+        a_width != NAN && a_width <= max_width) {
+        width = a_width;
+        height = width/aspect_ratio;
+
+    } else if (a_width == NAN &&
+               a_height != NAN && a_height <= max_width/aspect_ratio) {
+        height = a_height;
+        width = height*aspect_ratio;
+
+    } else if (a_width != NAN && a_width <= max_width &&
+               a_height != NAN && a_height <= max_width/aspect_ratio) {
+        width = a_width;
+        height = a_height;
+
+    } else {
+        width = max_width;
+        height = width/aspect_ratio;
+    }
+
+    *w = width;
+    *h = height;
+}
 
 // This function parses the content of a block of text. The formatting is
 // limited to tags that affect the formating inline. This parsing function
@@ -811,41 +820,49 @@ void block_content_parse_text (struct html_t *html, struct html_element_t *conta
             psx_append_html_element(ps, html, link_element);
             psx_tag_destroy (&tag);
 
-    //    } else if (ps_match(ps, TOKEN_TYPE_TAG, "youtube")) {
-    //        let tag = ps_parse_tag (ps);
+        } else if (ps_match(ps, TOKEN_TYPE_TAG, "youtube")) {
+            struct psx_tag_t tag = ps_parse_tag (ps);
 
-    //        let video_id;
-    //        let regex = /^.*(youtu.be\/|youtube(-nocookie)?.com\/(v\/|.*u\/\w\/|embed\/|.*v=))([\w-]{11}).*/
-    //        var match = tag.content.match(regex);
-    //        if (match) {
-    //            video_id = match[4];
-    //        } else {
-    //            video_id = "";
-    //        }
+            sstring_t video_id = {0};
+            const char *error;
+            Resub m;
+            Reprog *regex = regcomp("^.*(youtu.be\\/|youtube(-nocookie)?.com\\/(v\\/|.*u\\/\\w\\/|embed\\/|.*v=))([\\w-]{11}).*", 0, &error);
+            if (!regexec(regex, str_data(&tag.content), &m, 0)) {
+                video_id = SSTRING((char*) m.sub[4].sp, m.sub[4].ep - m.sub[4].sp);
+            }
 
-    //        // Assume 16:9 aspect ratio
-    //        let size = compute_media_size(tag.attributes, 16/9, content_width - 30);
+            //// Assume 16:9 aspect ratio
+            double width, height;
+            compute_media_size(&tag.parameters, 16.0L/9, psx_content_width - 30, &width, &height);
 
-    //        struct html_element_t *dom_element = html_new_element (html, "iframe")
-    //        dom_element.setAttribute("width", size[0]);
-    //        dom_element.setAttribute("height", size[1]);
-    //        dom_element.setAttribute("style", "margin: 0 auto; display: block;");
-    //        dom_element.setAttribute("src", "https://www.youtube-nocookie.com/embed/" + video_id);
-    //        dom_element.setAttribute("frameborder", "0");
-    //        dom_element.setAttribute("allow", "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture");
-    //        dom_element.setAttribute("allowfullscreen", "");
-    //        psx_append_html_element(ps->block_unit_stack, dom_element);
+            struct html_element_t *html_element = html_new_element (html, "iframe");
+            str_set_printf (&buff, "%.6g", width);
+            html_element_attribute_set (html, html_element, "width", str_data(&buff));
+            str_set_printf (&buff, "%.6g", height);
+            html_element_attribute_set (html, html_element, "height", str_data(&buff));
+            html_element_attribute_set (html, html_element, "style", "margin: 0 auto; display: block;");
+            str_set_printf (&buff, "https://www.youtube-nocookie.com/embed/%.*s", video_id.len, video_id.s);
+            html_element_attribute_set (html, html_element, "src", str_data(&buff));
+            html_element_attribute_set (html, html_element, "frameborder", "0");
+            html_element_attribute_set (html, html_element, "allow", "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture");
+            html_element_attribute_set (html, html_element, "allowfullscreen", "");
+            psx_append_html_element(ps, html, html_element);
+            psx_tag_destroy (&tag);
+            regfree (regex);
 
-    //    } else if (ps_match(ps, TOKEN_TYPE_TAG, "image")) {
-    //        let tag = ps_parse_tag (ps);
+        } else if (ps_match(ps, TOKEN_TYPE_TAG, "image")) {
+            struct psx_tag_t tag = ps_parse_tag (ps);
 
-    //        struct html_element_t *img_element = html_new_element (html, "img")
-    //        img_element.setAttribute("src", "files/" + tag.content)
-    //        img_element.setAttribute("width", content_width)
-    //        psx_append_html_element(ps->block_unit_stack, img_element);
+            struct html_element_t *img_element = html_new_element (html, "img");
+            str_set_printf (&buff, "files/%s", str_data(&tag.content));
+            html_element_attribute_set (html, img_element, "src", str_data(&buff));
+            str_set_printf (&buff, "%d", psx_content_width);
+            html_element_attribute_set (html, img_element, "width", str_data(&buff));
+            psx_append_html_element(ps, html, img_element);
+            psx_tag_destroy (&tag);
 
     //    } else if (ps_match(ps, TOKEN_TYPE_TAG, "code")) {
-    //        let attributes = ps_parse_tag_parameters(ps);
+    //        ps_parse_tag_parameters(ps);
     //        // TODO: Actually do something with the passed language name
 
     //        let code_content = parse_balanced_brace_block(ps)
@@ -854,7 +871,7 @@ void block_content_parse_text (struct html_t *html, struct html_element_t *conta
     //            code_element.classList.add("code-inline");
     //            code_element.innerHTML = code_content;
 
-    //            psx_append_html_element(ps->block_unit_stack, code_element);
+    //            psx_append_html_element(ps, html, code_element);
     //        }
 
     //    } else if (ps_match(ps, TOKEN_TYPE_TAG, "note")) {
@@ -867,10 +884,10 @@ void block_content_parse_text (struct html_t *html, struct html_element_t *conta
     //        link_element.classList.add("note-link")
     //        link_element.innerHTML = note_title
 
-    //        psx_append_html_element(ps->block_unit_stack, link_element);
+    //        psx_append_html_element(ps, html, link_element);
 
     //    } else if (ps_match(ps, TOKEN_TYPE_TAG, "html")) {
-    //        // TODO: How can we support '}' characters here?. I don't thing
+    //        // TODO: How can we support '}' characters here?. I don't think
     //        // assuming there will be balanced braces is an option here, as it
     //        // is in the \code tag. We most likely will need to implement user
     //        // defined termintating strings.
@@ -879,9 +896,9 @@ void block_content_parse_text (struct html_t *html, struct html_element_t *conta
     //        dummy_element.innerHTML = tag.content;
 
     //        if (dummy_element.firstChild != NULL) {
-    //            psx_append_html_element(ps->block_unit_stack, dummy_element.firstChild);
+    //            psx_append_html_element(ps, html, dummy_element.firstChild);
     //        } else {
-    //            psx_append_html_element(ps->block_unit_stack, dummy_element);
+    //            psx_append_html_element(ps, html, dummy_element);
     //        }
 
         } else {
@@ -1012,19 +1029,19 @@ void block_tree_to_html (struct html_t *html, struct psx_block_t *block,  struct
         // widgets.
         //
         // This is a hack. It's the only way I found to show tight, centered
-        // code blocks if they are smaller than content_width and at the same
+        // code blocks if they are smaller than psx_content_width and at the same
         // time show horizontal scrolling if they are wider.
         //
         // We need to do this because "display: table", disables scrolling, but
         // "display: block" sets width to be the maximum possible. Here we
         // first create the element with "display: table", compute its width,
         // then change it to "display: block" but if it was smaller than
-        // content_width, we explicitly set its width.
+        // psx_content_width, we explicitly set its width.
         //
         //code_element.style.display = "table";
         //let tight_width = code_element.scrollWidth;
         //code_element.style.display = "block";
-        //if (tight_width < content_width) {
+        //if (tight_width < psx_content_width) {
         //    code_element.style.width = tight_width - code_block_padding*2 + "px";
         //}
 

@@ -126,6 +126,18 @@ bool PREFIX ## _tree_lookup (struct PREFIX ## _tree_t *tree,                    
     return key_found;                                                                                    \
 }                                                                                                        \
                                                                                                          \
+bool PREFIX ## _maybe_get (struct PREFIX ## _tree_t *tree,                                               \
+                           KEY_TYPE key, VALUE_TYPE *value)                                              \
+{                                                                                                        \
+    struct PREFIX ## _tree_node_t *result_node;                                                          \
+    if (PREFIX ## _tree_lookup (tree, key, &result_node)) {                                              \
+        *value = result_node->value;                                                                     \
+        return true;                                                                                     \
+    }                                                                                                    \
+                                                                                                         \
+    return false;                                                                                        \
+}                                                                                                        \
+                                                                                                         \
 /*
  * This is only a convenience function. A zeroed out value will be returned
  * if the key is not found. There is no way to differentiate a zeroed out

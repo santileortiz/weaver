@@ -152,6 +152,24 @@ bool html_is_inline_tag (struct html_element_t *element)
     return false;
 }
 
+static inline
+bool html_is_void_element (struct html_element_t *element)
+{
+    char *void_elemens[] = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"};
+    for (int i=0; i<ARRAY_SIZE(void_elemens); i++) {
+        if (strcmp(str_data(&element->tag), void_elemens[i]) == 0) return true;
+    }
+    return false;
+}
+
+static inline
+void html_maybe_cat_tag_end (string_t *str, struct html_element_t *element, int curr_indent)
+{
+    if (!html_is_void_element (element)) {
+        str_cat_indented_printf (str, curr_indent, "</%s>", str_data(&element->tag));
+    }
+}
+
 void str_cat_html_element (string_t *str, struct html_element_t *element, int indent, int curr_indent)
 {
     if (html_element_is_text_node (element)) {
@@ -183,14 +201,14 @@ void str_cat_html_element (string_t *str, struct html_element_t *element, int in
 
             if (!was_inlined) {
                 str_cat_indented_printf (str, curr_indent, "\n");
-                str_cat_indented_printf (str, curr_indent, "</%s>", str_data(&element->tag));
+                html_maybe_cat_tag_end (str, element, curr_indent);
 
             } else {
-                str_cat_printf (str, "</%s>", str_data(&element->tag));
+                html_maybe_cat_tag_end (str, element, 0);
             }
 
         } else {
-            str_cat_printf (str, "</%s>", str_data(&element->tag));
+            html_maybe_cat_tag_end (str, element, 0);
         }
     }
 }
