@@ -873,32 +873,28 @@ void block_content_parse_text (struct html_t *html, struct html_element_t *conta
             }
             str_free (&code_content);
 
-    //    } else if (ps_match(ps, TOKEN_TYPE_TAG, "note")) {
-    //        let tag = ps_parse_tag (ps);
-    //        let note_title = tag.content;
+        } else if (ps_match(ps, TOKEN_TYPE_TAG, "note")) {
+            struct psx_tag_t tag = ps_parse_tag (ps);
 
-    //        struct html_element_t *link_element = html_new_element (html, "a")
-    //        link_element.setAttribute("onclick", "return open_note('" + note_title_to_id[note_title] + "');")
-    //        link_element.setAttribute("href", "#")
-    //        link_element.classList.add("note-link")
-    //        link_element.innerHTML = note_title
+            struct html_element_t *link_element = html_new_element (html, "a");
+            str_set_printf (&buff, "return open_note_by_title('%.*s');", str_len(&tag.content), str_data(&tag.content));
+            html_element_attribute_set (html, link_element, "onclick", str_data(&buff));
+            html_element_attribute_set (html, link_element, "href", "#");
+            html_element_class_add (html, link_element, "note-link");
+            html_element_append_strn (html, link_element, str_len(&tag.content), str_data(&tag.content));
 
-    //        psx_append_html_element(ps, html, link_element);
+            psx_append_html_element(ps, html, link_element);
+            psx_tag_destroy (&tag);
 
-    //    } else if (ps_match(ps, TOKEN_TYPE_TAG, "html")) {
-    //        // TODO: How can we support '}' characters here?. I don't think
-    //        // assuming there will be balanced braces is an option here, as it
-    //        // is in the \code tag. We most likely will need to implement user
-    //        // defined termintating strings.
-    //        let tag = ps_parse_tag (ps);
-    //        struct html_element_t *dummy_element = html_new_element (html, "span");
-    //        dummy_element.innerHTML = tag.content;
-
-    //        if (dummy_element.firstChild != NULL) {
-    //            psx_append_html_element(ps, html, dummy_element.firstChild);
-    //        } else {
-    //            psx_append_html_element(ps, html, dummy_element);
-    //        }
+        } else if (ps_match(ps, TOKEN_TYPE_TAG, "html")) {
+            // TODO: How can we support '}' characters here?. I don't think
+            // assuming there will be balanced braces is an option here, as it
+            // is in the \code tag. We most likely will need to implement user
+            // defined termintating strings.
+            struct psx_tag_t tag = ps_parse_tag (ps);
+            struct psx_block_unit_t *head_unit = ps->block_unit_stack[ps->block_unit_stack_len-1];
+            html_element_append_strn (html, head_unit->html_element, str_len(&tag.content), str_data(&tag.content));
+            psx_tag_destroy (&tag);
 
         } else {
             struct psx_block_unit_t *curr_unit = DYNAMIC_ARRAY_GET_LAST(ps->block_unit_stack);

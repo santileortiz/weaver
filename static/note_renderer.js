@@ -741,19 +741,13 @@ function block_content_parse_text (container, content)
             append_dom_element(context_stack, link_element);
 
         } else if (ps_match(ps, NoteTokenType.TAG, "html")) {
-            // TODO: How can we support '}' characters here?. I don't thing
+            // TODO: How can we support '}' characters here?. I don't think
             // assuming there will be balanced braces is an option here, as it
             // is in the \code tag. We most likely will need to implement user
             // defined termintating strings.
             let tag = ps_parse_tag (ps);
-            let dummy_element = document.createElement("span");
-            dummy_element.innerHTML = tag.content;
-
-            if (dummy_element.firstChild !== null) {
-                append_dom_element(context_stack, dummy_element.firstChild);
-            } else {
-                append_dom_element(context_stack, dummy_element);
-            }
+            let head_ctx = array_end(context_stack);
+            head_ctx.dom_element.innerHTML += tag.content;
 
         } else {
             let head_ctx = array_end(context_stack);
@@ -1193,30 +1187,36 @@ function collapsed_element_new (note_id)
 function open_note(note_id)
 {
     if (opened_notes.includes(note_id)) {
-        let params = url_parameters()
-        open_notes (params["n"], note_id)
+        let params = url_parameters();
+        open_notes (params["n"], note_id);
 
     } else {
-        let expanded_note = document.querySelector(".expanded")
-        expanded_note.classList.remove ("expanded")
-        expanded_note.classList.add("collapsed")
-        expanded_note.classList.add("right-shadow")
-        expanded_note.innerHTML = ''
+        let expanded_note = document.querySelector(".expanded");
+        expanded_note.classList.remove ("expanded");
+        expanded_note.classList.add("collapsed");
+        expanded_note.classList.add("right-shadow");
+        expanded_note.innerHTML = '';
 
-        let collapsed_title = collapsed_element_new (expanded_note.id)
-        expanded_note.appendChild(collapsed_title)
+        let collapsed_title = collapsed_element_new (expanded_note.id);
+        expanded_note.appendChild(collapsed_title);
 
         get_notes_and_run (note_id,
             function(response) {
-                let note_container = document.getElementById("note-container")
-                note_text_to_element(note_container, note_id, response, opened_notes.length*collapsed_note_width)
-                opened_notes.push(note_id)
-                history.pushState(null, "", "?n=" + opened_notes.join("&n="))
+                let note_container = document.getElementById("note-container");
+                note_text_to_element(note_container, note_id, response, opened_notes.length*collapsed_note_width);
+                opened_notes.push(note_id);
+                history.pushState(null, "", "?n=" + opened_notes.join("&n="));
             }
         );
     }
 
-    return false
+    return false;
+}
+
+// :pushes_state
+function open_note_by_title(note_title)
+{
+    return open_note (note_title_to_id[note_title]);
 }
 
 // Unlike reset_and_open_note() and open_note(), this one doesn't push a state.
