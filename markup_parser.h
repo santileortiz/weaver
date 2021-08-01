@@ -7,6 +7,8 @@
 #include "lib/regexp.h"
 #include "lib/regexp.c"
 
+#include "js.c"
+
 int psx_content_width = 588; // px
 
 struct html_t* markup_to_html (mem_pool_t *pool, char *markup, char *id, int x);
@@ -210,7 +212,7 @@ bool pos_is_eof (struct psx_parser_state_t *ps)
 
 bool pos_is_operator (struct psx_parser_state_t *ps)
 {
-    return !pos_is_eof(ps) && char_in_str(ps_curr_char(ps), ",=[]{}\\");
+    return !pos_is_eof(ps) && char_in_str(ps_curr_char(ps), ",=[]{}\\|");
 }
 
 bool pos_is_digit (struct psx_parser_state_t *ps)
@@ -579,7 +581,45 @@ struct psx_tag_t {
 static inline
 void psx_tag_destroy (struct psx_tag_t *tag)
 {
-    str_free (&tag->content);
+    // TODO: I think this isn't necesary because we are pooling this string in
+    // ps_parse_tag()?
+    //str_free (&tag->content);
+}
+
+// TODO: Add balanced brace parsing here.
+void psx_cat_tag_content (struct psx_parser_state_t *ps, string_t *str)
+{
+    struct psx_token_t tok = ps_inline_next(ps);
+    if (ps_match(ps, TOKEN_TYPE_OPERATOR, "{")) {
+        tok = ps_inline_next(ps);
+        while (!ps->is_eof && !ps->error && !ps_match(ps, TOKEN_TYPE_OPERATOR, "}")) {
+            strn_cat_c (str, tok.value.s, tok.value.len);
+            tok = ps_inline_next(ps);
+        }
+
+    } else if (ps_match(ps, TOKEN_TYPE_OPERATOR, "|")) {
+        char *start = ps->pos;
+        while (!ps->is_eof && *(ps->pos) != '|') {
+            ps_advance_char (ps);
+        }
+
+        if (ps->is_eof) {
+            ps->error = true;
+            str_cat_printf (&ps->error_msg, "Unexpected end of block. Incomplete definition of block content delimiter.");
+        } else {
+            char *number_end;
+            size_t size = strtoul (start, &number_end, 10);
+            if (ps->pos == number_end) {
+                ps_advance_char (ps);
+                strn_cat_c (str, ps->pos, size);
+                ps->pos += size;
+
+            } else {
+                // TODO: Implement sentinel based tag content parsing
+                // \code|SENTINEL|int a[2] = {1,2}SENTINEL
+            }
+        }
+    }
 }
 
 struct psx_tag_t ps_parse_tag (struct psx_parser_state_t *ps)
@@ -589,13 +629,7 @@ struct psx_tag_t ps_parse_tag (struct psx_parser_state_t *ps)
     str_pool (&ps->pool, &content);
 
     ps_parse_tag_parameters(ps, &parameters);
-
-    ps_expect_inline (ps, TOKEN_TYPE_OPERATOR, "{");
-    struct psx_token_t tok = ps_inline_next(ps);
-    while (!ps->is_eof && !ps->error && !ps_match(ps, TOKEN_TYPE_OPERATOR, "}")) {
-        strn_cat_c (&content, tok.value.s, tok.value.len);
-        tok = ps_inline_next(ps);
-    }
+    psx_cat_tag_content(ps, &content);
 
     struct psx_tag_t tag = {0};
     if (!ps->error) {
@@ -605,24 +639,6 @@ struct psx_tag_t ps_parse_tag (struct psx_parser_state_t *ps)
 
     return tag;
 }
-
-//function ps_parse_tag_balanced_braces (ps)
-//{
-//    let tag = {
-//        attributes: null,
-//        content: null,
-//    };
-//
-//    let attributes = ps_parse_tag_parameters(ps);
-//    let content = html_escape(parse_balanced_brace_block(ps));
-//
-//    if (!ps.error) {
-//        tag.attributes = attributes;
-//        tag.content = content;
-//    }
-//
-//    return tag;
-//}
 
 enum psx_block_unit_type_t {
     BLOCK_UNIT_TYPE_ROOT,
@@ -683,11 +699,6 @@ void str_cat_literal_token (string_t *str, struct psx_parser_state_t *ps)
     strn_cat_c (str, ps->token.value.s, ps->token.value.len);
 }
 
-//function html_escape (str)
-//{
-//    return str.replaceAll("<", "&lt;").replaceAll(">", "&gt;")
-//}
-
 void parse_balanced_brace_block(struct psx_parser_state_t *ps, string_t *str)
 {
     assert (str != NULL);
@@ -709,6 +720,25 @@ void parse_balanced_brace_block(struct psx_parser_state_t *ps, string_t *str)
             }
         }
     }
+}
+
+struct psx_tag_t* ps_parse_tag_balanced_braces (struct psx_parser_state_t *ps)
+{
+    mem_pool_marker_t mrk = mem_pool_begin_temporary_memory (&ps->pool);
+
+    struct psx_tag_t *tag = mem_pool_push_struct (&ps->pool, struct psx_tag_t);
+    *tag = ZERO_INIT (struct psx_tag_t);
+    str_pool (&ps->pool, &tag->content);
+
+    ps_parse_tag_parameters(ps, &tag->parameters);
+    parse_balanced_brace_block(ps, &tag->content);
+
+    if (ps->error) {
+        mem_pool_end_temporary_memory (mrk);
+        tag = NULL;
+    }
+
+    return tag;
 }
 
 void compute_media_size (struct psx_tag_parameters_t *parameters, double aspect_ratio, double max_width, double *w, double *h)
@@ -941,54 +971,105 @@ struct psx_block_t* psx_push_block (struct psx_parser_state_t *ps, struct psx_bl
     return new_block;
 }
 
-//// TODO: User callbacks will be modifying the tree. It's possible the user
-//// messes up and for example adds a cycle into the tree, we should detect such
-//// problem and avoid maybe later entering an infinite loop.
-//function block_tree_user_callbacks (root, block=NULL, containing_array=NULL, index=-1)
-//{
-//    // Convenience so just a single parameter is required in the initial call
-//    if (block == NULL) block = root;
-//
-//    if (block.block_content != NULL) {
-//        block.block_content.forEach (function(sub_block, index) {
-//            block_tree_user_callbacks (root, sub_block, block.block_content, index);
-//        });
-//
-//    } else {
-//        struct psx_parser_state_t _ps = {0};
-//        struct psx_parser_state_t *ps = &_ps;
-//        ps_init (block->inline_content);
-//
-//        let string_replacements = [];
-//        while (!ps.is_eof && !ps.error) {
-//            let start = ps.pos;
-//            let tok = ps_inline_next (ps);
-//            if (ps_match(ps, TOKEN_TYPE_TAG, NULL) && __g_user_tags[tok.value] != undefined) {
-//                let user_tag = __g_user_tags[tok.value];
-//                let result = user_tag.callback (ps, root, block, user_tag.user_data);
-//
-//                if (result != NULL) {
-//                    if (typeof(result) == "string") {
-//                        string_replacements.push ([start, ps.pos, result])
-//                    } else {
-//                        containing_array.splice(index, 1, ...result);
-//                        break;
-//                    }
-//                }
-//            }
-//        }
-//
-//        for (let i=string_replacements.length - 1; i >= 0; i--) {
-//            let replacement = string_replacements [i];
-//            block.inline_content = block.inline_content.substring(0, replacement[0]) + replacement[2] + block.inline_content.substring(replacement[1]);
-//        }
-//
-//        // TODO: What will happen if a parse error occurs here?. We should print
-//        // some details about which user function failed by checking if there
-//        // is an error in ps.
-//        ps_destroy (ps);
-//    }
-//}
+struct str_replacement_t {
+    size_t start_idx;
+    size_t len;
+    string_t s;
+
+    struct str_replacement_t *next;
+};
+
+enum psx_user_tag_cb_status_t {
+    USER_TAG_CB_STATUS_CONTINUE,
+    USER_TAG_CB_STATUS_BREAK,
+};
+
+// CAUTION: DON'T MODIFY THE BLOCK CONTENT'S STRING FROM A psx_user_tag_cb_t.
+// These callbacks are called while parsing the block's content, modifying
+// block->inline_content will mess up the parser.
+#define PSX_USER_TAG_CB(funcname) enum psx_user_tag_cb_status_t funcname(struct psx_parser_state_t *ps, struct psx_block_t **block, struct str_replacement_t *replacement)
+typedef PSX_USER_TAG_CB(psx_user_tag_cb_t);
+
+BINARY_TREE_NEW (psx_user_tag_cb, char*, psx_user_tag_cb_t*, strcmp(a, b));
+
+void psx_populate_internal_cb_tree (struct psx_user_tag_cb_tree_t *tree);
+
+// TODO: User callbacks will be modifying the tree. It's possible the user
+// messes up and for example adds a cycle into the tree, we should detect such
+// problem and avoid maybe later entering an infinite loop.
+#define psx_block_tree_user_callbacks(root) psx_block_tree_user_callbacks_full(root,NULL)
+void psx_block_tree_user_callbacks_full (struct psx_block_t **root, struct psx_block_t **block_p)
+{
+    if (block_p == NULL) block_p = root;
+
+    struct psx_block_t *block = *block_p;
+
+    if (block->block_content != NULL) {
+        struct psx_block_t **sub_block = &((*block_p)->block_content->next);
+        while (*sub_block != NULL) {
+            psx_block_tree_user_callbacks_full (root, sub_block);
+            sub_block = &(*sub_block)->next;
+        }
+
+    } else {
+        struct psx_parser_state_t _ps = {0};
+        struct psx_parser_state_t *ps = &_ps;
+        ps_init (ps, str_data(&block->inline_content));
+
+        struct psx_user_tag_cb_tree_t user_cb_tree = {0};
+        psx_populate_internal_cb_tree (&user_cb_tree);
+
+        struct str_replacement_t *replacements = NULL;
+        struct str_replacement_t *replacements_end = NULL;
+        char *block_start = ps->pos;
+        while (!ps->is_eof && !ps->error) {
+            char *tag_start = ps->pos;
+            struct psx_token_t tok = ps_inline_next (ps);
+            if (ps_match(ps, TOKEN_TYPE_TAG, NULL)) {
+                string_t tag_name = strn_new (tok.value.s, tok.value.len);
+                psx_user_tag_cb_t* cb = psx_user_tag_cb_get (&user_cb_tree, str_data(&tag_name));
+                str_free (&tag_name);
+
+                if (cb != NULL) {
+                    struct str_replacement_t tmp_replacement = {0};
+                    enum psx_user_tag_cb_status_t status = cb (ps, block_p, &tmp_replacement);
+                    tmp_replacement.start_idx = tag_start - block_start;
+                    tmp_replacement.len = ps->pos - tag_start;
+
+                    if (str_len (&tmp_replacement.s) > 0) {
+                        struct str_replacement_t *replacement = mem_pool_push_struct (&ps->pool, struct str_replacement_t);
+                        *replacement = tmp_replacement;
+                        str_pool (&ps->pool, &replacement->s);
+                        LINKED_LIST_APPEND (replacements, replacement);
+                    }
+
+                    if (status == USER_TAG_CB_STATUS_BREAK) {
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (replacements != NULL) {
+            char *original = strndup(str_data(&block->inline_content), str_len(&block->inline_content));
+            char *p = original;
+            str_set (&block->inline_content, "");
+            LINKED_LIST_FOR (struct str_replacement_t*, curr_replacement, replacements) {
+                size_t original_chunk_len = curr_replacement->start_idx - (p - original);
+                strn_cat_c (&block->inline_content, p, original_chunk_len);
+                str_cat (&block->inline_content, &curr_replacement->s);
+                p += original_chunk_len + curr_replacement->len;
+            }
+            str_cat_c (&block->inline_content, p);
+            free (original);
+        }
+
+        // TODO: What will happen if a parse error occurs here?. We should print
+        // some details about which user function failed by checking if there
+        // is an error in ps.
+        ps_destroy (ps);
+    }
+}
 
 void block_tree_to_html (struct html_t *html, struct psx_block_t *block,  struct html_element_t *parent)
 {
@@ -1197,7 +1278,7 @@ struct psx_block_t* parse_note_text(mem_pool_t *pool, char *note_text)
         }
     }
 
-    //block_tree_user_callbacks (root_block)
+    psx_block_tree_user_callbacks (&root_block);
     ps_destroy (ps);
 
     return root_block;
@@ -1289,5 +1370,83 @@ struct html_t* markup_to_html (mem_pool_t *pool, char *markup, char *id, int x)
 
     return html;
 }
+
+// This is here because it's trying to emulate how users would define custom
+// tags. We use it for an internal tag just as test for the API.
+//struct str_replacement_t* summary_tag_handler (struct psx_parser_state_t *ps, struct psx_block_t **block, struct str_replacement_t *replacement)
+//{
+//    let tag = ps_parse_tag (ps);
+//
+//    let note_id = note_title_to_id[tag.content]
+//
+//    let result_blocks = null;
+//    if (note_id !== undefined) {
+//        let note_content = get_note_by_id (note_id);
+//        let note_tree = parse_note_text (note_content);
+//
+//        let heading_block = note_tree.block_content[0];
+//        // NOTE: We can use inline tags because they are processed at a later step.
+//        heading_block.inline_content = "\\note{" + heading_block.inline_content + "}"
+//        // TODO: Don't use fixed heading of 2, instead look at the context
+//        // where the tag is used and use the highest heading so far. This will
+//        // be an interesting excercise in making sure this context is easy to
+//        // access from user defined tags.
+//        heading_block.heading_number = 2;
+//        result_blocks = [heading_block];
+//
+//        if (note_tree.block_content[1].type === BlockType.PARAGRAPH) {
+//            result_blocks.push(note_tree.block_content[1]);
+//        }
+//
+//        // TODO: Add some user defined wrapper that allows setting a different
+//        // style for blocks of summary. For example if we ever get inline
+//        // editing from HTML we would like to disable editing in summary blocks
+//        // and have some UI to modify the target.
+//    }
+//
+//    // Force replacement of original block with following sequence
+//    return result_blocks;
+//}
+//PSX_REGISTER_USER_TAG("summary", summary_tag_handler);
+
+enum psx_user_tag_cb_status_t math_tag_handler (struct psx_parser_state_t *ps, struct psx_block_t **block, struct str_replacement_t *replacement, bool is_display_mode)
+{
+    string_t res = {0};
+    struct psx_tag_t *tag = ps_parse_tag_balanced_braces (ps);
+    str_cat_math_strn (&res, is_display_mode, str_len(&tag->content), str_data(&tag->content));
+
+    str_set_printf (&replacement->s, "\\html|%d|%s", str_len(&res), str_data (&res));
+    str_free (&res);
+
+    return USER_TAG_CB_STATUS_CONTINUE;
+}
+
+PSX_USER_TAG_CB(math_tag_inline_handler)
+{
+    return math_tag_handler (ps, block, replacement, false);
+}
+
+// TODO: Is this a good way to implement display style?. I think capitalizing
+// the starting M is easier to memorize than adding an attribute with a name
+// that has to be remembered, is it display, displayMode, displat-mode=true?.
+// An alternative could be to automatically detect math tags used as whole
+// paragraphs and make these automatically display mode equations.
+PSX_USER_TAG_CB(math_tag_display_handler)
+{
+    return math_tag_handler (ps, block, replacement, true);
+}
+
+// Register internal custom callbacks
+#define PSX_INTERNAL_CUSTOM_TAG_TABLE \
+PSX_INTERNAL_CUSTOM_TAG_ROW ("math", math_tag_inline_handler) \
+PSX_INTERNAL_CUSTOM_TAG_ROW ("Math", math_tag_display_handler) \
+
+void psx_populate_internal_cb_tree (struct psx_user_tag_cb_tree_t *tree)
+{
+#define PSX_INTERNAL_CUSTOM_TAG_ROW(name,cb) psx_user_tag_cb_tree_insert (tree, name, cb);
+    PSX_INTERNAL_CUSTOM_TAG_TABLE
+#undef PSX_INTERNAL_CUSTOM_TAG_ROW
+}
+
 
 #endif

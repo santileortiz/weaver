@@ -174,9 +174,19 @@ modes = {
         }
 mode = store('mode', get_cli_arg_opt('-M,--mode', modes.keys()), 'debug')
 C_FLAGS = modes[mode]
+C_SOURCE_FILES = "markup_parser_tests.c"
+
+# Building the Javascript engine increases build times from ~0.5s to ~3s which
+# is quite bad, the flags --js-enable and --js-disable toggle this for
+# testing/development. The NO_JS macro will be defined to switch into stub
+# implementations of functions that call out to javascript.
+if get_cli_persistent_toggle ('use_js', '--js-enable', '--js-disable', True):
+    C_SOURCE_FILES += " lib/duktape.c"
+else:
+    C_FLAGS += " -DNO_JS"
 
 def markup_parser_tests():
-    ex (f'gcc {C_FLAGS} -o bin/markup_parser_tests markup_parser_tests.c -lm')
+    ex (f'gcc {C_FLAGS} -o bin/markup_parser_tests {C_SOURCE_FILES} -lm')
 
 if __name__ == "__main__":
     # Everything above this line will be executed for each TAB press.

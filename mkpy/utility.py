@@ -263,6 +263,15 @@ def get_cli_bool_opt(opts, has_argument=False, unique_option=False):
 
     return res
 
+def get_cli_persistent_toggle(name, enable, disable, default):
+    if get_cli_bool_opt(disable):
+        store(name, False)
+
+    if get_cli_bool_opt(enable):
+        store(name, True)
+
+    return store_get(name, default)
+
 # Deprecated
 # This implementation includes the function's name when there is no option
 # starting with '-', but when there is, then the function name is not returned.

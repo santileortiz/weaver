@@ -14,3 +14,6 @@ ple.com}.
 \youtube{https://youtu.be/Rpjab--XQ0U}
 
 \image{image_name.jpg}
+
+This is a paragraph with some embedded math in it \math{e^{\pi i} = -1}. And
+now some math in display mode \Math{v - e + f = 2}.

@@ -20,5 +20,22 @@ int main(int argc, char** argv)
     printf ("%s\n", html_to_str (html, &pool, 2));
     html_destroy (html);
 
+    //char *code = full_file_read (&pool, "static/lib/katex/katex.min.js", NULL);
+
+    //void *my_udata = (void *) 0xdeadbeef;
+    //duk_context *ctx = duk_create_heap(NULL, NULL, NULL, my_udata, duktape_custom_fatal_handler);
+    //duk_push_string(ctx, code);
+    //duk_push_string(ctx, "\nkatex.renderToString(\"c = \\\\pm\\\\sqrt{a^2 + b^2}\", {"
+    //                "throwOnError: false"
+    //                "});");
+    //duk_concat(ctx, 2);
+
+    //duk_push_string(ctx, "katex");
+    //duk_compile(ctx, 0);
+    //duk_call(ctx, 0);
+    //printf("program result: %s\n", duk_get_string(ctx, -1));
+
+    //duk_destroy_heap(ctx);
+
     return 0;
 }

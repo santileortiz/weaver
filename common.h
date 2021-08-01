@@ -649,6 +649,60 @@ _define_str_printf_func(str_cat_printf, strn_cat_c)
 
 #undef _define_str_printf_func
 
+void str_replace(string_t *str, char *find, char *replace, int *count)
+{
+   size_t len_find = strlen(find);
+   size_t len_replace = strlen(replace);
+   int count_l = 0;
+
+   char *s,*p,*q;
+
+   s = strstr(str_data(str), find);
+   if (s == NULL) {
+       if (count != NULL) *count = 0;
+       return;
+   }
+
+   do {
+      ++count_l;
+      s = strstr(s + len_find, find);
+   } while (s != NULL);
+   if (count != NULL) *count = count_l;
+
+   // TODO: I think it should be possible to do the replacements in-place. When
+   // the replacement is bigger than the search (the string grows) do
+   // replacements right-to-left, ig the replacement is smaller (the string
+   // shrinks), do the replacements lef-to-right.
+   char *original = NULL;
+   ssize_t original_len = str_len (str);
+   {
+       char *original = (char*)malloc (original_len+1);
+       memcpy (original, str, original_len);
+       original[original_len] = '\0';
+   }
+   if (original == NULL) return;
+
+   // Don't keep content because we already duplicated it above
+   str_maybe_grow (str, str_len(str) + count_l * (len_replace - len_find), false);
+
+   p = str_data(str);
+   q = p;
+   s = original;
+   for (;;) {
+      char *t = strstr(s, find);
+      if (t == NULL) {
+         strncpy(q,s,original_len+count_l*(len_replace-len_find)+1);
+         assert(strlen(p) == original_len + count_l*(len_replace-len_find));
+         return;
+      }
+      memcpy(q, s, t-s);
+      q += t-s;
+      memcpy(q, replace, len_replace);
+      q += len_replace;
+      s = t + len_find;
+   }
+}
+
 // NOTE: Caller must be sure src is null termintated and dst has the correct
 // length allocated.
 int cstr_replace_char_buff (char *src, char target, char replacement, char *dst)
@@ -3413,7 +3467,7 @@ type *new_node;                                              \
 // TODO: Can we check at compile time that type is a pointer? Right now if users
 // forget the *, they get a long list of errors. Maybe a static assert would
 // show a nicer error message?.
-#define LINKED_LIST_FOR(type, varname,headname)              \
+#define LINKED_LIST_FOR(type,varname,headname)               \
 type varname = headname;                                     \
 for (; varname != NULL; varname = varname->next)
 
