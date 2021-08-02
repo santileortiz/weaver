@@ -43,11 +43,19 @@ struct html_element_t* html_new_node (struct html_t *html)
     struct html_element_t *new_element = NULL;
     if (html->element_fl != NULL) {
         new_element = LINKED_LIST_POP (html->element_fl);
+
+        // TODO: This isn't implemented in binary_tree.c
+        // attribute_map_clear (&new_element->attributes);
+        str_set (&new_element->tag, "");
+        str_set (&new_element->text, "");
+
     } else {
         new_element = mem_pool_push_struct (html->pool, struct html_element_t);
+        *new_element = ZERO_INIT (struct html_element_t);
+        new_element->attributes.pool = html->pool;
+        str_pool (html->pool, &new_element->tag);
+        str_pool (html->pool, &new_element->text);
     }
-
-    *new_element = ZERO_INIT (struct html_element_t);
 
     return new_element;
 }
@@ -97,19 +105,13 @@ void html_element_attribute_set (struct html_t *html, struct html_element_t *htm
 {
     mem_pool_variable_ensure (html);
 
-    string_t attribute_str = {0};
-    str_set (&attribute_str, attribute);
+    string_t *attribute_str = str_new_pooled (html->pool, attribute);
 
     struct attribute_map_tree_node_t *node;
-    attribute_map_tree_lookup (&html_element->attributes, attribute_str, &node);
+    attribute_map_tree_lookup (&html_element->attributes, *attribute_str, &node);
     if (node == NULL) {
-        //str_pool (html->pool, &attribute_str);
-
-        string_t value_str = {0};
-        str_set (&value_str, value);
-        //str_pool (html->pool, &value_str);
-
-        attribute_map_tree_insert (&html_element->attributes, attribute_str, value_str);
+        string_t *value_str = str_new_pooled (html->pool, value);
+        attribute_map_tree_insert (&html_element->attributes, *attribute_str, *value_str);
 
     } else {
         str_set (&node->value, value);
@@ -170,6 +172,7 @@ void html_maybe_cat_tag_end (string_t *str, struct html_element_t *element, int 
     }
 }
 
+#define str_cat_html(str,html,indent) str_cat_html_element (str,html->root,indent,0)
 void str_cat_html_element (string_t *str, struct html_element_t *element, int indent, int curr_indent)
 {
     if (html_element_is_text_node (element)) {

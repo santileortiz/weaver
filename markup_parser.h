@@ -578,14 +578,6 @@ struct psx_tag_t {
     string_t content;
 };
 
-static inline
-void psx_tag_destroy (struct psx_tag_t *tag)
-{
-    // TODO: I think this isn't necesary because we are pooling this string in
-    // ps_parse_tag()?
-    //str_free (&tag->content);
-}
-
 // TODO: Add balanced brace parsing here.
 void psx_cat_tag_content (struct psx_parser_state_t *ps, string_t *str)
 {
@@ -606,6 +598,7 @@ void psx_cat_tag_content (struct psx_parser_state_t *ps, string_t *str)
         if (ps->is_eof) {
             ps->error = true;
             str_cat_printf (&ps->error_msg, "Unexpected end of block. Incomplete definition of block content delimiter.");
+
         } else {
             char *number_end;
             size_t size = strtoul (start, &number_end, 10);
@@ -622,19 +615,28 @@ void psx_cat_tag_content (struct psx_parser_state_t *ps, string_t *str)
     }
 }
 
-struct psx_tag_t ps_parse_tag (struct psx_parser_state_t *ps)
+struct psx_tag_t* ps_tag_new (struct psx_parser_state_t *ps)
 {
-    struct psx_tag_parameters_t parameters = {0};
-    string_t content = {0};
-    str_pool (&ps->pool, &content);
+    struct psx_tag_t *tag = mem_pool_push_struct (&ps->pool, struct psx_tag_t);
+    *tag = ZERO_INIT (struct psx_tag_t);
+    tag->parameters.named.pool = &ps->pool;
+    str_pool (&ps->pool, &tag->content);
 
-    ps_parse_tag_parameters(ps, &parameters);
-    psx_cat_tag_content(ps, &content);
+    return tag;
+}
 
-    struct psx_tag_t tag = {0};
-    if (!ps->error) {
-        tag.parameters = parameters;
-        tag.content = content;
+struct psx_tag_t* ps_parse_tag (struct psx_parser_state_t *ps)
+{
+    mem_pool_marker_t mrk = mem_pool_begin_temporary_memory (&ps->pool);
+
+    struct psx_tag_t *tag = ps_tag_new (ps);
+
+    ps_parse_tag_parameters(ps, &tag->parameters);
+    psx_cat_tag_content(ps, &tag->content);
+
+    if (ps->error) {
+        mem_pool_end_temporary_memory (mrk);
+        tag = NULL;
     }
 
     return tag;
@@ -726,9 +728,7 @@ struct psx_tag_t* ps_parse_tag_balanced_braces (struct psx_parser_state_t *ps)
 {
     mem_pool_marker_t mrk = mem_pool_begin_temporary_memory (&ps->pool);
 
-    struct psx_tag_t *tag = mem_pool_push_struct (&ps->pool, struct psx_tag_t);
-    *tag = ZERO_INIT (struct psx_tag_t);
-    str_pool (&ps->pool, &tag->content);
+    struct psx_tag_t *tag = ps_tag_new (ps);
 
     ps_parse_tag_parameters(ps, &tag->parameters);
     parse_balanced_brace_block(ps, &tag->content);
@@ -812,7 +812,7 @@ void block_content_parse_text (struct html_t *html, struct html_element_t *conta
             psx_push_block_unit_new (ps, html, tag.value);
 
         } else if (ps_match(ps, TOKEN_TYPE_TAG, "link")) {
-             struct psx_tag_t tag = ps_parse_tag (ps);
+             struct psx_tag_t *tag = ps_parse_tag (ps);
 
             // We parse the URL from the title starting at the end. I thinkg is
             // far less likely to have a non URL encoded > character in the
@@ -821,17 +821,17 @@ void block_content_parse_text (struct html_t *html, struct html_element_t *conta
             // TODO: Support another syntax for the rare case of a user that
             // wants a > character in a URL. Or make sure URLs are URL encoded
             // from the UI that will be used to edit this.
-            ssize_t pos = tag.content.len - 1;
-            while (pos > 0 && str_data(&tag.content)[pos] != '>') {
+            ssize_t pos = tag->content.len - 1;
+            while (pos > 0 && str_data(&tag->content)[pos] != '>') {
                 pos--;
             }
 
-            sstring_t url = SSTRING(str_data(&tag.content), str_len(&tag.content));
-            sstring_t title = SSTRING(str_data(&tag.content), str_len(&tag.content));
-            if (pos > 0 && str_data(&tag.content)[pos - 1] == '-') {
+            sstring_t url = SSTRING(str_data(&tag->content), str_len(&tag->content));
+            sstring_t title = SSTRING(str_data(&tag->content), str_len(&tag->content));
+            if (pos > 0 && str_data(&tag->content)[pos - 1] == '-') {
                 pos--;
-                url = sstr_trim(SSTRING(str_data(&tag.content) + pos + 2, str_len(&tag.content) - (pos + 2)));
-                title = sstr_trim(SSTRING(str_data(&tag.content), pos));
+                url = sstr_trim(SSTRING(str_data(&tag->content) + pos + 2, str_len(&tag->content) - (pos + 2)));
+                title = sstr_trim(SSTRING(str_data(&tag->content), pos));
 
                 // TODO: It would be nice to heve this API...
                 //sstr_trim(sstr_substr(pos+2));
@@ -845,22 +845,21 @@ void block_content_parse_text (struct html_t *html, struct html_element_t *conta
             html_element_append_strn (html, link_element, title.len, title.s);
 
             psx_append_html_element(ps, html, link_element);
-            psx_tag_destroy (&tag);
 
         } else if (ps_match(ps, TOKEN_TYPE_TAG, "youtube")) {
-            struct psx_tag_t tag = ps_parse_tag (ps);
+            struct psx_tag_t *tag = ps_parse_tag (ps);
 
             sstring_t video_id = {0};
             const char *error;
             Resub m;
             Reprog *regex = regcomp("^.*(youtu.be\\/|youtube(-nocookie)?.com\\/(v\\/|.*u\\/\\w\\/|embed\\/|.*v=))([\\w-]{11}).*", 0, &error);
-            if (!regexec(regex, str_data(&tag.content), &m, 0)) {
+            if (!regexec(regex, str_data(&tag->content), &m, 0)) {
                 video_id = SSTRING((char*) m.sub[4].sp, m.sub[4].ep - m.sub[4].sp);
             }
 
             //// Assume 16:9 aspect ratio
             double width, height;
-            compute_media_size(&tag.parameters, 16.0L/9, psx_content_width - 30, &width, &height);
+            compute_media_size(&tag->parameters, 16.0L/9, psx_content_width - 30, &width, &height);
 
             struct html_element_t *html_element = html_new_element (html, "iframe");
             str_set_printf (&buff, "%.6g", width);
@@ -874,19 +873,17 @@ void block_content_parse_text (struct html_t *html, struct html_element_t *conta
             html_element_attribute_set (html, html_element, "allow", "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture");
             html_element_attribute_set (html, html_element, "allowfullscreen", "");
             psx_append_html_element(ps, html, html_element);
-            psx_tag_destroy (&tag);
             regfree (regex);
 
         } else if (ps_match(ps, TOKEN_TYPE_TAG, "image")) {
-            struct psx_tag_t tag = ps_parse_tag (ps);
+            struct psx_tag_t *tag = ps_parse_tag (ps);
 
             struct html_element_t *img_element = html_new_element (html, "img");
-            str_set_printf (&buff, "files/%s", str_data(&tag.content));
+            str_set_printf (&buff, "files/%s", str_data(&tag->content));
             html_element_attribute_set (html, img_element, "src", str_data(&buff));
             str_set_printf (&buff, "%d", psx_content_width);
             html_element_attribute_set (html, img_element, "width", str_data(&buff));
             psx_append_html_element(ps, html, img_element);
-            psx_tag_destroy (&tag);
 
         } else if (ps_match(ps, TOKEN_TYPE_TAG, "code")) {
             ps_parse_tag_parameters(ps, NULL);
@@ -904,27 +901,25 @@ void block_content_parse_text (struct html_t *html, struct html_element_t *conta
             str_free (&code_content);
 
         } else if (ps_match(ps, TOKEN_TYPE_TAG, "note")) {
-            struct psx_tag_t tag = ps_parse_tag (ps);
+            struct psx_tag_t *tag = ps_parse_tag (ps);
 
             struct html_element_t *link_element = html_new_element (html, "a");
-            str_set_printf (&buff, "return open_note_by_title('%.*s');", str_len(&tag.content), str_data(&tag.content));
+            str_set_printf (&buff, "return open_note_by_title('%.*s');", str_len(&tag->content), str_data(&tag->content));
             html_element_attribute_set (html, link_element, "onclick", str_data(&buff));
             html_element_attribute_set (html, link_element, "href", "#");
             html_element_class_add (html, link_element, "note-link");
-            html_element_append_strn (html, link_element, str_len(&tag.content), str_data(&tag.content));
+            html_element_append_strn (html, link_element, str_len(&tag->content), str_data(&tag->content));
 
             psx_append_html_element(ps, html, link_element);
-            psx_tag_destroy (&tag);
 
         } else if (ps_match(ps, TOKEN_TYPE_TAG, "html")) {
             // TODO: How can we support '}' characters here?. I don't think
             // assuming there will be balanced braces is an option here, as it
             // is in the \code tag. We most likely will need to implement user
             // defined termintating strings.
-            struct psx_tag_t tag = ps_parse_tag (ps);
+            struct psx_tag_t *tag = ps_parse_tag (ps);
             struct psx_block_unit_t *head_unit = ps->block_unit_stack[ps->block_unit_stack_len-1];
-            html_element_append_strn (html, head_unit->html_element, str_len(&tag.content), str_data(&tag.content));
-            psx_tag_destroy (&tag);
+            html_element_append_strn (html, head_unit->html_element, str_len(&tag->content), str_data(&tag->content));
 
         } else {
             struct psx_block_unit_t *curr_unit = DYNAMIC_ARRAY_GET_LAST(ps->block_unit_stack);
@@ -1017,6 +1012,7 @@ void psx_block_tree_user_callbacks_full (struct psx_block_t **root, struct psx_b
         ps_init (ps, str_data(&block->inline_content));
 
         struct psx_user_tag_cb_tree_t user_cb_tree = {0};
+        user_cb_tree.pool = &ps->pool;
         psx_populate_internal_cb_tree (&user_cb_tree);
 
         struct str_replacement_t *replacements = NULL;
@@ -1344,6 +1340,7 @@ void printf_block_tree (struct psx_block_t *root, int indent)
 struct html_t* markup_to_html (mem_pool_t *pool, char *markup, char *id, int x)
 {
     mem_pool_t pool_l = {0};
+
     struct html_t *html = mem_pool_push_struct (pool, struct html_t);
     *html = ZERO_INIT (struct html_t);
     html->pool = pool;

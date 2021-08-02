@@ -186,7 +186,7 @@ else:
     C_FLAGS += " -DNO_JS"
 
 def markup_parser_tests():
-    ex (f'gcc {C_FLAGS} -o bin/markup_parser_tests {C_SOURCE_FILES} -lm')
+    ex (f'gcc {C_FLAGS} -o bin/markup_parser_tests {C_SOURCE_FILES} -lm -lrt')
 
 if __name__ == "__main__":
     # Everything above this line will be executed for each TAB press.

@@ -122,13 +122,13 @@ size_t size;                                              \
 // TODO: Maybe add a way to detect if the output is a terminal so we don't do
 // anything in that case.
 //
-#define ECMA_S_RED(s,str) "\033["#s"31m\033[K"str"\033[m\033[K"
-#define ECMA_S_GREEN(s,str) "\033["#s";32m\033[K"str"\033[m\033[K"
-#define ECMA_S_YELLOW(s,str) "\033["#s";33m\033[K"str"\033[m\033[K"
-#define ECMA_S_BLUE(s,str) "\033["#s";34m\033[K"str"\033[m\033[K"
+#define ECMA_S_RED(s,str)     "\033["#s";31m\033[K"str"\033[m\033[K"
+#define ECMA_S_GREEN(s,str)   "\033["#s";32m\033[K"str"\033[m\033[K"
+#define ECMA_S_YELLOW(s,str)  "\033["#s";33m\033[K"str"\033[m\033[K"
+#define ECMA_S_BLUE(s,str)    "\033["#s";34m\033[K"str"\033[m\033[K"
 #define ECMA_S_MAGENTA(s,str) "\033["#s";35m\033[K"str"\033[m\033[K"
-#define ECMA_S_CYAN(s,str) "\033["#s";36m\033[K"str"\033[m\033[K"
-#define ECMA_S_WHITE(s,str) "\033["#s";37m\033[K"str"\033[m\033[K"
+#define ECMA_S_CYAN(s,str)    "\033["#s";36m\033[K"str"\033[m\033[K"
+#define ECMA_S_WHITE(s,str)   "\033["#s";37m\033[K"str"\033[m\033[K"
 
 // The most common style seems to be bold
 #define ECMA_RED(str) ECMA_S_RED(1,str)
