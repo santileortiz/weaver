@@ -153,6 +153,14 @@ struct psx_block_t {
 struct psx_parser_state_t {
     mem_pool_t pool;
 
+    struct note_runtime_t *rt;
+
+    // TODO: Actually use this free list, right now we only add stuff, but never
+    // use it. Although, how useful is it?, I don't think a single parser
+    // execution would make good use of this. Maybe block elements should be
+    // allocated at the runtime level.
+    struct psx_block_t *blocks_fl;
+
     bool error;
     string_t error_msg;
 
@@ -934,11 +942,27 @@ void block_content_parse_text (struct html_t *html, struct html_element_t *conta
     str_free (&buff);
 }
 
-struct psx_block_t* psx_leaf_block_new(mem_pool_t *pool, enum psx_block_type_t type, int margin, sstring_t inline_content)
+#define psx_block_new(pool) psx_block_new_cpy(pool,NULL)
+struct psx_block_t* psx_block_new_cpy(mem_pool_t *pool, struct psx_block_t *original)
 {
     struct psx_block_t *new_block = mem_pool_push_struct (pool, struct psx_block_t);
     *new_block = ZERO_INIT (struct psx_block_t);
-    strn_set_pooled (pool, &new_block->inline_content, inline_content.s, inline_content.len);
+    str_pool (pool, &new_block->inline_content);
+
+    if (original != NULL) {
+        new_block->type = original->type;
+        new_block->margin = original->margin;
+        str_cpy (&new_block->inline_content, &original->inline_content);
+    }
+
+    return new_block;
+}
+
+
+struct psx_block_t* psx_leaf_block_new(mem_pool_t *pool, enum psx_block_type_t type, int margin, sstring_t inline_content)
+{
+    struct psx_block_t *new_block = psx_block_new (pool);
+    strn_set (&new_block->inline_content, inline_content.s, inline_content.len);
     new_block->type = type;
     new_block->margin = margin;
 
@@ -947,8 +971,7 @@ struct psx_block_t* psx_leaf_block_new(mem_pool_t *pool, enum psx_block_type_t t
 
 struct psx_block_t* psx_container_block_new(mem_pool_t *pool, enum psx_block_type_t type, int margin)
 {
-    struct psx_block_t *new_block = mem_pool_push_struct (pool, struct psx_block_t);
-    *new_block = ZERO_INIT (struct psx_block_t);
+    struct psx_block_t *new_block = psx_block_new (pool);
     new_block->type = type;
     new_block->margin = margin;
 
@@ -1370,46 +1393,65 @@ struct html_t* markup_to_html (mem_pool_t *pool, char *markup, char *id, int x)
 
 // This is here because it's trying to emulate how users would define custom
 // tags. We use it for an internal tag just as test for the API.
-//struct str_replacement_t* summary_tag_handler (struct psx_parser_state_t *ps, struct psx_block_t **block, struct str_replacement_t *replacement)
-//{
-//    let tag = ps_parse_tag (ps);
-//
-//    let note_id = note_title_to_id[tag.content]
-//
-//    let result_blocks = null;
-//    if (note_id !== undefined) {
-//        let note_content = get_note_by_id (note_id);
-//        let note_tree = parse_note_text (note_content);
-//
-//        let heading_block = note_tree.block_content[0];
-//        // NOTE: We can use inline tags because they are processed at a later step.
-//        heading_block.inline_content = "\\note{" + heading_block.inline_content + "}"
-//        // TODO: Don't use fixed heading of 2, instead look at the context
-//        // where the tag is used and use the highest heading so far. This will
-//        // be an interesting excercise in making sure this context is easy to
-//        // access from user defined tags.
-//        heading_block.heading_number = 2;
-//        result_blocks = [heading_block];
-//
-//        if (note_tree.block_content[1].type === BlockType.PARAGRAPH) {
-//            result_blocks.push(note_tree.block_content[1]);
-//        }
-//
-//        // TODO: Add some user defined wrapper that allows setting a different
-//        // style for blocks of summary. For example if we ever get inline
-//        // editing from HTML we would like to disable editing in summary blocks
-//        // and have some UI to modify the target.
-//    }
-//
-//    // Force replacement of original block with following sequence
-//    return result_blocks;
-//}
-//PSX_REGISTER_USER_TAG("summary", summary_tag_handler);
+PSX_USER_TAG_CB (summary_tag_handler)
+{
+    struct psx_tag_t *tag = ps_parse_tag (ps);
+
+    struct note_t *note = NULL;
+    if (ps->rt != NULL) {
+        note = title_to_note_get (&ps->rt->notes_by_title, &tag->content);
+    } else {
+        // TODO: There is no runtime in the parser state. Is there any reason we
+        // would use the parser without a runtime?. If that's the case, then tag
+        // evaluations like this one, that reffer to other notes won't work.
+    }
+
+    if (note != NULL) {
+        struct psx_block_t *result = NULL;
+        struct psx_block_t *result_end = NULL;
+
+        mem_pool_t pool = {0};
+        struct psx_block_t *note_tree = parse_note_text (&pool, str_data(&note->psplx));
+
+        struct psx_block_t *title = note_tree->block_content;
+        struct psx_block_t *new_title = psx_block_new_cpy (&ps->pool, title);
+        // NOTE: We can use inline tags because they are processed at a later step.
+        str_set_printf (&new_title->inline_content, "\\note{%s}", str_data(&title->inline_content));
+        // TODO: Don't use fixed heading of 2, instead look at the context
+        // where the tag is used and use the highest heading so far. This will
+        // be an interesting excercise in making sure this context is easy to
+        // access from custom tags.
+        new_title->heading_number = 2;
+        LINKED_LIST_APPEND (result, new_title);
+
+        struct psx_block_t *after_title = note_tree->block_content->next;
+        if (after_title != NULL && after_title->type == BLOCK_TYPE_PARAGRAPH) {
+            struct psx_block_t *new_summary = psx_block_new_cpy (&ps->pool, after_title);
+            LINKED_LIST_APPEND (result, new_summary);
+        }
+
+        mem_pool_destroy (&pool);
+
+        // Replace the original block in the tree with the new ones.
+        struct psx_block_t *tmp = *block;
+        result_end->next = (*block)->next;
+        *block = result;
+        LINKED_LIST_PUSH (ps->blocks_fl, tmp);
+
+        // TODO: Add some user defined wrapper that allows setting a different
+        // style for blocks of summary. For example if we ever get inline
+        // editing from HTML we would like to disable editing in summary blocks
+        // and have some UI to modify the target.
+    }
+
+    return USER_TAG_CB_STATUS_BREAK;
+}
 
 enum psx_user_tag_cb_status_t math_tag_handler (struct psx_parser_state_t *ps, struct psx_block_t **block, struct str_replacement_t *replacement, bool is_display_mode)
 {
     string_t res = {0};
     struct psx_tag_t *tag = ps_parse_tag_balanced_braces (ps);
+
     str_cat_math_strn (&res, is_display_mode, str_len(&tag->content), str_data(&tag->content));
 
     str_set_printf (&replacement->s, "\\html|%d|%s", str_len(&res), str_data (&res));
@@ -1437,6 +1479,7 @@ PSX_USER_TAG_CB(math_tag_display_handler)
 #define PSX_INTERNAL_CUSTOM_TAG_TABLE \
 PSX_INTERNAL_CUSTOM_TAG_ROW ("math", math_tag_inline_handler) \
 PSX_INTERNAL_CUSTOM_TAG_ROW ("Math", math_tag_display_handler) \
+PSX_INTERNAL_CUSTOM_TAG_ROW ("summary", summary_tag_handler) \
 
 void psx_populate_internal_cb_tree (struct psx_user_tag_cb_tree_t *tree)
 {

@@ -8,6 +8,7 @@
 #include "cli_parser.c"
 
 #define MARKUP_PARSER_IMPL
+#include "note_runtime.h"
 #include "markup_parser.h"
 
 #include "note_runtime.c"
