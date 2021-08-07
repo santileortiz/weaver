@@ -11,20 +11,9 @@
 
 int psx_content_width = 588; // px
 
-struct html_t* markup_to_html (mem_pool_t *pool, char *markup, char *id, int x);
+struct html_t* markup_to_html (mem_pool_t *pool, char *path, char *markup, char *id, int x, string_t *error_msg);
 
 #if defined(MARKUP_PARSER_IMPL)
-
-//function UserTag (tag_name, callback, user_data) {
-//    this.name = tag_name;
-//    this.callback = callback;
-//    this.user_data = user_data;
-//}
-//
-//function new_user_tag (tag_name, callback)
-//{
-//    __g_user_tags[tag_name] = new UserTag(tag_name, callback);
-//}
 
 #define TOKEN_TYPES_TABLE                      \
     TOKEN_TYPES_ROW(TOKEN_TYPE_UNKNOWN)        \
@@ -155,6 +144,8 @@ struct psx_parser_state_t {
 
     struct note_runtime_t *rt;
 
+    char *path;
+
     // TODO: Actually use this free list, right now we only add stuff, but never
     // use it. Although, how useful is it?, I don't think a single parser
     // execution would make good use of this. Maybe block elements should be
@@ -179,10 +170,13 @@ struct psx_parser_state_t {
     DYNAMIC_ARRAY_DEFINE (struct psx_block_unit_t*, block_unit_stack);
 };
 
-void ps_init (struct psx_parser_state_t *ps, char *str)
+#define ps_init(ps,str) ps_init_path(ps, ps->path,str)
+void ps_init_path (struct psx_parser_state_t *ps, char *path, char *str)
 {
     ps->str = str;
     ps->pos = str;
+
+    ps->path = path;
 
     str_pool (&ps->pool, &ps->error_msg);
     DYNAMIC_ARRAY_INIT (&ps->pool, ps->block_stack, 100);
@@ -324,6 +318,37 @@ struct psx_tag_parameters_t {
 
     struct sstring_map_tree_t named;
 };
+
+GCC_PRINTF_FORMAT(2, 3)
+void psx_error (struct psx_parser_state_t *ps, char *format, ...)
+{
+    if (ps->path != NULL) {
+         str_cat_printf (&ps->error_msg, ECMA_DEFAULT("%s:") ECMA_RED(" error: "), ps->path);
+    }
+
+    PRINTF_INIT (format, size, args);
+    size_t old_len = str_len(&ps->error_msg);
+    str_maybe_grow (&ps->error_msg, str_len(&ps->error_msg) + size - 1, true);
+    PRINTF_SET (str_data(&ps->error_msg) + old_len, size, format, args);
+
+    str_cat_c (&ps->error_msg, "\n");
+    ps->error = true;
+}
+
+GCC_PRINTF_FORMAT(2, 3)
+void psx_warning (struct psx_parser_state_t *ps, char *format, ...)
+{
+    if (ps->path != NULL) {
+         str_cat_printf (&ps->error_msg, ECMA_DEFAULT("%s:") ECMA_YELLOW(" warning: "), ps->path);
+    }
+
+    PRINTF_INIT (format, size, args);
+    size_t old_len = str_len(&ps->error_msg);
+    str_maybe_grow (&ps->error_msg, str_len(&ps->error_msg) + size - 1, true);
+    PRINTF_SET (str_data(&ps->error_msg) + old_len, size, format, args);
+
+    str_cat_c (&ps->error_msg, "\n");
+}
 
 void ps_parse_tag_parameters (struct psx_parser_state_t *ps, struct psx_tag_parameters_t *parameters)
 {
@@ -564,19 +589,18 @@ void ps_expect_inline(struct psx_parser_state_t *ps, enum psx_token_type_t type,
 {
     ps_inline_next (ps);
     if (!ps_match(ps, type, cstr)) {
-        ps->error = true;
         if (ps->token.type != type) {
             if (cstr == NULL) {
-                str_cat_printf (&ps->error_msg, "Expected token of type %s, got '%.*s' of type %s.",
-                                psx_token_type_names[type], ps->token.value.len, ps->token.value.s, psx_token_type_names[ps->token.type]);
+                psx_error (ps, "Expected token of type %s, got '%.*s' of type %s.",
+                           psx_token_type_names[type], ps->token.value.len, ps->token.value.s, psx_token_type_names[ps->token.type]);
             } else {
-                str_cat_printf (&ps->error_msg, "Expected token '%s' of type %s, got '%.*s' of type %s.",
-                                cstr, psx_token_type_names[type], ps->token.value.len, ps->token.value.s, psx_token_type_names[ps->token.type]);
+                psx_error (ps, "Expected token '%s' of type %s, got '%.*s' of type %s.",
+                           cstr, psx_token_type_names[type], ps->token.value.len, ps->token.value.s, psx_token_type_names[ps->token.type]);
             }
 
         } else {
             // Value didn't match.
-            str_cat_printf (&ps->error_msg, "Expected '%s', got '%.*s'.", cstr, ps->token.value.len, ps->token.value.s);
+            psx_error (ps, "Expected '%s', got '%.*s'.", cstr, ps->token.value.len, ps->token.value.s);
         }
     }
 }
@@ -604,8 +628,7 @@ void psx_cat_tag_content (struct psx_parser_state_t *ps, string_t *str)
         }
 
         if (ps->is_eof) {
-            ps->error = true;
-            str_cat_printf (&ps->error_msg, "Unexpected end of block. Incomplete definition of block content delimiter.");
+            psx_error (ps, "Unexpected end of block. Incomplete definition of block content delimiter.");
 
         } else {
             char *number_end;
@@ -1168,24 +1191,37 @@ void block_tree_to_html (struct html_t *html, struct psx_block_t *block,  struct
     str_free (&buff);
 }
 
-struct psx_block_t* parse_note_text(mem_pool_t *pool, char *note_text)
+void psx_parse_note_title (struct psx_parser_state_t *ps, mem_pool_t *pool, string_t *title)
 {
-    struct psx_parser_state_t _ps = {0};
-    struct psx_parser_state_t *ps = &_ps;
-    ps_init (ps, note_text);
-
-    struct psx_block_t *root_block = psx_container_block_new(pool, BLOCK_TYPE_ROOT, 0);
-
-    // Expect a title as the start of the note, fail if no title is found.
-    struct psx_token_t tok = ps_next_peek (ps);
+    struct psx_token_t tok = ps_next (ps);
     if (tok.type != TOKEN_TYPE_TITLE) {
-        ps->error = true;
-        //ps->error_msg = sprintf("Notes must start with a Heading 1 title.");
+        psx_error (ps, "note has no title");
     }
 
+    if (!ps->error) {
+        struct psx_block_t *title_block = psx_push_block (ps, psx_leaf_block_new(pool, BLOCK_TYPE_HEADING, tok.margin, tok.value));
+        title_block->heading_number = 1;
+
+        if (tok.heading_number != 1) {
+            psx_warning (ps, "forcing note title as heading 1, note starts with different level");
+        }
+    }
+}
+
+struct psx_block_t* parse_note_text(mem_pool_t *pool, char *path, char *note_text, string_t *error_msg)
+{
+    mem_pool_marker_t mrk = mem_pool_begin_temporary_memory (pool);
+
+    struct psx_parser_state_t _ps = {0};
+    struct psx_parser_state_t *ps = &_ps;
+    ps_init_path (ps, path, note_text);
+
+    struct psx_block_t *root_block = psx_container_block_new(pool, BLOCK_TYPE_ROOT, 0);
+    DYNAMIC_ARRAY_APPEND (ps->block_stack, root_block);
+
+    psx_parse_note_title (ps, pool, NULL);
 
     // Parse note's content
-    DYNAMIC_ARRAY_APPEND (ps->block_stack, root_block);
     while (!ps->is_eof && !ps->error) {
         int curr_block_idx = 0;
         struct psx_token_t tok = ps_next(ps);
@@ -1297,7 +1333,18 @@ struct psx_block_t* parse_note_text(mem_pool_t *pool, char *note_text)
         }
     }
 
-    psx_block_tree_user_callbacks (&root_block);
+    if (!ps->error) {
+        psx_block_tree_user_callbacks (&root_block);
+    }
+
+    // Copy error message even if !ps->error becaue there may be warnings.
+    str_cat (error_msg, &ps->error_msg);
+
+    if (ps->error && error_msg != NULL) {
+        root_block = NULL;
+        mem_pool_end_temporary_memory (mrk);
+    }
+
     ps_destroy (ps);
 
     return root_block;
@@ -1360,31 +1407,34 @@ void printf_block_tree (struct psx_block_t *root, int indent)
     str_free (&str);
 }
 
-struct html_t* markup_to_html (mem_pool_t *pool, char *markup, char *id, int x)
+struct html_t* markup_to_html (mem_pool_t *pool, char *path, char *markup, char *id, int x, string_t *error_msg)
 {
     mem_pool_t pool_l = {0};
 
-    struct html_t *html = mem_pool_push_struct (pool, struct html_t);
-    *html = ZERO_INIT (struct html_t);
-    html->pool = pool;
+    struct psx_block_t *root_block = parse_note_text(&pool_l, path, markup, error_msg);
 
-    string_t buff = {0};
+    struct html_t *html = NULL;
+    if (root_block != NULL) {
+        html = mem_pool_push_struct (pool, struct html_t);
+        *html = ZERO_INIT (struct html_t);
+        html->pool = pool;
 
-    struct html_element_t *root = html_new_element (html, "div");
-    html->root = root;
-    html_element_attribute_set (html, root, "id", id);
-    html_element_class_add (html, root, "note");
-    html_element_class_add (html, root, "expanded");
+        string_t buff = {0};
 
-    // TODO: Make html_element_attribute_set() receive printf parameters
-    // and format string.
-    str_set_printf (&buff, "%ipx", x);
-    html_element_attribute_set (html, root, "style", str_data(&buff));
+        struct html_element_t *root = html_new_element (html, "div");
+        html->root = root;
+        html_element_attribute_set (html, root, "id", id);
+        html_element_class_add (html, root, "note");
+        html_element_class_add (html, root, "expanded");
 
-    struct psx_block_t *root_block = parse_note_text(&pool_l, markup);
-    //printf_block_tree (root_block, 4);
+        // TODO: Make html_element_attribute_set() receive printf parameters
+        // and format string.
+        str_set_printf (&buff, "%ipx", x);
+        html_element_attribute_set (html, root, "style", str_data(&buff));
 
-    block_tree_to_html(html, root_block, root);
+        //printf_block_tree (root_block, 4);
+        block_tree_to_html(html, root_block, root);
+    }
 
     mem_pool_destroy (&pool_l);
 
@@ -1398,8 +1448,9 @@ PSX_USER_TAG_CB (summary_tag_handler)
     struct psx_tag_t *tag = ps_parse_tag (ps);
 
     struct note_t *note = NULL;
-    if (ps->rt != NULL) {
-        note = title_to_note_get (&ps->rt->notes_by_title, &tag->content);
+    struct note_runtime_t *rt = rt_get ();
+    if (rt != NULL) {
+        note = title_to_note_get (&rt->notes_by_title, &tag->content);
     } else {
         // TODO: There is no runtime in the parser state. Is there any reason we
         // would use the parser without a runtime?. If that's the case, then tag
@@ -1411,7 +1462,7 @@ PSX_USER_TAG_CB (summary_tag_handler)
         struct psx_block_t *result_end = NULL;
 
         mem_pool_t pool = {0};
-        struct psx_block_t *note_tree = parse_note_text (&pool, str_data(&note->psplx));
+        struct psx_block_t *note_tree = parse_note_text (&pool, NULL, str_data(&note->psplx), NULL);
 
         struct psx_block_t *title = note_tree->block_content;
         struct psx_block_t *new_title = psx_block_new_cpy (&ps->pool, title);
@@ -1442,6 +1493,9 @@ PSX_USER_TAG_CB (summary_tag_handler)
         // style for blocks of summary. For example if we ever get inline
         // editing from HTML we would like to disable editing in summary blocks
         // and have some UI to modify the target.
+
+    } else {
+        // Error: there is no note with such ID.
     }
 
     return USER_TAG_CB_STATUS_BREAK;

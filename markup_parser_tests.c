@@ -38,6 +38,7 @@ ITERATE_DIR_CB(test_dir_iter)
             new_note->id = pom_strndup (&rt->pool, p, basename_len - 1/*.*/ - strlen(PSPLX_EXTENSION));
             id_to_note_tree_insert (&rt->notes_by_id, new_note->id, new_note);
 
+            str_set_pooled (&rt->pool, &new_note->path, fname);
             str_pool (&rt->pool, &new_note->title);
 
             size_t source_len;
@@ -51,8 +52,11 @@ ITERATE_DIR_CB(test_dir_iter)
     }
 }
 
+// CAUTION: Only call once during full execution of a process!
 void rt_init_from_dir (struct note_runtime_t *rt, char *path)
 {
+    __g_note_runtime = ZERO_INIT (struct note_runtime_t);
+
     rt->notes_by_id.pool = &rt->pool;
     iterate_dir (path, test_dir_iter, rt);
 }
@@ -112,6 +116,10 @@ int main(int argc, char** argv)
                 test_push (t, "Matches expected HTML");
                 test_str (t, str_data(&note->html), expected_html);
 
+                // TODO: If the test fails, print the diff resulting of the
+                // following:
+                // git diff --no-index --word-diff=color --word-diff-regex=. tests/<note->id>.html wut.html
+
                 free (expected_html);
             }
 
@@ -122,14 +130,19 @@ int main(int argc, char** argv)
         struct note_t *note = id_to_note_get (&rt->notes_by_id, note_id);
 
         if (note != NULL) {
-            rt_parse_to_html (rt, note, error_msg);
+            bool success = rt_parse_to_html (rt, note, error_msg);
+            printf ("%s", str_data(error_msg));
 
-            if (html_out == NULL) {
-                printf (ECMA_MAGENTA("PSPLX") "\n%s\n", str_data(&note->psplx));
-                printf (ECMA_MAGENTA("HTML") "\n%s\n", str_data(&note->html));
+            if (success) {
+                if (str_len(error_msg) > 0) printf ("\n");
 
-            } else {
-                full_file_write (str_data(&note->html), str_len(&note->html), html_out);
+                if (html_out == NULL) {
+                    printf (ECMA_MAGENTA("PSPLX") "\n%s\n", str_data(&note->psplx));
+                    printf (ECMA_MAGENTA("HTML") "\n%s\n", str_data(&note->html));
+
+                } else {
+                    full_file_write (str_data(&note->html), str_len(&note->html), html_out);
+                }
             }
 
         } else {

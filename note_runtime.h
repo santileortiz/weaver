@@ -3,6 +3,8 @@
  */
 
 struct note_t {
+    string_t path;
+
     char *id;
     string_t title;
     string_t psplx;
@@ -23,4 +25,7 @@ struct note_runtime_t {
 
     struct id_to_note_tree_t notes_by_id;
     struct title_to_note_tree_t notes_by_title;
-};
+} __g_note_runtime;
+
+struct note_runtime_t* rt_get ();
+bool rt_parse_to_html (struct note_runtime_t *rt, struct note_t *note, string_t *error_msg);

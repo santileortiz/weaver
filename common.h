@@ -129,8 +129,10 @@ size_t size;                                              \
 #define ECMA_S_MAGENTA(s,str) "\033["#s";35m\033[K"str"\033[m\033[K"
 #define ECMA_S_CYAN(s,str)    "\033["#s";36m\033[K"str"\033[m\033[K"
 #define ECMA_S_WHITE(s,str)   "\033["#s";37m\033[K"str"\033[m\033[K"
+#define ECMA_S_DEFAULT(s,str) "\033["#s";39m\033[K"str"\033[m\033[K"
 
 // The most common style seems to be bold
+#define ECMA_DEFAULT(str) ECMA_S_DEFAULT(1,str)
 #define ECMA_RED(str) ECMA_S_RED(1,str)
 #define ECMA_GREEN(str) ECMA_S_GREEN(1,str)
 #define ECMA_YELLOW(str) ECMA_S_YELLOW(1,str)
@@ -138,7 +140,6 @@ size_t size;                                              \
 #define ECMA_MAGENTA(str) ECMA_S_MAGENTA(1,str)
 #define ECMA_CYAN(str) ECMA_S_CYAN(1,str)
 #define ECMA_WHITE(str) ECMA_S_WHITE(1,str)
-#define ECMA_BOLD(str) ECMA_S_BOLD(1,str)
 
 ////////////
 // STRINGS
