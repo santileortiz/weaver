@@ -12,6 +12,9 @@ struct note_t {
     bool is_html_valid;
     string_t html;
 
+    bool error;
+    string_t error_msg;
+
     struct note_t *next;
 };
 

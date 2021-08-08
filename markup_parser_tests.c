@@ -38,8 +38,8 @@ ITERATE_DIR_CB(test_dir_iter)
             new_note->id = pom_strndup (&rt->pool, p, basename_len - 1/*.*/ - strlen(PSPLX_EXTENSION));
             id_to_note_tree_insert (&rt->notes_by_id, new_note->id, new_note);
 
+            str_pool (&rt->pool, &new_note->error_msg);
             str_set_pooled (&rt->pool, &new_note->path, fname);
-            str_pool (&rt->pool, &new_note->title);
 
             size_t source_len;
             char *source = full_file_read (NULL, fname, &source_len);
@@ -47,17 +47,25 @@ ITERATE_DIR_CB(test_dir_iter)
             strn_set (&new_note->psplx, source, source_len);
             free (source);
 
+            str_pool (&rt->pool, &new_note->title);
+            if (!parse_note_title (fname, str_data(&new_note->psplx), &new_note->title, &new_note->error_msg)) {
+                new_note->error = true;
+                printf ("%s", str_data(&new_note->error_msg));
+
+            } else {
+                title_to_note_tree_insert (&rt->notes_by_title, &new_note->title, new_note);
+            }
+
             str_pool (&rt->pool, &new_note->html);
         }
     }
 }
 
-// CAUTION: Only call once during full execution of a process!
 void rt_init_from_dir (struct note_runtime_t *rt, char *path)
 {
-    __g_note_runtime = ZERO_INIT (struct note_runtime_t);
-
     rt->notes_by_id.pool = &rt->pool;
+    rt->notes_by_title.pool = &rt->pool;
+
     iterate_dir (path, test_dir_iter, rt);
 }
 //
@@ -83,8 +91,8 @@ int main(int argc, char** argv)
     struct test_ctx_t _t = {0};
     struct test_ctx_t *t = &_t;
 
-    struct note_runtime_t _rt = {0};
-    struct note_runtime_t *rt = &_rt;
+    __g_note_runtime = ZERO_INIT (struct note_runtime_t);
+    struct note_runtime_t *rt = &__g_note_runtime;
 
     rt_init_from_dir (rt, TESTS_DIR);
 
@@ -118,7 +126,7 @@ int main(int argc, char** argv)
 
                 // TODO: If the test fails, print the diff resulting of the
                 // following:
-                // git diff --no-index --word-diff=color --word-diff-regex=. tests/<note->id>.html wut.html
+                // git diff --no-index --word-diff=color --word-diff-regex=. tests/{note->id}.html wut.html
 
                 free (expected_html);
             }
