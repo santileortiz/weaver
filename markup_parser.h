@@ -457,7 +457,7 @@ struct psx_token_t ps_next_peek(struct psx_parser_state_t *ps)
             ps_advance_char (ps);
         }
 
-        if (pos_is_space (ps) && heading_number <= 6) {
+        if (heading_number <= 6) {
             ps_consume_spaces (ps);
 
             tok->value = sstr_trim(advance_line (ps));

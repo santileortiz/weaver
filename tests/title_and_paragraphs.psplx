@@ -10,3 +10,9 @@ with trailing spaces
 
 ## Subtitle
 This is a paragraph not a continuation of the subtitle.
+
+#### Level 4 Subtitle
+Test jumping multiple heading values
+
+##Subtitle without space
+Testing a subtitle without space after # character
