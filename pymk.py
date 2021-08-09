@@ -117,8 +117,9 @@ def remove_title_note ():
 def sort_title_notes ():
     title_notes = store_get ('title_notes', [])
 
+    _, id_to_note_title = gn.get_note_maps(source_notes_dir)
     for i, note_id in enumerate(title_notes, 1):
-        print (str(i) + ' ' + note_id)
+        print (str(i) + ' ' + id_to_note_title[note_id])
     print()
 
     order_str = input('Specify new title order (numbers separated by spaces): ')
