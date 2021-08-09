@@ -166,6 +166,9 @@ def generate ():
     gn.copy_changed(source_files_dir, path_cat(out_dir, files_dir))
     gn.copy_changed(source_notes_dir, path_cat(out_dir, notes_dir))
 
+def generate_c ():
+    ex (f'./bin/weaver --generate-static {source_notes_dir} {path_cat(out_dir, notes_dir)}')
+
 ensure_dir ("bin")
 modes = {
         'debug': '-O0 -g -Wall',
@@ -174,19 +177,22 @@ modes = {
         }
 mode = store('mode', get_cli_arg_opt('-M,--mode', modes.keys()), 'debug')
 C_FLAGS = modes[mode]
-C_SOURCE_FILES = "markup_parser_tests.c"
 
+C_SOURCE_FILES = ""
 # Building the Javascript engine increases build times from ~0.5s to ~3s which
 # is quite bad, the flags --js-enable and --js-disable toggle this for
 # testing/development. The NO_JS macro will be defined to switch into stub
 # implementations of functions that call out to javascript.
-if get_cli_persistent_toggle ('use_js', '--js-enable', '--js-disable', True):
-    C_SOURCE_FILES += " lib/duktape.c"
+if get_cli_bool_opt('--use-js') or get_cli_persistent_toggle ('use_js', '--js-enable', '--js-disable', True):
+    C_SOURCE_FILES += "lib/duktape.c"
 else:
     C_FLAGS += " -DNO_JS"
 
+def weaver():
+    ex (f'gcc {C_FLAGS} -o bin/weaver weaver.c {C_SOURCE_FILES} -lm -lrt')
+
 def markup_parser_tests():
-    ex (f'gcc {C_FLAGS} -o bin/markup_parser_tests {C_SOURCE_FILES} -lm -lrt')
+    ex (f'gcc {C_FLAGS} -o bin/markup_parser_tests markup_parser_tests.c {C_SOURCE_FILES} -lm -lrt')
 
 if __name__ == "__main__":
     # Everything above this line will be executed for each TAB press.

@@ -56,6 +56,21 @@ void test_ctx_destroy (struct test_ctx_t *tc)
 GCC_PRINTF_FORMAT(2, 3)
 void test_push (struct test_ctx_t *tc, char *fmt, ...)
 {
+    if (tc->last_test != NULL) {
+        if (tc->show_all_children || !tc->last_test_success) {
+            str_cat_indented (&tc->last_test->output, &tc->last_test->error, TEST_INDENT);
+            // TODO: Should this be indented?
+            // :indented_children_cat
+            str_cat (&tc->last_test->output, &tc->last_test->children);
+        }
+
+        if (tc->test_stack) {
+            str_cat_indented (&tc->test_stack->children, &tc->last_test->output, TEST_INDENT);
+        }
+    }
+
+    tc->last_test = NULL;
+
     struct test_t *test;
     if (tc->test_fl == NULL) {
         LINKED_LIST_PUSH_NEW (&tc->pool, struct test_t, tc->test_stack, new_test);
@@ -104,6 +119,19 @@ void test_push_c (struct test_ctx_t *tc, char *test_name)
 
 void test_pop (struct test_ctx_t *tc, bool success)
 {
+    if (tc->last_test != NULL) {
+        if (tc->show_all_children || !tc->last_test_success) {
+            str_cat_indented (&tc->last_test->output, &tc->last_test->error, TEST_INDENT);
+            // TODO: Should this be indented?
+            // :indented_children_cat
+            str_cat (&tc->last_test->output, &tc->last_test->children);
+        }
+
+        if (tc->test_stack) {
+            str_cat_indented (&tc->test_stack->children, &tc->last_test->output, TEST_INDENT);
+        }
+    }
+
     struct test_t *curr_test = tc->test_stack;
     tc->test_stack = tc->test_stack->next;
     tc->last_test_success = success;
@@ -133,9 +161,7 @@ void test_pop (struct test_ctx_t *tc, bool success)
         str_cat (&curr_test->output, &curr_test->children);
     }
 
-    if (tc->test_stack) {
-        str_cat_indented (&tc->test_stack->children, &curr_test->output, TEST_INDENT);
-    } else {
+    if (!tc->test_stack) {
         str_cat (&tc->result, &curr_test->output);
     }
 }
@@ -147,7 +173,17 @@ void test_error_current (struct test_ctx_t *t, char *fmt, ...)
     str_maybe_grow (t->error, final_size, false);
     char *dst = str_data(t->error);
     PRINTF_SET (dst, final_size, fmt, vargs);
-    dst[final_size] = '\n';
+
+    // If there is a missing newline add it.
+    // NOTE: str_maybe_grow() was passed final_size which is oversized by 1 to
+    // account for the possibility of adding a '\n' character here. Normally we
+    // would've called it with 'final_size-1' because final_size does count the
+    // null byte and str_maybe_grow() expects length withoug counting it.
+    // :oversized_allocation_for_newline
+    if (dst[final_size-2] != '\n') {
+        dst[final_size-1] = '\n';
+        dst[final_size] = '\0';
+    }
 }
 
 GCC_PRINTF_FORMAT(2, 3)
@@ -157,7 +193,12 @@ void test_error (struct test_ctx_t *t, char *fmt, ...)
     str_maybe_grow (&t->last_test->error, final_size, false);
     char *dst = str_data(&t->last_test->error);
     PRINTF_SET (dst, final_size, fmt, vargs);
-    dst[final_size] = '\n';
+
+    // :oversized_allocation_for_newline
+    if (dst[final_size-2] != '\n') {
+        dst[final_size-1] = '\n';
+        dst[final_size] = '\0';
+    }
 }
 
 void test_error_c (struct test_ctx_t *t, char *error_msg)
