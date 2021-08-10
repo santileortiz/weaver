@@ -163,5 +163,6 @@ int main(int argc, char** argv)
     mem_pool_destroy (&rt->pool);
     test_ctx_destroy (t);
     mem_pool_destroy (&pool);
+    js_destroy ();
     return 0;
 }

@@ -92,8 +92,8 @@ int main(int argc, char** argv)
     struct config_t _cfg = {0};
     struct config_t *cfg = &_cfg;
 
-    str_set_abs_path (&cfg->source_path, "~/.weaver/notes/");
-    str_set_abs_path (&cfg->target_path, "~/.cache/weaver/notes/");
+    str_set_path (&cfg->source_path, "~/.weaver/notes/");
+    str_set_path (&cfg->target_path, "~/.cache/weaver/notes/");
 
     // TODO: Read these paths from some configuration file
     if (!dir_exists (str_data(&cfg->source_path))) {
@@ -114,8 +114,19 @@ int main(int argc, char** argv)
             printf (ECMA_YELLOW("warning: ") "generating static site without javascript engine\n\n");
 #endif
 
+            string_t html_path = str_new (str_data(&cfg->target_path));
+            size_t end = str_len (&cfg->target_path);
             LINKED_LIST_FOR (struct note_t*, curr_note, rt->notes) {
-                printf ("%s -> '%s'\n", curr_note->id, str_data(&curr_note->title));
+                string_t error_msg = {0};
+                str_put_printf (&html_path, end, "%s", curr_note->id);
+
+                bool success = rt_parse_to_html (rt, curr_note, &error_msg);
+                if (!success) {
+                    printf ("%s", str_data(&error_msg));
+                }
+
+                full_file_write (str_data(&curr_note->html), str_len(&curr_note->html), str_data(&html_path));
+                str_free (&error_msg);
             }
         }
     }
@@ -125,5 +136,6 @@ int main(int argc, char** argv)
     str_free (&cfg->source_path);
     str_free (&cfg->target_path);
 
+    js_destroy ();
     return retval;
 }

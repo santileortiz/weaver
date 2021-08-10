@@ -2710,21 +2710,11 @@ char* abs_path (char *path, mem_pool_t *pool)
     return absolute_path;
 }
 
-void str_set_abs_path (string_t *str, char *path)
+void str_set_path (string_t *str, char *path)
 {
-    mem_pool_t l_pool = {0};
-
-    char *user_path = resolve_user_path (path, &l_pool);
-
-    char *absolute_path_m = realpath (user_path, NULL);
-    if (absolute_path_m == NULL) {
-        // NOTE: realpath() fails if the file does not exist.
-        //printf ("Error: %s (%d)\n", strerror(errno), errno);
-    }
-    str_set (str, absolute_path_m);
-    free (absolute_path_m);
-
-    mem_pool_destroy (&l_pool);
+    char *user_path = resolve_user_path (path, NULL);
+    str_set (str, user_path);
+    free (user_path);
 }
 
 void file_write (int file, void *pos,  ssize_t size)
