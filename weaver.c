@@ -93,9 +93,10 @@ int main(int argc, char** argv)
     struct config_t *cfg = &_cfg;
 
     str_set_path (&cfg->source_path, "~/.weaver/notes/");
-    str_set_path (&cfg->target_path, "~/.cache/weaver/notes/");
+    str_set_path (&cfg->target_path, "~/.cache/weaver/www/notes/");
 
-    // TODO: Read these paths from some configuration file
+    // TODO: Read these paths from some configuration file and from command line
+    // parameters.
     if (!dir_exists (str_data(&cfg->source_path))) {
         success = false;
         printf (ECMA_RED("error: ") "source directory does not exist\n");
