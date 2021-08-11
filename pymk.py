@@ -195,6 +195,9 @@ def weaver():
 def markup_parser_tests():
     ex (f'gcc {C_FLAGS} -o bin/markup_parser_tests markup_parser_tests.c {C_SOURCE_FILES} -lm -lrt')
 
+def cloc():
+    ex ('cloc --exclude-list-file=.clocignore .')
+
 if __name__ == "__main__":
     # Everything above this line will be executed for each TAB press.
     # If --get_completions is set, handle_tab_complete() calls exit().
