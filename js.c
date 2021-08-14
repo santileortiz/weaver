@@ -22,6 +22,7 @@ void str_cat_math_strn (string_t *str, bool is_display_mode, int len, char *expr
     mem_pool_t pool = {0};
     string_t buff = {0};
     str_cat_printf (&buff, "\nkatex.renderToString(\"%.*s\", {throwOnError: false, displayMode: %s});", len, expression, is_display_mode ? "true" : "false");
+    str_replace (&buff, "\\", "\\\\", NULL);
 
     if (katex_ctx == NULL) {
         // TODO: Put this in an embedded resource so we don't depend on the location

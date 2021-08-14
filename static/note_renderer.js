@@ -1049,18 +1049,15 @@ function parse_note_text(note_text)
     return root_block;
 }
 
-function note_text_to_element (container, id, note_text, x)
+function note_text_to_element (container, id, note_html, x)
 {
-    let new_expanded_note = note_element_new (id, x);
+    container.insertAdjacentHTML ('beforeend', note_html);
+
+    let new_expanded_note = document.getElementById(id);
+    new_expanded_note.id = id
+    new_expanded_note.classList.add("note")
+    new_expanded_note.style.left = x + "px"
     new_expanded_note.classList.add("expanded");
-
-    // NOTE: We append this at the beginning so we get the correct client and
-    // scroll height at the end.
-    // :element_size_computation
-    container.appendChild(new_expanded_note);
-
-    let root_block = parse_note_text(note_text);
-    block_tree_to_dom(root_block, new_expanded_note);
 
     // Create button to start editing the note
     {
@@ -1129,28 +1126,11 @@ function get_note_by_id (note_id)
     return __g_related_notes[note_id];
 }
 
-// This queries the content of the passed note and all notes liked from it,
-// after all data has been received the callback is called, the content of the
-// passed note will be passed as parameter. Text for the loaded notes can be
-// retrieved by calling get_note_by_id().
-function get_notes_and_run (note_id, callback)
+function get_note_and_run (note_id, callback)
 {
-    note_ids = [note_id];
-    if (note_links[note_id] !== undefined) {
-        note_ids = note_ids.concat(note_links[note_id]);
-    }
-
-    let note_urls = note_ids.map ( function (id) {
-        return "notes/" + id;
-    });
-
-    ajax_get (note_urls,
-        function(responses) {
-            note_ids.forEach (function (id, idx) {
-                __g_related_notes[id] = responses[idx];
-            });
-
-            callback (responses[0]);
+    ajax_get ("notes/" + note_id,
+        function(response) {
+            callback (response);
         }
     )
 }
@@ -1160,7 +1140,7 @@ function get_notes_and_run (note_id, callback)
 // :pushes_state
 function reset_and_open_note(note_id)
 {
-    get_notes_and_run (note_id,
+    get_note_and_run (note_id,
         function(response) {
             let note_container = document.getElementById("note-container")
             note_container.innerHTML = ''
@@ -1200,7 +1180,7 @@ function open_note(note_id)
         let collapsed_title = collapsed_element_new (expanded_note.id);
         expanded_note.appendChild(collapsed_title);
 
-        get_notes_and_run (note_id,
+        get_note_and_run (note_id,
             function(response) {
                 let note_container = document.getElementById("note-container");
                 note_text_to_element(note_container, note_id, response, opened_notes.length*collapsed_note_width);
@@ -1211,12 +1191,6 @@ function open_note(note_id)
     }
 
     return false;
-}
-
-// :pushes_state
-function open_note_by_title(note_title)
-{
-    return open_note (note_title_to_id[note_title]);
 }
 
 // Unlike reset_and_open_note() and open_note(), this one doesn't push a state.
@@ -1230,7 +1204,7 @@ function open_notes(note_ids, expanded_note_id)
         expanded_note_id = note_ids[note_ids.length - 1] 
     }
 
-    get_notes_and_run (expanded_note_id,
+    get_note_and_run (expanded_note_id,
         function(response) {
             let note_container = document.getElementById("note-container")
             note_container.innerHTML = ''

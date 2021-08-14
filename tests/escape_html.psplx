@@ -1,0 +1,8 @@
+# Check <html> escaping<br>
+
+Any HTML tags outside of an html tag must be escaped. For example <input> and
+<span> should show as plain text. This is different from markdown where HTML
+can be inlined by default.
+
+<h1>
+<p>Not an HTML paragraph</p>

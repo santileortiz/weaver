@@ -22,7 +22,7 @@ ensure_dir (source_files_dir)
 # This directory contains data that is automatically generated from user's data
 # in the base directory.
 cache_dir = os.path.abspath(path_resolve('~/.cache/weaver/'))
-out_dir = path_cat(cache_dir, 'build')
+out_dir = path_cat(cache_dir, 'www')
 ensure_dir(out_dir)
 
 # These directories are part of the code checkout and are used to generate the
@@ -145,7 +145,7 @@ def generate ():
     if len (orphan_notes) > 0:
         print ("Orphan notes:")
         for orphan in orphan_notes:
-            print (f"{path_cat(source_notes_dir, id_to_note_title[orphan])} - {orphan}")
+            print (f"{path_cat(source_notes_dir, orphan)} - {id_to_note_title[orphan]}")
         print()
 
     env = Environment(
@@ -165,10 +165,11 @@ def generate ():
 
     gn.copy_changed(static_dir, out_dir)
     gn.copy_changed(source_files_dir, path_cat(out_dir, files_dir))
-    gn.copy_changed(source_notes_dir, path_cat(out_dir, notes_dir))
 
-def generate_c ():
+    # TODO: The HTML generator should only process source notes that changed.
+    # Currently it generates all notes, all the time.
     ex (f'./bin/weaver --generate-static {source_notes_dir} {path_cat(out_dir, notes_dir)}')
+
 
 ensure_dir ("bin")
 modes = {

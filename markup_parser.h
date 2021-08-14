@@ -345,7 +345,7 @@ void psx_warning (struct psx_parser_state_t *ps, char *format, ...)
     if (ps->path != NULL) {
          str_cat_printf (&ps->error_msg, ECMA_DEFAULT("%s:") ECMA_YELLOW(" warning: "), ps->path);
     } else {
-         str_cat_printf (&ps->error_msg, ECMA_RED(" warning: "));
+         str_cat_printf (&ps->error_msg, ECMA_YELLOW("warning: "));
     }
 
     PRINTF_INIT (format, size, args);
@@ -825,7 +825,7 @@ void compute_media_size (struct psx_tag_parameters_t *parameters, double aspect_
 //
 // TODO: How do we handle the prescence of nested blocks here?, ignore them and
 // print them or raise an error and stop parsing.
-void block_content_parse_text (struct html_t *html, struct html_element_t *container, char *content)
+void block_content_parse_text (struct html_t *html, struct html_element_t *container, char *content, string_t *error_msg)
 {
     string_t buff = {0};
     struct psx_parser_state_t _ps = {0};
@@ -838,7 +838,11 @@ void block_content_parse_text (struct html_t *html, struct html_element_t *conta
 
         if (ps_match(ps, TOKEN_TYPE_TEXT, NULL) || ps_match(ps, TOKEN_TYPE_SPACE, NULL)) {
             struct psx_block_unit_t *curr_unit = DYNAMIC_ARRAY_GET_LAST(ps->block_unit_stack);
-            html_element_append_strn (html, curr_unit->html_element, tok.value.len, tok.value.s);
+
+            strn_set (&buff, tok.value.s, tok.value.len);
+            str_replace (&buff, "<", "&lt;", NULL);
+            str_replace (&buff, ">", "&gt;", NULL);
+            html_element_append_strn (html, curr_unit->html_element, str_len(&buff), str_data(&buff));
 
         } else if (ps_match(ps, TOKEN_TYPE_OPERATOR, "}") && DYNAMIC_ARRAY_GET_LAST(ps->block_unit_stack)->type != BLOCK_UNIT_TYPE_ROOT) {
             psx_block_unit_pop (ps);
@@ -940,13 +944,89 @@ void block_content_parse_text (struct html_t *html, struct html_element_t *conta
         } else if (ps_match(ps, TOKEN_TYPE_TAG, "note")) {
             struct psx_tag_t *tag = ps_parse_tag (ps);
 
-            struct html_element_t *link_element = html_new_element (html, "a");
-            str_set_printf (&buff, "return open_note_by_title('%.*s');", str_len(&tag->content), str_data(&tag->content));
-            html_element_attribute_set (html, link_element, "onclick", str_data(&buff));
-            html_element_attribute_set (html, link_element, "href", "#");
-            html_element_class_add (html, link_element, "note-link");
-            html_element_append_strn (html, link_element, str_len(&tag->content), str_data(&tag->content));
+            // TODO: Implement navigation to note's subsections. Right now we
+            // just ignore what comes after the #. Also, this notation is
+            // problematic if there are titles that contain # characters, do we
+            // care about that enough to make the subsection be passed as a
+            // parameter instead of the current shorthand syntax?. Do we want to
+            // allow both?. We can check that a note link is valid because we
+            // did a pre processing of all titles and have a map from titles to
+            // notes, we can't do the same for sections because notes have not
+            // been fully parsed yet. If we want to show warnings in these cases
+            // we will need a post processing phase that validates all note
+            // links that contain a subsection.
 
+            // TODO: This should essentially parse the format
+            //
+            //                 {note-title}#{note-section}
+            //
+            // where the # and note-section are optional and both "capture
+            // groups" trim spaces at the start and end. I though parsing this
+            // with a regular expression was going to be straightforward but the
+            // smallest regex I found was
+            //
+            //                 ^\s*(.+?)(\s*#\s*(.*?)\s*)?$
+            //
+            // then assign capture groups like this
+            //
+            //  note-title <- (1)
+            //  note-section <- (3)
+            //
+            // I'd like to design a notation that allows defining these kinds of
+            // tags easily. So far we also do a very similar thing for links
+            // where we parse the format
+            //
+            //                      {link-title}->{url}
+            //
+            // here the difference being, that optional components are
+            // link-title and the -> characters.
+            //
+            // Designing a syntax for this would have the benefit of letting us
+            // easily recreate the original tag from the components. Also it
+            // would let us automatically define named parameters to set the
+            // components in case the content would need some escaping, for
+            // example
+            //
+            //  \note[note-title="# hash character", note-section="#subsesction"]{}
+            //
+            // We can have the syntax fall back to a regex expression where the
+            // user provides a mapping between capture groups and component
+            // names. But now we would require of them to also add a format to
+            // show how to build the original tag back from the components.
+            // Although, we can always fall back to the tag parameters
+            // notation...?, hmmm this sound promising.
+            //
+            // TeX has a very similar format, but it was created before regular
+            // expressions were a thing and I think it hardcodes some policies
+            // about greediness. The fall back to regular expressions would
+            // allow the full expressibility for defining parsing while reusing
+            // a language somewhat familiar to programmers and not having to
+            // make the big jump to using an actual programming language.
+            char *start = str_data (&tag->content);
+            while (is_space (start)) start++;
+
+            char *pos = start;
+            while (*pos != '\0' && *pos != '#') pos++;
+            while (pos > start && is_space (pos-1)) pos--;
+
+            if (pos != start) {
+                strn_set (&buff, start, pos-start);
+            } else {
+                str_set (&buff, start);
+            }
+            struct note_t *linked_note = rt_get_note_by_title (&buff);
+
+            struct html_element_t *link_element = html_new_element (html, "a");
+            html_element_attribute_set (html, link_element, "href", "#");
+            if (linked_note != NULL) {
+                str_set_printf (&buff, "return open_note('%s');", linked_note->id);
+                html_element_attribute_set (html, link_element, "onclick", str_data(&buff));
+                html_element_class_add (html, link_element, "note-link");
+            } else {
+                html_element_class_add (html, link_element, "note-link-broken");
+                psx_warning (ps, "broken note link, couldn't find note for title: %s", str_data (&tag->content));
+            }
+            html_element_append_strn (html, link_element, str_len(&tag->content), str_data(&tag->content));
             psx_append_html_element(ps, html, link_element);
 
         } else if (ps_match(ps, TOKEN_TYPE_TAG, "html")) {
@@ -965,6 +1045,10 @@ void block_content_parse_text (struct html_t *html, struct html_element_t *conta
             html_element_append_strn (html, curr_unit->html_element, str_len(&buff), str_data (&buff));
             str_free (&buff);
         }
+    }
+
+    if (error_msg != NULL) {
+        str_cat (error_msg, &ps->error_msg);
     }
 
     ps_destroy (ps);
@@ -1125,21 +1209,21 @@ void psx_block_tree_user_callbacks_full (struct psx_parser_state_t *ps, struct p
     }
 }
 
-void block_tree_to_html (struct html_t *html, struct psx_block_t *block,  struct html_element_t *parent)
+void block_tree_to_html (struct html_t *html, struct psx_block_t *block,  struct html_element_t *parent, string_t *error_msg)
 {
     string_t buff = {0};
 
     if (block->type == BLOCK_TYPE_PARAGRAPH) {
         struct html_element_t *new_dom_element = html_new_element (html, "p");
         html_element_append_child (html, parent, new_dom_element);
-        block_content_parse_text (html, new_dom_element, str_data(&block->inline_content));
+        block_content_parse_text (html, new_dom_element, str_data(&block->inline_content), error_msg);
 
     } else if (block->type == BLOCK_TYPE_HEADING) {
         str_set_printf (&buff, "h%i", block->heading_number);
         struct html_element_t *new_dom_element = html_new_element (html, str_data(&buff));
 
         html_element_append_child (html, parent, new_dom_element);
-        block_content_parse_text (html, new_dom_element, str_data(&block->inline_content));
+        block_content_parse_text (html, new_dom_element, str_data(&block->inline_content), error_msg);
 
     } else if (block->type == BLOCK_TYPE_CODE) {
         struct html_element_t *pre_element = html_new_element (html, "pre");
@@ -1152,15 +1236,22 @@ void block_tree_to_html (struct html_t *html, struct psx_block_t *block,  struct
         // html_element_style_set(html, code_element, "padding-left", "0.25em");
 
         html_element_append_cstr (html, code_element, str_data(&block->inline_content));
+        html_element_attribute_set (html, code_element, "style", "display: block;");
         html_element_append_child (html, pre_element, code_element);
 
-        // TODO: This hack should happen in the client side because it requires
-        // feedback from the browser's renderer to get the computed width of
-        // widgets.
+        // Previously I was using a hack to show tight, centered code blocks if
+        // they were smaller than psx_content_width and at the same time show
+        // horizontal scrolling if they were wider. I'm now of the opinion that
+        // although a centered code block looks nice in a read-only environment,
+        // it will be horrible if we eve implement inplace editing because the
+        // cursor of the user will be jumping so the block gets recentered (if
+        // the block gets recentered at all, which wouldn't be the case if I
+        // kept using this hack).
         //
-        // This is a hack. It's the only way I found to show tight, centered
-        // code blocks if they are smaller than psx_content_width and at the same
-        // time show horizontal scrolling if they are wider.
+        // For this reason we now just make all code blocks have the full width
+        // of the note. We could thing of using the hack back when enabling a
+        // read-only mode or something like that. So, for reference I'll keep
+        // the description of how the hack worked.
         //
         // We need to do this because "display: table", disables scrolling, but
         // "display: block" sets width to be the maximum possible. Here we
@@ -1177,7 +1268,7 @@ void block_tree_to_html (struct html_t *html, struct psx_block_t *block,  struct
 
     } else if (block->type == BLOCK_TYPE_ROOT) {
         LINKED_LIST_FOR (struct psx_block_t*, sub_block, block->block_content) {
-            block_tree_to_html(html, sub_block, parent);
+            block_tree_to_html(html, sub_block, parent, error_msg);
         }
 
     } else if (block->type == BLOCK_TYPE_LIST) {
@@ -1188,7 +1279,7 @@ void block_tree_to_html (struct html_t *html, struct psx_block_t *block,  struct
         html_element_append_child (html, parent, new_dom_element);
 
         LINKED_LIST_FOR (struct psx_block_t*, sub_block, block->block_content) {
-            block_tree_to_html(html, sub_block, new_dom_element);
+            block_tree_to_html(html, sub_block, new_dom_element, error_msg);
         }
 
     } else if (block->type == BLOCK_TYPE_LIST_ITEM) {
@@ -1196,7 +1287,7 @@ void block_tree_to_html (struct html_t *html, struct psx_block_t *block,  struct
         html_element_append_child (html, parent, new_dom_element);
 
         LINKED_LIST_FOR (struct psx_block_t*, sub_block, block->block_content) {
-            block_tree_to_html(html, sub_block, new_dom_element);
+            block_tree_to_html(html, sub_block, new_dom_element, error_msg);
         }
     }
 
@@ -1471,24 +1562,9 @@ struct html_t* markup_to_html (mem_pool_t *pool, char *path, char *markup, char 
 
     struct html_t *html = NULL;
     if (root_block != NULL) {
-        html = mem_pool_push_struct (pool, struct html_t);
-        *html = ZERO_INIT (struct html_t);
-        html->pool = pool;
-
-        string_t buff = {0};
-
-        struct html_element_t *root = html_new_element (html, "div");
-        html->root = root;
-        html_element_attribute_set (html, root, "id", id);
-        html_element_class_add (html, root, "note");
-        html_element_class_add (html, root, "expanded");
-
-        // TODO: Make html_element_attribute_set() receive printf parameters
-        // and format string.
-        str_set_printf (&buff, "%ipx", x);
-        html_element_attribute_set (html, root, "style", str_data(&buff));
-
-        block_tree_to_html(html, root_block, root);
+        html = html_new (pool, "div");
+        html_element_attribute_set (html, html->root, "id", id);
+        block_tree_to_html (html, root_block, html->root, error_msg);
     }
 
     mem_pool_destroy (&pool_l);
@@ -1502,16 +1578,7 @@ PSX_USER_TAG_CB (summary_tag_handler)
 {
     struct psx_tag_t *tag = ps_parse_tag (ps_inline);
 
-    struct note_t *note = NULL;
-    struct note_runtime_t *rt = rt_get ();
-    if (rt != NULL) {
-        note = title_to_note_get (&rt->notes_by_title, &tag->content);
-    } else {
-        // TODO: There is no runtime in the parser state. Is there any reason we
-        // would use the parser without a runtime?. If that's the case, then tag
-        // evaluations like this one, that reffer to other notes won't work.
-    }
-
+    struct note_t *note = rt_get_note_by_title (&tag->content);
     if (note != NULL) {
         struct psx_block_t *result = NULL;
         struct psx_block_t *result_end = NULL;

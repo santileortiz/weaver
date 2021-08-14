@@ -31,4 +31,5 @@ struct note_runtime_t {
 } __g_note_runtime;
 
 struct note_runtime_t* rt_get ();
+struct note_t* rt_get_note_by_title (string_t *title);
 bool rt_parse_to_html (struct note_runtime_t *rt, struct note_t *note, string_t *error_msg);

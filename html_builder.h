@@ -74,6 +74,20 @@ struct html_element_t* html_new_element_strn (struct html_t *html, ssize_t len, 
     return new_element;
 }
 
+struct html_t* html_new (mem_pool_t *pool, char *root_tag)
+{
+    assert (pool != NULL && root_tag != NULL);
+
+    struct html_t *html = mem_pool_push_struct (pool, struct html_t);
+    *html = ZERO_INIT (struct html_t);
+    html->pool = pool;
+
+    struct html_element_t *root = html_new_element (html, root_tag);
+    html->root = root;
+
+    return html;
+}
+
 void html_element_append_child (struct html_t *html, struct html_element_t *html_element, struct html_element_t *child)
 {
     LINKED_LIST_APPEND (html_element->children, child);
@@ -101,6 +115,7 @@ void html_element_append_strn (struct html_t *html, struct html_element_t *html_
     LINKED_LIST_APPEND (html_element->children, new_text_node);
 }
 
+// TODO: Make this receive printf parameters and format string.
 void html_element_attribute_set (struct html_t *html, struct html_element_t *html_element, char *attribute, char *value)
 {
     mem_pool_variable_ensure (html);
@@ -118,7 +133,7 @@ void html_element_attribute_set (struct html_t *html, struct html_element_t *htm
     }
 }
 
-// NOTE: Don't pass multiple comma-separated classes as value, instead call this
+// NOTE: Don't pass multiple space-separated classes as value, instead call this
 // function multiple times.
 void html_element_class_add (struct html_t *html, struct html_element_t *html_element, char *value)
 {
@@ -133,7 +148,7 @@ void html_element_class_add (struct html_t *html, struct html_element_t *html_el
         html_element_attribute_set (html, html_element, str_data(&attr), value);
 
     } else {
-        str_cat_printf (&node->value, ",%s", value);
+        str_cat_printf (&node->value, " %s", value);
     }
     str_free (&attr);
 }

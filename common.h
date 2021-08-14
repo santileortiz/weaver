@@ -677,9 +677,8 @@ void str_replace(string_t *str, char *find, char *replace, int *count)
    char *original = NULL;
    ssize_t original_len = str_len (str);
    {
-       char *original = (char*)malloc (original_len+1);
-       memcpy (original, str, original_len);
-       original[original_len] = '\0';
+       original = (char*)malloc (original_len+1);
+       memcpy (original, str_data(str), original_len+1);
    }
    if (original == NULL) return;
 
@@ -692,8 +691,32 @@ void str_replace(string_t *str, char *find, char *replace, int *count)
    for (;;) {
       char *t = strstr(s, find);
       if (t == NULL) {
-         strncpy(q,s,original_len+count_l*(len_replace-len_find)+1);
+#if 1
+         strcpy(q,s);
          assert(strlen(p) == original_len + count_l*(len_replace-len_find));
+#else
+         // FIXME: Why does this not work when str is not small?. I get some
+         // invalid free() when regrowing the string. It fails in the following
+         // case:
+         //
+         // str: "&lt;https://people.eecs.berkeley.edu/~luca/cs174/byzantine.pdf>"
+         // find: ">"
+         // replace: "&gt;"
+
+         strncpy(q,s,original_len+count_l*(len_replace-len_find)+1);
+         if (strlen(p) != original_len + count_l*(len_replace-len_find)) {
+             printf ("strlen(p): %ld\n", strlen(p));
+             printf ("exp: %ld\n", original_len + count_l*(len_replace-len_find));
+             printf ("original: %s\n", original);
+             printf ("original_len: %ld\n", original_len);
+             printf ("find: %s\n", find);
+             printf ("replace: %s\n", replace);
+             printf ("q: '%s'\n", q);
+             printf ("s: '%s'\n", s);
+             printf ("p (result): '%s'\n", p);
+             printf ("\n");
+         }
+#endif
          return;
       }
       memcpy(q, s, t-s);
