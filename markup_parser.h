@@ -1461,13 +1461,14 @@ struct psx_block_t* parse_note_text (mem_pool_t *pool, char *path, char *note_te
             if (tok_peek.is_eol && tok_peek.type == TOKEN_TYPE_PARAGRAPH) {
                 ps_next(ps);
 
-                // Use list's margin... maybe this will never be read?...
+                // Use list's margin... I don't think it's being used?...
                 struct psx_block_t *new_paragraph = psx_push_block(ps, psx_leaf_block_new(ps, BLOCK_TYPE_PARAGRAPH, tok.margin, tok_peek.value));
 
                 // Append all paragraph continuation lines. This ensures all paragraphs
                 // found at the beginning of the iteration followed an empty line.
                 tok_peek = ps_next_peek(ps);
                 while (tok_peek.is_eol && tok_peek.type == TOKEN_TYPE_PARAGRAPH) {
+                    str_cat_c(&new_paragraph->inline_content, " ");
                     strn_cat_c(&new_paragraph->inline_content, tok_peek.value.s, tok_peek.value.len);
                     ps_next(ps);
 
