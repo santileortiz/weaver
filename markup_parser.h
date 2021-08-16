@@ -1544,7 +1544,6 @@ struct html_t* markup_to_html (mem_pool_t *pool, char *path, char *markup, char 
     mem_pool_t pool_l = {0};
 
     struct psx_block_t *root_block = parse_note_text (&pool_l, path, markup, error_msg);
-    //printf_block_tree (root_block, 4);
 
     struct html_t *html = NULL;
     if (root_block != NULL) {

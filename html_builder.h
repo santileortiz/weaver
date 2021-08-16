@@ -208,7 +208,7 @@ void str_cat_html_element (string_t *str, struct html_element_t *element, int in
             {
                 if (!html_element_is_text_node (curr_child) && !html_is_inline_tag(element)) {
                     was_inlined = false;
-                    str_cat_indented_printf (str, curr_indent, "\n");
+                    str_cat_c (str, "\n");
                     str_cat_html_element (str, curr_child, indent, curr_indent+indent);
 
                 } else {
@@ -217,7 +217,7 @@ void str_cat_html_element (string_t *str, struct html_element_t *element, int in
             }
 
             if (!was_inlined) {
-                str_cat_indented_printf (str, curr_indent, "\n");
+                str_cat_c (str, "\n");
                 html_maybe_cat_tag_end (str, element, curr_indent);
 
             } else {

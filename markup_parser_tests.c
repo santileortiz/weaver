@@ -99,8 +99,9 @@ int main(int argc, char** argv)
 
     rt_init_from_dir (rt, TESTS_DIR);
 
-    char *note_id = get_cli_arg_opt ("--show", argv, argc);
-    char *html_out = get_cli_arg_opt ("--html", argv, argc);
+    char *note_id = get_cli_no_opt_arg (argv, argc);
+    bool html_out = get_cli_bool_opt ("--html", argv, argc);
+    bool blocks_out = get_cli_bool_opt ("--blocks", argv, argc);
 
     if (note_id == NULL) {
         LINKED_LIST_FOR (struct note_t*, note, rt->notes) {
@@ -140,7 +141,14 @@ int main(int argc, char** argv)
             if (success) {
                 if (str_len(error_msg) > 0) printf ("\n");
 
-                if (html_out == NULL) {
+                if (html_out) {
+                    printf ("%s", str_data(&note->html));
+
+                } else if (blocks_out) {
+                    struct psx_block_t *root_block = parse_note_text (&pool, str_data(&note->path), str_data(&note->psplx), NULL);
+                    printf_block_tree (root_block, 4);
+
+                } else {
                     printf (ECMA_MAGENTA("PSPLX") "\n");
                     prnt_debug_string (str_data(&note->psplx));
                     printf ("\n");
@@ -163,8 +171,7 @@ int main(int argc, char** argv)
 
                         unlink (tmp_fname);
                     }
-                } else {
-                    full_file_write (str_data(&note->html), str_len(&note->html), html_out);
+
                 }
             }
 
