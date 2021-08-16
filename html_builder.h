@@ -187,7 +187,6 @@ void html_maybe_cat_tag_end (string_t *str, struct html_element_t *element, int 
     }
 }
 
-#define str_cat_html(str,html,indent) str_cat_html_element (str,html->root,indent,0)
 void str_cat_html_element (string_t *str, struct html_element_t *element, int indent, int curr_indent)
 {
     if (html_element_is_text_node (element)) {
@@ -231,11 +230,18 @@ void str_cat_html_element (string_t *str, struct html_element_t *element, int in
     }
 }
 
+static inline
+void str_cat_html(string_t *str, struct html_t *html, int indent)
+{
+    str_cat_html_element (str,html->root,indent,0);
+    str_cat_c (str, "\n");
+}
+
 char* html_to_str (struct html_t *html, mem_pool_t *pool, int indent)
 {
     string_t result = {0};
 
-    str_cat_html_element (&result, html->root, indent, 0);
+    str_cat_html (&result, html, indent);
     char *res = pom_strdup(pool, str_data(&result));
 
     str_free (&result);

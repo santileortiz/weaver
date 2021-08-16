@@ -2913,6 +2913,20 @@ char* full_file_read (mem_pool_t *pool, const char *path, uint64_t *len)
     return retval;
 }
 
+char* full_file_read_no_trailing_newline (mem_pool_t *pool, const char *path, uint64_t *len)
+{
+    size_t l_len;
+    if (len == NULL) len = &l_len;
+
+    char *data = full_file_read (pool, path, len);
+
+    char *p = data + *len;
+    if (*p == '\0') p--;
+    if (*p == '\n') *p = '\0';
+
+    return data;
+}
+
 bool path_exists (char *path)
 {
     if (path == NULL) return false;
