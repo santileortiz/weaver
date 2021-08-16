@@ -155,8 +155,12 @@ int main(int argc, char** argv)
                 if (str_len(error_msg) > 0) printf ("\n");
 
                 if (html_out == NULL) {
-                    printf (ECMA_MAGENTA("PSPLX") "\n%s\n", str_data(&note->psplx));
-                    printf (ECMA_MAGENTA("HTML") "\n%s\n", str_data(&note->html));
+                    printf (ECMA_MAGENTA("PSPLX") "\n");
+                    prnt_debug_string (str_data(&note->psplx));
+                    printf ("\n");
+
+                    printf (ECMA_MAGENTA("RESULTING HTML") "\n");
+                    prnt_debug_string (str_data(&note->html));
 
                     char *expected_html = get_expected_html (&pool, note->id, NULL);
                     if (expected_html != NULL && strcmp(str_data(&note->html), expected_html) != 0) {

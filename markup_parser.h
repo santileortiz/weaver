@@ -58,7 +58,7 @@ sstring_t sstr_set (char *s, uint32_t len)
 static inline
 sstring_t sstr_trim (sstring_t str)
 {
-    while (is_space (str.s)) {
+    while (is_space (str.s) || *(str.s) == '\n') {
         str.s++;
         str.len--;
     }
@@ -562,9 +562,9 @@ struct psx_token_t ps_inline_next(struct psx_parser_state_t *ps)
         tok.value = SSTRING(ps->pos, 1);
         ps_advance_char (ps);
 
-    } else if (pos_is_space(ps) || ps_curr_char(ps) == '\n') {
-        // This consumes consecutive spaces into a single one.
-        while (pos_is_space(ps) || ps_curr_char(ps) == '\n') {
+    } else if (pos_is_space(ps)) {
+        // This collapses consecutive spaces into a single one.
+        while (pos_is_space(ps)) {
             ps_advance_char (ps);
         }
 
@@ -573,7 +573,7 @@ struct psx_token_t ps_inline_next(struct psx_parser_state_t *ps)
 
     } else {
         char *start = ps->pos;
-        while (!pos_is_eof(ps) && !pos_is_operator(ps) && !pos_is_space(ps) && ps_curr_char(ps) != '\n') {
+        while (!pos_is_eof(ps) && !pos_is_operator(ps) && !pos_is_space(ps)) {
             ps_advance_char (ps);
         }
 
@@ -587,7 +587,7 @@ struct psx_token_t ps_inline_next(struct psx_parser_state_t *ps)
 
     ps->token = tok;
 
-    //console.log(psx_token_type_names[tok.type] + ": " + tok.value)
+    //printf ("%s: %.*s\n", psx_token_type_names[tok.type], tok.value.len, tok.value.s);
     return tok;
 }
 
@@ -840,6 +840,7 @@ void block_content_parse_text (struct html_t *html, struct html_element_t *conta
             struct psx_block_unit_t *curr_unit = DYNAMIC_ARRAY_GET_LAST(ps->block_unit_stack);
 
             strn_set (&buff, tok.value.s, tok.value.len);
+            str_replace (&buff, "\n", " ", NULL);
             str_replace (&buff, "<", "&lt;", NULL);
             str_replace (&buff, ">", "&gt;", NULL);
             html_element_append_strn (html, curr_unit->html_element, str_len(&buff), str_data(&buff));
@@ -853,7 +854,7 @@ void block_content_parse_text (struct html_t *html, struct html_element_t *conta
             psx_push_block_unit_new (ps, html, tag.value);
 
         } else if (ps_match(ps, TOKEN_TYPE_TAG, "link")) {
-             struct psx_tag_t *tag = ps_parse_tag (ps);
+            struct psx_tag_t *tag = ps_parse_tag (ps);
 
             // We parse the URL from the title starting at the end. I thinkg is
             // far less likely to have a non URL encoded > character in the
@@ -874,21 +875,26 @@ void block_content_parse_text (struct html_t *html, struct html_element_t *conta
                 url = sstr_trim(SSTRING(str_data(&tag->content) + pos + 2, str_len(&tag->content) - (pos + 2)));
                 title = sstr_trim(SSTRING(str_data(&tag->content), pos));
 
-                // TODO: It would be nice to heve this API...
+                // TODO: It would be nice to have this API...
                 //sstr_trim(sstr_substr(pos+2));
                 //sstr_trim(sstr_substr(0, pos));
             }
 
             struct html_element_t *link_element = html_new_element (html, "a");
             strn_set (&buff, url.s, url.len);
+            str_replace (&buff, "\n", "", NULL);
             html_element_attribute_set (html, link_element, "href", str_data(&buff));
             html_element_attribute_set (html, link_element, "target", "_blank");
-            html_element_append_strn (html, link_element, title.len, title.s);
+
+            strn_set (&buff, title.s, title.len);
+            str_replace (&buff, "\n", " ", NULL);
+            html_element_append_strn (html, link_element, str_len(&buff), str_data(&buff));
 
             psx_append_html_element(ps, html, link_element);
 
         } else if (ps_match(ps, TOKEN_TYPE_TAG, "youtube")) {
             struct psx_tag_t *tag = ps_parse_tag (ps);
+            str_replace (&tag->content, "\n", " ", NULL);
 
             sstring_t video_id = {0};
             const char *error;
@@ -918,6 +924,7 @@ void block_content_parse_text (struct html_t *html, struct html_element_t *conta
 
         } else if (ps_match(ps, TOKEN_TYPE_TAG, "image")) {
             struct psx_tag_t *tag = ps_parse_tag (ps);
+            str_replace (&tag->content, "\n", " ", NULL);
 
             struct html_element_t *img_element = html_new_element (html, "img");
             str_set_printf (&buff, "files/%s", str_data(&tag->content));
@@ -932,6 +939,7 @@ void block_content_parse_text (struct html_t *html, struct html_element_t *conta
 
             string_t code_content = {0};
             parse_balanced_brace_block(ps, &code_content);
+            str_replace (&code_content, "\n", " ", NULL);
             if (str_len(&code_content) > 0) {
                 struct html_element_t *code_element = html_new_element (html, "code");
                 html_element_class_add(html, code_element, "code-inline");
@@ -1394,7 +1402,7 @@ struct psx_block_t* parse_note_text (mem_pool_t *pool, char *path, char *note_te
             // found at the beginning of the iteration followed an empty line.
             struct psx_token_t tok_peek = ps_next_peek(ps);
             while (tok_peek.is_eol && tok_peek.type == TOKEN_TYPE_PARAGRAPH) {
-                str_cat_c(&new_paragraph->inline_content, " ");
+                str_cat_c(&new_paragraph->inline_content, "\n");
                 strn_cat_c(&new_paragraph->inline_content, tok_peek.value.s, tok_peek.value.len);
                 ps_next(ps);
 
@@ -1468,7 +1476,7 @@ struct psx_block_t* parse_note_text (mem_pool_t *pool, char *path, char *note_te
                 // found at the beginning of the iteration followed an empty line.
                 tok_peek = ps_next_peek(ps);
                 while (tok_peek.is_eol && tok_peek.type == TOKEN_TYPE_PARAGRAPH) {
-                    str_cat_c(&new_paragraph->inline_content, " ");
+                    str_cat_c(&new_paragraph->inline_content, "\n");
                     strn_cat_c(&new_paragraph->inline_content, tok_peek.value.s, tok_peek.value.len);
                     ps_next(ps);
 
@@ -1497,29 +1505,6 @@ struct psx_block_t* parse_note_text (mem_pool_t *pool, char *path, char *note_te
     return root_block;
 }
 
-void str_cat_indented_debug_multiline (string_t *str, int curr_indent, char *c_str)
-{
-    char *pos = c_str;
-    while (*pos != '\0') {
-        char *start = pos;
-        while (*pos != '\n' && *pos != '\0') pos++;
-
-        str_cat_indented_printf (str, curr_indent, ECMA_S_YELLOW(0,"%.*s"), (int) (pos - start), start);
-        if (*pos == '\n') {
-            str_cat_printf (str, "↲");
-            pos++;
-        }
-
-        if (*pos == '\0') {
-            str_cat_printf (str, "∎\n");
-        } else {
-            str_cat_printf (str, "\n");
-        }
-    }
-
-    //str_cat_printf (str, "'%s'\n", c_str);
-}
-
 void _str_cat_block_tree (string_t *str, struct psx_block_t *block, int indent, int curr_indent)
 {
     str_cat_indented_printf (str, curr_indent, "type: %s\n", psx_block_type_names[block->type]);
@@ -1530,7 +1515,7 @@ void _str_cat_block_tree (string_t *str, struct psx_block_t *block, int indent, 
 
     if (block->block_content == NULL) {
         str_cat_indented_printf (str, curr_indent, "inline_content:\n");
-        str_cat_indented_debug_multiline (str, curr_indent, str_data(&block->inline_content));
+        str_cat_debugstr (str, curr_indent, ESC_COLOR_YELLOW, str_data(&block->inline_content));
         str_cat_printf (str, "\n");
 
     } else {

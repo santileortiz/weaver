@@ -4,12 +4,14 @@ Note the additional # characters in the title!!! as well as the trailing spaces.
 DO NOT DELETE, they are intentional.
 An early break in the paragraph.
 
- A second paragraph 
-with trailing spaces    
-  and some leading spaces as well.
+ A second 
+	paragraph	
+   with   
+			trailing and leading spaces,			
+   as			well 	 as	 	some	   extra   	spaces.
 
-## Subtitle
-This is a paragraph not a continuation of the subtitle.
+##	Subtitle with	tab characters	
+This is a paragraph, not a continuation of the subtitle.
 
 #### Level 4 Subtitle
 Test jumping multiple heading values

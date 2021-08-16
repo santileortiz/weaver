@@ -141,6 +141,32 @@ size_t size;                                              \
 #define ECMA_CYAN(str) ECMA_S_CYAN(1,str)
 #define ECMA_WHITE(str) ECMA_S_WHITE(1,str)
 
+#define ECMA_S_RGB(s,r,g,b,str) "\033["#s";38;2;"#r";"#g";"#b"m"str"\033[m\033[K"
+#define ECMA_RGB(r,g,b,str) ECMA_S_RGB(1,r,g,b,str)
+
+#define ECMA_S_GRAY(s,v,str) "\033["#s";38;2;"#v";"#v";"#v"m"str"\033[m\033[K"
+#define ECMA_GRAY(v,str) ECMA_S_GRAY(1,v,str)
+
+#define ESC_COLOR_BEGIN_STR(s,color_str)     "\033["#s";"color_str"m\033[K"
+#define ESC_COLOR_BEGIN(s,color_int)     "\033["#s";"#color_int"m\033[K"
+#define ESC_COLOR_END                "\033[m\033[K"
+
+#define ESC_S_COLOR(style,color_int,str)     "\033["#style";"#color_int"m\033[K"str"\033[m\033[K"
+#define ESC_COLOR_RED            31
+#define ESC_COLOR_GREEN          32
+#define ESC_COLOR_YELLOW         33
+#define ESC_COLOR_BLUE           34
+#define ESC_COLOR_MAGENTA        35
+#define ESC_COLOR_CYAN           36
+#define ESC_COLOR_WHITE          37
+#define ESC_COLOR_DEFAULT        39
+
+// TODO: The following feels like should work, but it doesn't:
+//
+//        ESC_S_COLOR(style,ESC_COLOR_RED,str)
+//
+// Need to make double-level macros for for this.
+
 ////////////
 // STRINGS
 //
@@ -750,6 +776,41 @@ int cstr_replace_char_buff (char *src, char target, char replacement, char *dst)
     *dst = '\0';
 
     return replacement_cnt;
+}
+
+void str_cat_debugstr (string_t *str, int curr_indent, int esc_color, char *c_str)
+{
+    if (c_str == NULL || *c_str == '\n') return;
+
+    string_t result = {0};
+    str_set_printf (&result, ESC_COLOR_BEGIN_STR(0, "%d") "%s" ESC_COLOR_END, esc_color, c_str);
+
+    string_t buff = {0};
+    str_set_printf (&buff, ECMA_GRAY(75, "───┤") ESC_COLOR_BEGIN_STR(0, "%d"), esc_color);
+    str_replace (&result, "\t",  str_data(&buff), NULL);
+
+    str_set_printf (&buff, ECMA_GRAY(75, "•") ESC_COLOR_BEGIN_STR(0, "%d"), esc_color);
+    str_replace (&result, " ",  str_data(&buff), NULL);
+
+    str_set_printf (&buff, ECMA_GRAY(75, "↲\n") ESC_COLOR_BEGIN_STR(0, "%d"), esc_color);
+    str_replace (&result, "\n", str_data(&buff), NULL);
+
+    if (c_str[strlen(c_str) - 1] != '\n') {
+        str_cat_c (&result,ECMA_GRAY(75, "∎\n"));
+    }
+
+    str_cat_indented_printf (str, curr_indent, "%s", str_data(&result));
+
+    str_free (&buff);
+    str_free (&result);
+}
+
+void prnt_debug_string (char *str)
+{
+    string_t buff = {0};
+    str_cat_debugstr (&buff, 0, ESC_COLOR_DEFAULT, str);
+    printf ("%s", str_data(&buff));
+    str_set (&buff, str);
 }
 
 //////////////////////
