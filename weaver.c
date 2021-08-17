@@ -65,17 +65,6 @@ void rt_init_from_dir (struct note_runtime_t *rt, char *path)
 //
 //////////////////////////////////////
 
-char* full_file_read_no_trailing_newline (mem_pool_t *pool, const char *path, uint64_t *len)
-{
-    char *data = full_file_read (pool, path, len);
-
-    char *p = data + *len;
-    if (*p == '\0') p--;
-    if (*p == '\n') *p = '\0';
-
-    return data;
-}
-
 struct config_t {
     string_t source_path;
     string_t target_path;

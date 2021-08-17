@@ -979,6 +979,8 @@ void block_content_parse_text (struct html_t *html, struct html_element_t *conta
 
         } else if (ps_match(ps, TOKEN_TYPE_TAG, "note")) {
             struct psx_tag_t *tag = ps_parse_tag (ps);
+            str_replace (&tag->content, "\n", " ", NULL);
+            // TODO: Trim tag->content of start/end spaces...
 
             // TODO: Implement navigation to note's subsections. Right now we
             // just ignore what comes after the #. Also, this notation is
@@ -1673,6 +1675,7 @@ enum psx_user_tag_cb_status_t math_tag_handler (struct psx_parser_state_t *ps_in
 {
     string_t res = {0};
     struct psx_tag_t *tag = ps_parse_tag_balanced_braces (ps_inline);
+    str_replace (&tag->content, "\n", " ", NULL);
 
     str_cat_math_strn (&res, is_display_mode, str_len(&tag->content), str_data(&tag->content));
 
