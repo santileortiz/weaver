@@ -1,0 +1,10 @@
+# List indentation
+
+- Start a list
+     -   List Item A
+  - This should belong to same list as A
+
+Same test but without the outer nesting
+
+   -   List Item A
+- This should belong to same list as A

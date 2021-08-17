@@ -1,0 +1,11 @@
+# Interruption of paragraphs by lists
+
+Paragraphs are interrupted by lists
+- This starts a list.
+
+Same for ordered lists
+1. This starts a list.
+
+But, an ordered list only interrupts
+a paragraph if it starts with 1
+12. This is a continuation line.

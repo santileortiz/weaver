@@ -1,0 +1,26 @@
+# Lists with elements containing multiple paragraphs
+
+Initial paragraph
+
+ - Paragraph list element
+   with multiple lines.
+
+   
+
+           A second paragraph that
+           should be part of the
+           same list element.
+
+     - A nested list
+       element.
+
+       That also has
+       a second
+       paragraph.
+
+
+    
+       And a third.
+
+ - Go back to initial
+   level.

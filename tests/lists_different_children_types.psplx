@@ -1,0 +1,14 @@
+# Lists with blocks that are not necessarily paragraphs
+
+- List start
+  - Nested item
+    
+    A paragraph
+
+    \code[plain]
+    |
+    |  A code block
+    |
+
+    3. Ordered list
+       - Unordered list

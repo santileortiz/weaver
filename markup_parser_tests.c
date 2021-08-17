@@ -102,6 +102,7 @@ int main(int argc, char** argv)
     char *note_id = get_cli_no_opt_arg (argv, argc);
     bool html_out = get_cli_bool_opt ("--html", argv, argc);
     bool blocks_out = get_cli_bool_opt ("--blocks", argv, argc);
+    bool no_output = get_cli_bool_opt ("--none", argv, argc);
 
     if (note_id == NULL) {
         LINKED_LIST_FOR (struct note_t*, note, rt->notes) {
@@ -147,6 +148,8 @@ int main(int argc, char** argv)
                 } else if (blocks_out) {
                     struct psx_block_t *root_block = parse_note_text (&pool, str_data(&note->path), str_data(&note->psplx), NULL);
                     printf_block_tree (root_block, 4);
+
+                } else if (no_output) {
 
                 } else {
                     printf (ECMA_MAGENTA("PSPLX") "\n");

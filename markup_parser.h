@@ -165,6 +165,9 @@ struct psx_parser_state_t {
     char *pos;
     char *pos_peek;
 
+    int line_number;
+    int column_number;
+
     struct psx_token_t token;
     struct psx_token_t token_peek;
 
@@ -244,6 +247,13 @@ void ps_advance_char (struct psx_parser_state_t *ps)
 {
     if (!pos_is_eof(ps)) {
         ps->pos++;
+
+        ps->column_number++;
+
+        if (*(ps->pos) == '\n') {
+            ps->line_number++;
+            ps->column_number = 0;
+        }
 
     } else {
         ps->is_eof = true;
@@ -418,7 +428,9 @@ struct psx_token_t ps_next_peek(struct psx_parser_state_t *ps)
     struct psx_token_t *tok = &_tok;
 
     char *backup_pos = ps->pos;
+    int backup_column_number = ps->column_number;
     ps_consume_spaces (ps);
+    int non_space_column_number = ps->column_number;
 
     tok->type = TOKEN_TYPE_PARAGRAPH;
     char *non_space_pos = ps->pos;
@@ -448,6 +460,7 @@ struct psx_token_t ps_next_peek(struct psx_parser_state_t *ps)
         } else {
             // It wasn't a numbered list marker, restore position.
             ps->pos = backup_pos;
+            ps->column_number = backup_column_number;
         }
 
     } else if (ps_match_str(ps, "#")) {
@@ -471,6 +484,7 @@ struct psx_token_t ps_next_peek(struct psx_parser_state_t *ps)
         ps_parse_tag_parameters(ps, NULL);
 
         if (!ps_match_str(ps, "{")) {
+            tok->margin = MAX(non_space_column_number-1, 0);
             tok->type = TOKEN_TYPE_CODE_HEADER;
             while (pos_is_space(ps) || ps_curr_char(ps) == '\n') {
                 ps_advance_char (ps);
@@ -479,6 +493,7 @@ struct psx_token_t ps_next_peek(struct psx_parser_state_t *ps)
         } else {
             // False alarm, this was an inline code block, restore position.
             ps->pos = backup_pos;
+            ps->column_number = backup_column_number;
         }
 
     } else if (ps_match_str(ps, "|")) {
@@ -491,6 +506,7 @@ struct psx_token_t ps_next_peek(struct psx_parser_state_t *ps)
     }
 
     if (tok->type == TOKEN_TYPE_PARAGRAPH) {
+        tok->margin = MAX(ps->column_number-1, 0);
         tok->value = sstr_trim(advance_line (ps));
         tok->is_eol = true;
     }
@@ -722,6 +738,21 @@ struct psx_block_unit_t* psx_block_unit_pop (struct psx_parser_state_t *ps)
     return DYNAMIC_ARRAY_POP_LAST(ps->block_unit_stack);
 }
 
+void str_cat_literal_token (string_t *str, struct psx_token_t token)
+{
+    if (token.type == TOKEN_TYPE_TAG) {
+        str_cat_c (str, "\\");
+        strn_cat_c (str, token.value.s, token.value.len);
+
+    } else if (token.type == TOKEN_TYPE_NUMBERED_LIST) {
+        strn_cat_c(str, token.value.s, token.value.len);
+        str_cat_c (str, ".");
+
+    } else {
+        strn_cat_c (str, token.value.s, token.value.len);
+    }
+}
+
 // This function returns the same string that was parsed as the current token.
 // It's used as fallback, for example in the case of ',' and '#' characters in
 // the middle of paragraphs, or unrecognized tag sequences.
@@ -730,12 +761,9 @@ struct psx_block_unit_t* psx_block_unit_pop (struct psx_parser_state_t *ps)
 // have a stateful tokenizer that will consider ',' as part of a TEXT token
 // sometimes and as operators other times. It's probably best to just have an
 // attribute tokenizer/parser, then the inline parser only deals with tags.
-void str_cat_literal_token (string_t *str, struct psx_parser_state_t *ps)
+void str_cat_literal_token_ps (string_t *str, struct psx_parser_state_t *ps)
 {
-    if (ps_match (ps, TOKEN_TYPE_TAG, NULL)) {
-        str_cat_c (str, "\\");
-    }
-    strn_cat_c (str, ps->token.value.s, ps->token.value.len);
+    str_cat_literal_token (str, ps->token);
 }
 
 void parse_balanced_brace_block(struct psx_parser_state_t *ps, string_t *str)
@@ -755,7 +783,7 @@ void parse_balanced_brace_block(struct psx_parser_state_t *ps, string_t *str)
             }
 
             if (brace_level != 0) { // Avoid appending the closing }
-                str_cat_literal_token(str, ps);
+                str_cat_literal_token_ps (str, ps);
             }
         }
     }
@@ -1049,7 +1077,7 @@ void block_content_parse_text (struct html_t *html, struct html_element_t *conta
         } else {
             struct psx_block_unit_t *curr_unit = DYNAMIC_ARRAY_GET_LAST(ps->block_unit_stack);
             string_t buff = {0};
-            str_cat_literal_token (&buff, ps);
+            str_cat_literal_token_ps (&buff, ps);
             html_element_append_strn (html, curr_unit->html_element, str_len(&buff), str_data (&buff));
             str_free (&buff);
         }
@@ -1332,6 +1360,20 @@ bool parse_note_title (char *path, char *note_text, string_t *title, string_t *e
     return success;
 }
 
+void psx_append_paragraph_continuation_lines (struct psx_parser_state_t *ps, struct psx_block_t *new_paragraph)
+{
+    struct psx_token_t tok_peek = ps_next_peek(ps);
+    while ((tok_peek.type == TOKEN_TYPE_PARAGRAPH ||
+            (tok_peek.type == TOKEN_TYPE_NUMBERED_LIST && strncmp("1", tok_peek.value.s, tok_peek.value.len) != 0 && tok_peek.margin >= new_paragraph->margin)))
+    {
+        str_cat_c(&new_paragraph->inline_content, "\n");
+        str_cat_literal_token (&new_paragraph->inline_content, tok_peek);
+        ps_next(ps);
+
+        tok_peek = ps_next_peek(ps);
+    }
+}
+
 struct psx_block_t* parse_note_text (mem_pool_t *pool, char *path, char *note_text, string_t *error_msg)
 {
     mem_pool_marker_t mrk = mem_pool_begin_temporary_memory (pool);
@@ -1352,21 +1394,46 @@ struct psx_block_t* parse_note_text (mem_pool_t *pool, char *path, char *note_te
         if (ps->token.heading_number != 1) {
             psx_warning (ps, "forcing note title to heading level 1, this note starts with different level");
         }
+
+        // :pop_leaf_blocks
+        ps->block_stack_len--;
     }
 
     // Parse note's content
     while (!ps->is_eof && !ps->error) {
-        int curr_block_idx = 0;
         struct psx_token_t tok = ps_next(ps);
 
-        // Match the indentation of the received token.
-        struct psx_block_t *next_stack_block = ps->block_stack[curr_block_idx+1];
-        while (curr_block_idx+1 < ps->block_stack_len &&
-               next_stack_block->type == BLOCK_TYPE_LIST &&
-               (tok.margin > next_stack_block->margin ||
-                   (tok.type == next_stack_block->list_type && tok.margin == next_stack_block->margin))) {
-            curr_block_idx++;
-            next_stack_block = ps->block_stack[curr_block_idx+1];
+        // TODO: I think the fact that I have to do this here, means we
+        // shouldn't be parsing TOKEN_TYPE_BLANK_LINE as tokens anymore. The
+        // scanner should just silently consume blank lines.
+        if (tok.type == TOKEN_TYPE_BLANK_LINE) {
+            continue;
+        }
+
+        int curr_block_idx = ps->block_stack_len - 1;
+        struct psx_block_t *next_stack_block = ps->block_stack[curr_block_idx];
+        while (curr_block_idx > 0 && tok.margin <= next_stack_block->margin)
+        {
+            if ((tok.type == TOKEN_TYPE_BULLET_LIST || tok.type == TOKEN_TYPE_NUMBERED_LIST || next_stack_block->type == BLOCK_TYPE_LIST_ITEM) &&
+                next_stack_block->margin == tok.margin)
+            {
+                break;
+
+            } else {
+                curr_block_idx--;
+                next_stack_block = ps->block_stack[curr_block_idx];
+            }
+        }
+
+        // It looks like we will continue appending items to an existing list,
+        // check the list type is the same. If it isn't pop the list element
+        // from the stack so we start a new one.
+        if (next_stack_block->type == BLOCK_TYPE_LIST &&
+            (tok.type == TOKEN_TYPE_BULLET_LIST || tok.type == TOKEN_TYPE_NUMBERED_LIST) &&
+            next_stack_block->list_type != tok.type)
+        {
+            curr_block_idx--;
+            next_stack_block = ps->block_stack[curr_block_idx];
         }
 
         // Pop all blocks after the current index
@@ -1395,19 +1462,17 @@ struct psx_block_t* parse_note_text (mem_pool_t *pool, char *path, char *note_te
                 psx_error (ps, "only the note title can have heading level 1");
             }
 
+            // :pop_leaf_blocks
+            ps->block_stack_len--;
+
         } else if (ps_match(ps, TOKEN_TYPE_PARAGRAPH, NULL)) {
             struct psx_block_t *new_paragraph = psx_push_block (ps, psx_leaf_block_new(ps, BLOCK_TYPE_PARAGRAPH, tok.margin, tok.value));
+            psx_append_paragraph_continuation_lines (ps, new_paragraph);
 
-            // Append all paragraph continuation lines. This ensures all paragraphs
-            // found at the beginning of the iteration followed an empty line.
-            struct psx_token_t tok_peek = ps_next_peek(ps);
-            while (tok_peek.is_eol && tok_peek.type == TOKEN_TYPE_PARAGRAPH) {
-                str_cat_c(&new_paragraph->inline_content, "\n");
-                strn_cat_c(&new_paragraph->inline_content, tok_peek.value.s, tok_peek.value.len);
-                ps_next(ps);
-
-                tok_peek = ps_next_peek(ps);
-            }
+            // Paragraph blocks are never left in the stack. Maybe we should
+            // just not push leaf blocks into the stack...
+            // :pop_leaf_blocks
+            ps->block_stack_len--;
 
         } else if (ps_match(ps, TOKEN_TYPE_CODE_HEADER, NULL)) {
             struct psx_block_t *new_code_block = psx_push_block (ps, psx_leaf_block_new(ps, BLOCK_TYPE_CODE, tok.margin, SSTRING("",0)));
@@ -1454,34 +1519,30 @@ struct psx_block_t* parse_note_text (mem_pool_t *pool, char *path, char *note_te
                 tok_peek = ps_next_peek(ps);
             }
 
+            // :pop_leaf_blocks
+            ps->block_stack_len--;
+
         } else if (ps_match(ps, TOKEN_TYPE_BULLET_LIST, NULL) || ps_match(ps, TOKEN_TYPE_NUMBERED_LIST, NULL)) {
+            // Only push a list block if we are not currently located at one.
             struct psx_block_t *prnt = ps->block_stack[curr_block_idx];
-            if (prnt->type != BLOCK_TYPE_LIST ||
-                tok.margin >= prnt->margin + prnt->content_start) {
-                struct psx_block_t *list_block = psx_push_block (ps, psx_container_block_new(ps, BLOCK_TYPE_LIST, tok.margin));
+            if (prnt->type != BLOCK_TYPE_LIST) {
+                struct psx_block_t *list_block = psx_push_block (ps, psx_container_block_new(ps, BLOCK_TYPE_LIST, prnt->margin));
                 list_block->content_start = tok.content_start;
                 list_block->list_type = tok.type;
             }
 
-            psx_push_block(ps, psx_container_block_new(ps, BLOCK_TYPE_LIST_ITEM, tok.margin));
+           struct psx_block_t *list_item = psx_push_block(ps, psx_container_block_new(ps, BLOCK_TYPE_LIST_ITEM, tok.margin));
 
             struct psx_token_t tok_peek = ps_next_peek(ps);
             if (tok_peek.is_eol && tok_peek.type == TOKEN_TYPE_PARAGRAPH) {
                 ps_next(ps);
 
-                // Use list's margin... I don't think it's being used?...
-                struct psx_block_t *new_paragraph = psx_push_block(ps, psx_leaf_block_new(ps, BLOCK_TYPE_PARAGRAPH, tok.margin, tok_peek.value));
+                list_item->margin = tok_peek.margin;
+                struct psx_block_t *new_paragraph = psx_push_block(ps, psx_leaf_block_new(ps, BLOCK_TYPE_PARAGRAPH, tok_peek.margin, tok_peek.value));
+                psx_append_paragraph_continuation_lines (ps, new_paragraph);
 
-                // Append all paragraph continuation lines. This ensures all paragraphs
-                // found at the beginning of the iteration followed an empty line.
-                tok_peek = ps_next_peek(ps);
-                while (tok_peek.is_eol && tok_peek.type == TOKEN_TYPE_PARAGRAPH) {
-                    str_cat_c(&new_paragraph->inline_content, "\n");
-                    strn_cat_c(&new_paragraph->inline_content, tok_peek.value.s, tok_peek.value.len);
-                    ps_next(ps);
-
-                    tok_peek = ps_next_peek(ps);
-                }
+                // :pop_leaf_blocks
+                ps->block_stack_len--;
             }
         }
     }

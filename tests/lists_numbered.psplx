@@ -1,0 +1,17 @@
+# Special cases of ordered lists
+
+## Start number can't be negative
+
+-1. Paragraph.
+
+
+## Start number can be (or start with) zero
+
+0. Item.
+001. Item.
+
+
+## List numbers can be at most 9 digits long
+123456789. List item.
+
+1234567890. Paragraph.
