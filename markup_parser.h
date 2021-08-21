@@ -429,10 +429,11 @@ struct psx_token_t ps_next_peek(struct psx_parser_state_t *ps)
 
     char *backup_pos = ps->pos;
     int backup_column_number = ps->column_number;
-    ps_consume_spaces (ps);
-    int non_space_column_number = ps->column_number;
 
+    ps_consume_spaces (ps);
+    tok->margin = MAX(ps->column_number-1, 0);
     tok->type = TOKEN_TYPE_PARAGRAPH;
+
     char *non_space_pos = ps->pos;
     if (pos_is_eof(ps)) {
         ps->is_eof = true;
@@ -484,7 +485,6 @@ struct psx_token_t ps_next_peek(struct psx_parser_state_t *ps)
         ps_parse_tag_parameters(ps, NULL);
 
         if (!ps_match_str(ps, "{")) {
-            tok->margin = MAX(non_space_column_number-1, 0);
             tok->type = TOKEN_TYPE_CODE_HEADER;
             while (pos_is_space(ps) || ps_curr_char(ps) == '\n') {
                 ps_advance_char (ps);
@@ -506,7 +506,6 @@ struct psx_token_t ps_next_peek(struct psx_parser_state_t *ps)
     }
 
     if (tok->type == TOKEN_TYPE_PARAGRAPH) {
-        tok->margin = MAX(ps->column_number-1, 0);
         tok->value = sstr_trim(advance_line (ps));
         tok->is_eol = true;
     }

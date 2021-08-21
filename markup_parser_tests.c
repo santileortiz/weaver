@@ -103,6 +103,7 @@ int main(int argc, char** argv)
     bool html_out = get_cli_bool_opt ("--html", argv, argc);
     bool blocks_out = get_cli_bool_opt ("--blocks", argv, argc);
     bool no_output = get_cli_bool_opt ("--none", argv, argc);
+    t->show_all_children = get_cli_bool_opt ("--full", argv, argc);
 
     if (note_id == NULL) {
         LINKED_LIST_FOR (struct note_t*, note, rt->notes) {
@@ -119,7 +120,7 @@ int main(int argc, char** argv)
             rt_parse_to_html (rt, note, error_msg);
 
             test_push (t, "Source parsing");
-            if (!test_bool (t, note->is_html_valid)) {
+            if (!test_bool (t, note->is_html_valid && str_len(error_msg) == 0)) {
                 test_error_c (t, str_data(error_msg));
             }
 

@@ -1,0 +1,8 @@
+# List followed by a paragraph starting with a tag
+
+Test that a list followed by a paragraph starting with a tag won't consider
+such paragraph as part of the list.
+
+- List item
+
+\note{Note links}
