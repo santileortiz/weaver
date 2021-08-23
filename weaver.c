@@ -78,6 +78,13 @@ int main(int argc, char** argv)
     __g_note_runtime = ZERO_INIT (struct note_runtime_t);
     struct note_runtime_t *rt = &__g_note_runtime;
 
+    int has_js = 1;
+#ifdef NO_JS
+    has_js = 0;
+#endif
+    if (get_cli_bool_opt ("--has-js", argv, argc)) return has_js;
+
+
     struct config_t _cfg = {0};
     struct config_t *cfg = &_cfg;
 
@@ -101,10 +108,10 @@ int main(int argc, char** argv)
 
         if (get_cli_bool_opt ("--generate-static", argv, argc)) {
             bool has_output = false;
-#ifdef NO_JS
-            printf (ECMA_YELLOW("warning: ") "generating static site without javascript engine\n");
-            has_output = true;
-#endif
+            if (!has_js) {
+                printf (ECMA_YELLOW("warning: ") "generating static site without javascript engine\n");
+                has_output = true;
+            }
 
             string_t html_path = str_new (str_data(&cfg->target_path));
             size_t end = str_len (&cfg->target_path);

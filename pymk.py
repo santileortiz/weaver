@@ -166,6 +166,11 @@ def generate ():
     gn.copy_changed(static_dir, out_dir)
     gn.copy_changed(source_files_dir, path_cat(out_dir, files_dir))
 
+    if c_needs_rebuild ('weaver.c', './bin/weaver') or ex (f'./bin/weaver --has-js', echo=False) == 0:
+        print ('Building weaver...')
+        weaver_build (True)
+        print()
+
     # TODO: The HTML generator should only process source notes that changed.
     # Currently it generates all notes, all the time.
     ex (f'./bin/weaver --generate-static {source_notes_dir} {path_cat(out_dir, notes_dir)}')
@@ -180,25 +185,36 @@ modes = {
 mode = store('mode', get_cli_arg_opt('-M,--mode', modes.keys()), 'debug')
 C_FLAGS = modes[mode]
 
-C_SOURCE_FILES = ""
 # Building the Javascript engine increases build times from ~0.5s to ~3s which
 # is quite bad, the flags --js-enable and --js-disable toggle this for
 # testing/development. The NO_JS macro will be defined to switch into stub
 # implementations of functions that call out to javascript.
-if get_cli_bool_opt('--use-js') or get_cli_persistent_toggle ('use_js', '--js-enable', '--js-disable', True):
-    C_SOURCE_FILES += "lib/duktape.c"
-else:
-    C_FLAGS += " -DNO_JS"
+def check_js_toggle():
+    return get_cli_persistent_toggle ('use_js', '--js-enable', '--js-disable', True)
+
+def common_build(c_sources, out_fname, use_js):
+    global C_FLAGS
+
+    if use_js:
+        c_sources += " lib/duktape.c"
+    else:
+        C_FLAGS += " -DNO_JS"
+
+    ex (f'gcc {C_FLAGS} -o {out_fname} {c_sources} -lm -lrt')
+
+def weaver_build (use_js):
+    common_build ("weaver.c", 'bin/weaver', use_js)
 
 def weaver():
-    ex (f'gcc {C_FLAGS} -o bin/weaver weaver.c {C_SOURCE_FILES} -lm -lrt')
+    weaver_build (check_js_toggle ())
 
 def markup_parser_tests():
-    ex (f'gcc {C_FLAGS} -o bin/markup_parser_tests markup_parser_tests.c {C_SOURCE_FILES} -lm -lrt')
+    common_build ("markup_parser_tests.c", 'bin/markup_parser_tests', False)
 
 def cloc():
     ex ('cloc --exclude-list-file=.clocignore .')
 
+builtin_completions = ['--get_build_deps']
 if __name__ == "__main__":
     # Everything above this line will be executed for each TAB press.
     # If --get_completions is set, handle_tab_complete() calls exit().
