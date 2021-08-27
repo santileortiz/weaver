@@ -7,10 +7,10 @@
 #include "test_logger.c"
 #include "cli_parser.c"
 
-#define MARKUP_PARSER_IMPL
+#include "block.h"
 #include "note_runtime.h"
-#include "markup_parser.h"
 
+#include "markup_parser.c"
 #include "note_runtime.c"
 
 #define TESTS_DIR "tests"

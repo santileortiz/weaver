@@ -11,156 +11,20 @@
 
 int psx_content_width = 588; // px
 
-#if defined(MARKUP_PARSER_IMPL)
-
-#define TOKEN_TYPES_TABLE                      \
-    TOKEN_TYPES_ROW(TOKEN_TYPE_UNKNOWN)        \
-    TOKEN_TYPES_ROW(TOKEN_TYPE_TITLE)          \
-    TOKEN_TYPES_ROW(TOKEN_TYPE_PARAGRAPH)      \
-    TOKEN_TYPES_ROW(TOKEN_TYPE_BULLET_LIST)    \
-    TOKEN_TYPES_ROW(TOKEN_TYPE_NUMBERED_LIST)  \
-    TOKEN_TYPES_ROW(TOKEN_TYPE_TAG)            \
-    TOKEN_TYPES_ROW(TOKEN_TYPE_OPERATOR)       \
-    TOKEN_TYPES_ROW(TOKEN_TYPE_SPACE)          \
-    TOKEN_TYPES_ROW(TOKEN_TYPE_TEXT)           \
-    TOKEN_TYPES_ROW(TOKEN_TYPE_CODE_HEADER)    \
-    TOKEN_TYPES_ROW(TOKEN_TYPE_CODE_LINE)      \
-    TOKEN_TYPES_ROW(TOKEN_TYPE_BLANK_LINE)     \
-    TOKEN_TYPES_ROW(TOKEN_TYPE_END_OF_FILE)
-
-#define TOKEN_TYPES_ROW(value) value,
-enum psx_token_type_t {
-    TOKEN_TYPES_TABLE
-};
-#undef TOKEN_TYPES_ROW
-
-#define TOKEN_TYPES_ROW(value) #value,
-char* psx_token_type_names[] = {
-    TOKEN_TYPES_TABLE
-};
-#undef TOKEN_TYPES_ROW
-
-typedef struct {
-    char *s;
-    uint32_t len;
-} sstring_t;
-#define SSTRING(s,len) ((sstring_t){s,len})
-#define SSTRING_C(s) SSTRING(s,strlen(s))
-
-static inline
-sstring_t sstr_set (char *s, uint32_t len)
-{
-    return SSTRING(s, len);
-}
-
-static inline
-sstring_t sstr_trim (sstring_t str)
-{
-    while (is_space (str.s) || *(str.s) == '\n') {
-        str.s++;
-        str.len--;
-    }
-
-    while (is_space (str.s + str.len - 1) || str.s[str.len - 1] == '\n') {
-        str.len--;
-    }
-
-    return str;
-}
-
-static inline
-void sstr_extend (sstring_t *str1, sstring_t *str2)
-{
-    assert (str2->s != NULL);
-
-    if (str1->s == NULL) {
-        str1->s = str2->s;
-        str1->len = str2->len;
-
-    } else {
-        assert (str1->s + str1->len == str2->s);
-        str1->len += str2->len;
-    }
-}
-
-struct psx_token_t {
-    sstring_t value;
-
-    enum psx_token_type_t type;
-    int margin;
-    int content_start;
-    int heading_number;
-    bool is_eol;
-};
-
-#define BLOCK_TYPES_TABLE                 \
-    BLOCK_TYPES_ROW(BLOCK_TYPE_ROOT)      \
-    BLOCK_TYPES_ROW(BLOCK_TYPE_LIST)      \
-    BLOCK_TYPES_ROW(BLOCK_TYPE_LIST_ITEM) \
-    BLOCK_TYPES_ROW(BLOCK_TYPE_HEADING)   \
-    BLOCK_TYPES_ROW(BLOCK_TYPE_PARAGRAPH) \
-    BLOCK_TYPES_ROW(BLOCK_TYPE_CODE)
-
-#define BLOCK_TYPES_ROW(value) value,
-enum psx_block_type_t {
-    BLOCK_TYPES_TABLE
-};
-#undef BLOCK_TYPES_ROW
-
-#define BLOCK_TYPES_ROW(value) #value,
-char* psx_block_type_names[] = {
-    BLOCK_TYPES_TABLE
-};
-#undef BLOCK_TYPES_ROW
-
-struct psx_block_t {
-    enum psx_block_type_t type;
-    int margin;
-
-    string_t inline_content;
-
-    int heading_number;
-
-    // List
-    enum psx_token_type_t list_type;
-
-    // Number of characters from the start of a list marker to the start of the
-    // content. Includes al characters of the list marker.
-    // "    -    C" -> 5
-    // "   10.   C" -> 6
-    int content_start;
-
-    // Each non-leaf block contains a linked list of children
-    struct psx_block_t *block_content;
-    struct psx_block_t *block_content_end;
-
-    struct psx_block_t *next;
-};
-
 struct psx_parser_ctx_t {
-    mem_pool_t *pool;
-
     char *id;
     char *path;
-
-    // TODO: Actually use this free list, right now we only add stuff, but never
-    // use it.
-    struct psx_block_t *blocks_fl;
-
     string_t *error_msg;
 };
 
 struct psx_parser_state_t {
-    mem_pool_t *result_pool;
+    struct block_allocation_t block_allocation;
 
     mem_pool_t pool;
 
-    struct note_runtime_t *rt;
-
-    char *path;
+    struct psx_parser_ctx_t ctx;
 
     bool error;
-    string_t error_msg;
 
     bool is_eof;
     bool is_eol;
@@ -180,15 +44,11 @@ struct psx_parser_state_t {
     DYNAMIC_ARRAY_DEFINE (struct psx_block_unit_t*, block_unit_stack);
 };
 
-#define ps_init(ps,str) ps_init_path(ps, ps->path,str)
-void ps_init_path (struct psx_parser_state_t *ps, char *path, char *str)
+void ps_init (struct psx_parser_state_t *ps, char *str)
 {
     ps->str = str;
     ps->pos = str;
 
-    ps->path = path;
-
-    str_pool (&ps->pool, &ps->error_msg);
     DYNAMIC_ARRAY_INIT (&ps->pool, ps->block_stack, 100);
     DYNAMIC_ARRAY_INIT (&ps->pool, ps->block_unit_stack, 100);
 }
@@ -339,36 +199,36 @@ struct psx_tag_parameters_t {
 GCC_PRINTF_FORMAT(2, 3)
 void psx_error (struct psx_parser_state_t *ps, char *format, ...)
 {
-    if (ps->path != NULL) {
-         str_cat_printf (&ps->error_msg, ECMA_DEFAULT("%s:") ECMA_RED(" error: "), ps->path);
+    if (ps->ctx.path != NULL) {
+         str_cat_printf (ps->ctx.error_msg, ECMA_DEFAULT("%s:") ECMA_RED(" error: "), ps->ctx.path);
     } else {
-         str_cat_printf (&ps->error_msg, ECMA_RED(" error: "));
+         str_cat_printf (ps->ctx.error_msg, ECMA_RED(" error: "));
     }
 
     PRINTF_INIT (format, size, args);
-    size_t old_len = str_len(&ps->error_msg);
-    str_maybe_grow (&ps->error_msg, str_len(&ps->error_msg) + size - 1, true);
-    PRINTF_SET (str_data(&ps->error_msg) + old_len, size, format, args);
+    size_t old_len = str_len(ps->ctx.error_msg);
+    str_maybe_grow (ps->ctx.error_msg, str_len(ps->ctx.error_msg) + size - 1, true);
+    PRINTF_SET (str_data(ps->ctx.error_msg) + old_len, size, format, args);
 
-    str_cat_c (&ps->error_msg, "\n");
+    str_cat_c (ps->ctx.error_msg, "\n");
     ps->error = true;
 }
 
 GCC_PRINTF_FORMAT(2, 3)
 void psx_warning (struct psx_parser_state_t *ps, char *format, ...)
 {
-    if (ps->path != NULL) {
-         str_cat_printf (&ps->error_msg, ECMA_DEFAULT("%s:") ECMA_YELLOW(" warning: "), ps->path);
+    if (ps->ctx.path != NULL) {
+         str_cat_printf (ps->ctx.error_msg, ECMA_DEFAULT("%s:") ECMA_YELLOW(" warning: "), ps->ctx.path);
     } else {
-         str_cat_printf (&ps->error_msg, ECMA_YELLOW("warning: "));
+         str_cat_printf (ps->ctx.error_msg, ECMA_YELLOW("warning: "));
     }
 
     PRINTF_INIT (format, size, args);
-    size_t old_len = str_len(&ps->error_msg);
-    str_maybe_grow (&ps->error_msg, str_len(&ps->error_msg) + size - 1, true);
-    PRINTF_SET (str_data(&ps->error_msg) + old_len, size, format, args);
+    size_t old_len = str_len(ps->ctx.error_msg);
+    str_maybe_grow (ps->ctx.error_msg, str_len(ps->ctx.error_msg) + size - 1, true);
+    PRINTF_SET (str_data(ps->ctx.error_msg) + old_len, size, format, args);
 
-    str_cat_c (&ps->error_msg, "\n");
+    str_cat_c (ps->ctx.error_msg, "\n");
 }
 
 GCC_PRINTF_FORMAT(2, 3)
@@ -961,12 +821,14 @@ void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html
     string_t buff = {0};
     struct psx_parser_state_t _ps = {0};
     struct psx_parser_state_t *ps = &_ps;
+    ps->ctx = *ctx;
     ps_init (ps, content);
 
     DYNAMIC_ARRAY_APPEND (ps->block_unit_stack, psx_block_unit_new (&ps->pool, BLOCK_UNIT_TYPE_ROOT, container));
     while (!ps->is_eof && !ps->error) {
         struct psx_token_t tok = ps_inline_next (ps);
 
+        str_set (&buff, "");
         if (ps_match(ps, TOKEN_TYPE_TEXT, NULL) || ps_match(ps, TOKEN_TYPE_SPACE, NULL)) {
             struct psx_block_unit_t *curr_unit = DYNAMIC_ARRAY_GET_LAST(ps->block_unit_stack);
 
@@ -981,8 +843,18 @@ void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html
 
         } else if (ps_match(ps, TOKEN_TYPE_TAG, "i") || ps_match(ps, TOKEN_TYPE_TAG, "b")) {
             struct psx_token_t tag = ps->token;
-            ps_expect_inline (ps, TOKEN_TYPE_OPERATOR, "{");
-            psx_push_block_unit_new (ps, html, tag.value);
+
+            ps_inline_next (ps);
+            if (ps_match(ps, TOKEN_TYPE_OPERATOR, "{")) {
+                psx_push_block_unit_new (ps, html, tag.value);
+
+            } else {
+                // Don't fail, instead print literal tag.
+                struct psx_block_unit_t *curr_unit = DYNAMIC_ARRAY_GET_LAST(ps->block_unit_stack);
+                str_cat_literal_token (&buff, tag);
+                str_cat_c (&buff, " ");
+                html_element_append_strn (html, curr_unit->html_element, str_len(&buff), str_data (&buff));
+            }
 
         } else if (ps_match(ps, TOKEN_TYPE_TAG, "link")) {
             struct psx_tag_t *tag = ps_parse_tag (ps);
@@ -1109,10 +981,8 @@ void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html
 
         } else {
             struct psx_block_unit_t *curr_unit = DYNAMIC_ARRAY_GET_LAST(ps->block_unit_stack);
-            string_t buff = {0};
             str_cat_literal_token_ps (&buff, ps);
             html_element_append_strn (html, curr_unit->html_element, str_len(&buff), str_data (&buff));
-            str_free (&buff);
         }
     }
 
@@ -1120,30 +990,12 @@ void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html
     str_free (&buff);
 }
 
-// NOCOMMIT
-// @remove_me
-#define psx_block_new(ps) psx_block_new_cpy(ps,NULL)
-struct psx_block_t* psx_block_new_cpy(struct psx_parser_state_t *ps, struct psx_block_t *original)
+#define psx_block_new(ba) psx_block_new_cpy(ba,NULL)
+struct psx_block_t* psx_block_new_cpy(struct block_allocation_t *ba, struct psx_block_t *original)
 {
-    struct psx_block_t *new_block = mem_pool_push_struct (ps->result_pool, struct psx_block_t);
+    struct psx_block_t *new_block = mem_pool_push_struct (ba->pool, struct psx_block_t);
     *new_block = ZERO_INIT (struct psx_block_t);
-    str_pool (ps->result_pool, &new_block->inline_content);
-
-    if (original != NULL) {
-        new_block->type = original->type;
-        new_block->margin = original->margin;
-        str_cpy (&new_block->inline_content, &original->inline_content);
-    }
-
-    return new_block;
-}
-
-#define psx_block_new_ctx(ps) psx_block_new_cpy_ctx(ps,NULL)
-struct psx_block_t* psx_block_new_cpy_ctx(struct psx_parser_ctx_t *ctx, struct psx_block_t *original)
-{
-    struct psx_block_t *new_block = mem_pool_push_struct (ctx->pool, struct psx_block_t);
-    *new_block = ZERO_INIT (struct psx_block_t);
-    str_pool (ctx->pool, &new_block->inline_content);
+    str_pool (ba->pool, &new_block->inline_content);
 
     if (original != NULL) {
         new_block->type = original->type;
@@ -1157,7 +1009,7 @@ struct psx_block_t* psx_block_new_cpy_ctx(struct psx_parser_ctx_t *ctx, struct p
 
 struct psx_block_t* psx_leaf_block_new(struct psx_parser_state_t *ps, enum psx_block_type_t type, int margin, sstring_t inline_content)
 {
-    struct psx_block_t *new_block = psx_block_new (ps);
+    struct psx_block_t *new_block = psx_block_new (&ps->block_allocation);
     strn_set (&new_block->inline_content, inline_content.s, inline_content.len);
     new_block->type = type;
     new_block->margin = margin;
@@ -1167,7 +1019,7 @@ struct psx_block_t* psx_leaf_block_new(struct psx_parser_state_t *ps, enum psx_b
 
 struct psx_block_t* psx_container_block_new(struct psx_parser_state_t *ps, enum psx_block_type_t type, int margin)
 {
-    struct psx_block_t *new_block = psx_block_new (ps);
+    struct psx_block_t *new_block = psx_block_new (&ps->block_allocation);
     new_block->type = type;
     new_block->margin = margin;
 
@@ -1201,7 +1053,7 @@ enum psx_user_tag_cb_status_t {
 // CAUTION: DON'T MODIFY THE BLOCK CONTENT'S STRING FROM A psx_user_tag_cb_t.
 // These callbacks are called while parsing the block's content, modifying
 // block->inline_content will mess up the parser.
-#define PSX_USER_TAG_CB(funcname) enum psx_user_tag_cb_status_t funcname(struct psx_parser_ctx_t *ctx, struct psx_parser_state_t *ps_inline, struct psx_block_t **block, struct str_replacement_t *replacement)
+#define PSX_USER_TAG_CB(funcname) enum psx_user_tag_cb_status_t funcname(struct block_allocation_t *block_allocation, struct psx_parser_state_t *ps_inline, struct psx_block_t **block, struct str_replacement_t *replacement)
 typedef PSX_USER_TAG_CB(psx_user_tag_cb_t);
 
 BINARY_TREE_NEW (psx_user_tag_cb, char*, psx_user_tag_cb_t*, strcmp(a, b));
@@ -1211,8 +1063,8 @@ void psx_populate_internal_cb_tree (struct psx_user_tag_cb_tree_t *tree);
 // TODO: User callbacks will be modifying the tree. It's possible the user
 // messes up and for example adds a cycle into the tree, we should detect such
 // problem and avoid maybe later entering an infinite loop.
-#define psx_block_tree_user_callbacks(ctx,root) psx_block_tree_user_callbacks_full(ctx,root,NULL)
-void psx_block_tree_user_callbacks_full (struct psx_parser_ctx_t *ctx, struct psx_block_t **root, struct psx_block_t **block_p)
+#define psx_block_tree_user_callbacks(ctx,ba,root) psx_block_tree_user_callbacks_full(ctx,ba,root,NULL)
+void psx_block_tree_user_callbacks_full (struct psx_parser_ctx_t *ctx, struct block_allocation_t *ba, struct psx_block_t **root, struct psx_block_t **block_p)
 {
     if (block_p == NULL) block_p = root;
 
@@ -1221,13 +1073,14 @@ void psx_block_tree_user_callbacks_full (struct psx_parser_ctx_t *ctx, struct ps
     if (block->block_content != NULL) {
         struct psx_block_t **sub_block = &((*block_p)->block_content);
         while (*sub_block != NULL) {
-            psx_block_tree_user_callbacks_full (ctx, root, sub_block);
+            psx_block_tree_user_callbacks_full (ctx, ba, root, sub_block);
             sub_block = &(*sub_block)->next;
         }
 
     } else {
         struct psx_parser_state_t _ps_inline = {0};
         struct psx_parser_state_t *ps_inline = &_ps_inline;
+        ps_inline->ctx = *ctx;
         ps_init (ps_inline, str_data(&block->inline_content));
 
         struct psx_user_tag_cb_tree_t user_cb_tree = {0};
@@ -1245,14 +1098,18 @@ void psx_block_tree_user_callbacks_full (struct psx_parser_ctx_t *ctx, struct ps
 
                 psx_user_tag_cb_t* cb = psx_user_tag_cb_get (&user_cb_tree, str_data(&tag_name));
                 if (cb != NULL) {
+                    string_t cb_error_msg = {0};
+                    string_t *error_msg_bak = ps_inline->ctx.error_msg;
+                    ps_inline->ctx.error_msg = &cb_error_msg;
+
                     struct str_replacement_t tmp_replacement = {0};
-                    enum psx_user_tag_cb_status_t status = cb (ctx, ps_inline, block_p, &tmp_replacement);
+                    enum psx_user_tag_cb_status_t status = cb (ba, ps_inline, block_p, &tmp_replacement);
                     tmp_replacement.start_idx = tag_start - block_start;
                     tmp_replacement.len = ps_inline->pos - tag_start;
 
                     if (ps_inline->error) {
-                        psx_warning_ctx (ctx, "failed parsing custom tag '%s'", str_data(&tag_name));
-                        str_cat_indented_c (ctx->error_msg, str_data(&ps_inline->error_msg), 2);
+                        psx_warning_ctx (ctx, "failed parsing of custom tag '%s'", str_data(&tag_name));
+                        str_cat_indented_c (ctx->error_msg, str_data(&cb_error_msg), 2);
                     }
 
                     if (str_len (&tmp_replacement.s) > 0) {
@@ -1261,6 +1118,9 @@ void psx_block_tree_user_callbacks_full (struct psx_parser_ctx_t *ctx, struct ps
                         str_pool (&ps_inline->pool, &replacement->s);
                         LINKED_LIST_APPEND (replacements, replacement);
                     }
+
+                    ps_inline->ctx.error_msg = error_msg_bak;
+                    str_free (&cb_error_msg);
 
                     if (status == USER_TAG_CB_STATUS_BREAK) {
                         break;
@@ -1435,7 +1295,8 @@ bool parse_note_title (char *path, char *note_text, string_t *title, string_t *e
 
     struct psx_parser_state_t _ps = {0};
     struct psx_parser_state_t *ps = &_ps;
-    ps_init_path (ps, path, note_text);
+    ps->ctx.path = path;
+    ps_init (ps, note_text);
 
     psx_parse_note_title (ps);
     if (!ps->error) {
@@ -1615,12 +1476,13 @@ void psx_parse (struct psx_parser_state_t *ps)
 
 struct psx_block_t* parse_note_text (mem_pool_t *pool, char *path, char *note_text, string_t *error_msg)
 {
-    mem_pool_marker_t mrk = mem_pool_begin_temporary_memory (pool);
-
     struct psx_parser_state_t _ps = {0};
     struct psx_parser_state_t *ps = &_ps;
-    ps->result_pool = pool;
-    ps_init_path (ps, path, note_text);
+    ps->ctx.path = path;
+    ps->ctx.error_msg = error_msg;
+    ps_init (ps, note_text);
+
+    ps->block_allocation.pool = pool;
 
     struct psx_block_t *root_block = psx_container_block_new(ps, BLOCK_TYPE_ROOT, 0);
     DYNAMIC_ARRAY_APPEND (ps->block_stack, root_block);
@@ -1641,14 +1503,11 @@ struct psx_block_t* parse_note_text (mem_pool_t *pool, char *path, char *note_te
     // Parse note's content
     psx_parse (ps);
 
-    // Copy error message even if !ps->error becaue there may be warnings.
-    if (error_msg != NULL) {
-        str_cat (error_msg, &ps->error_msg);
-    }
-
     if (ps->error) {
         root_block = NULL;
-        mem_pool_end_temporary_memory (mrk);
+        // TODO: If parsing fails and we allocated blocks, return them to the
+        // free list. Right now we leak them.
+        // :use_block_free_list_on_fail
     }
 
     ps_destroy (ps);
@@ -1656,14 +1515,14 @@ struct psx_block_t* parse_note_text (mem_pool_t *pool, char *path, char *note_te
     return root_block;
 }
 
-struct psx_block_t* psx_parse_string (mem_pool_t *pool, char *text, string_t *error_msg)
+struct psx_block_t* psx_parse_string (struct block_allocation_t *ba, char *text, string_t *error_msg)
 {
-    mem_pool_marker_t mrk = mem_pool_begin_temporary_memory (pool);
-
     struct psx_parser_state_t _ps = {0};
     struct psx_parser_state_t *ps = &_ps;
-    ps->result_pool = pool;
-    ps_init_path (ps, NULL, text);
+    ps->ctx.error_msg = error_msg;
+    ps_init (ps, text);
+
+    ps->block_allocation = *ba;
 
     struct psx_block_t *root_block = psx_container_block_new(ps, BLOCK_TYPE_ROOT, 0);
     DYNAMIC_ARRAY_APPEND (ps->block_stack, root_block);
@@ -1671,14 +1530,9 @@ struct psx_block_t* psx_parse_string (mem_pool_t *pool, char *text, string_t *er
     // Parse note's content
     psx_parse (ps);
 
-    // Copy error message even if !ps->error becaue there may be warnings.
-    if (error_msg != NULL) {
-        str_cat (error_msg, &ps->error_msg);
-    }
-
     if (ps->error) {
         root_block = NULL;
-        mem_pool_end_temporary_memory (mrk);
+        // :use_block_free_list_on_fail
     }
 
     ps_destroy (ps);
@@ -1724,15 +1578,17 @@ struct html_t* markup_to_html (mem_pool_t *pool, char *path, char *markup, char 
 {
     mem_pool_t pool_l = {0};
     struct psx_parser_ctx_t ctx = {0};
-    ctx.pool = &pool_l;
     ctx.id = id;
     ctx.path = path;
     ctx.error_msg = error_msg;
 
+    struct block_allocation_t ba = {0};
+    ba.pool = &pool_l;
+
     struct psx_block_t *root_block = parse_note_text (&pool_l, path, markup, error_msg);
 
     if (root_block != NULL) {
-        psx_block_tree_user_callbacks (&ctx, &root_block);
+        psx_block_tree_user_callbacks (&ctx, &ba, &root_block);
     }
 
     struct html_t *html = NULL;
@@ -1750,13 +1606,13 @@ struct html_t* markup_to_html (mem_pool_t *pool, char *path, char *markup, char 
 // Replace a block with a linked list of blocks. The block to be replaced is
 // referred to by the double pointer representing its parent. There is also a
 // shorthand for the case where the linked list consists of a single block.
-#define psx_replace_block(ctx,old_block,new_block) psx_replace_block_multiple(ctx,old_block,new_block,new_block)
-void psx_replace_block_multiple (struct psx_parser_ctx_t *ctx, struct psx_block_t **old_block, struct psx_block_t *new_start, struct psx_block_t *new_end)
+#define psx_replace_block(ba,old_block,new_block) psx_replace_block_multiple(ba,old_block,new_block,new_block)
+void psx_replace_block_multiple (struct block_allocation_t *ba, struct psx_block_t **old_block, struct psx_block_t *new_start, struct psx_block_t *new_end)
 {
     struct psx_block_t *tmp = *old_block;
     new_end->next = (*old_block)->next;
     *old_block = new_start;
-    LINKED_LIST_PUSH (ctx->blocks_fl, tmp);
+    LINKED_LIST_PUSH (ba->blocks_fl, tmp);
 }
 
 // This is here because it's trying to emulate how users would define custom
@@ -1774,7 +1630,7 @@ PSX_USER_TAG_CB (summary_tag_handler)
         struct psx_block_t *note_tree = parse_note_text (&pool, NULL, str_data(&note->psplx), NULL);
 
         struct psx_block_t *title = note_tree->block_content;
-        struct psx_block_t *new_title = psx_block_new_cpy_ctx (ctx, title);
+        struct psx_block_t *new_title = psx_block_new_cpy (block_allocation, title);
         // NOTE: We can use inline tags because they are processed at a later step.
         str_set_printf (&new_title->inline_content, "\\note{%s}", str_data(&title->inline_content));
         // TODO: Don't use fixed heading of 2, instead look at the context
@@ -1786,13 +1642,13 @@ PSX_USER_TAG_CB (summary_tag_handler)
 
         struct psx_block_t *after_title = note_tree->block_content->next;
         if (after_title != NULL && after_title->type == BLOCK_TYPE_PARAGRAPH) {
-            struct psx_block_t *new_summary = psx_block_new_cpy_ctx (ctx, after_title);
+            struct psx_block_t *new_summary = psx_block_new_cpy (block_allocation, after_title);
             LINKED_LIST_APPEND (result, new_summary);
         }
 
         mem_pool_destroy (&pool);
 
-        psx_replace_block_multiple (ctx, block, result, result_end);
+        psx_replace_block_multiple (block_allocation, block, result, result_end);
 
         // TODO: Add some user defined wrapper that allows setting a different
         // style for blocks of summary. For example if we ever get inline
@@ -1846,8 +1702,8 @@ PSX_USER_TAG_CB(orphan_list_tag_handler)
         }
     }
 
-    struct psx_block_t *root = psx_parse_string (ctx->pool, str_data (&res), NULL);
-    psx_replace_block_multiple (ctx, block, root->block_content, root->block_content_end);
+    struct psx_block_t *root = psx_parse_string (block_allocation, str_data (&res), NULL);
+    psx_replace_block_multiple (block_allocation, block, root->block_content, root->block_content_end);
     return USER_TAG_CB_STATUS_BREAK;
 }
 
@@ -1864,6 +1720,3 @@ void psx_populate_internal_cb_tree (struct psx_user_tag_cb_tree_t *tree)
     PSX_INTERNAL_CUSTOM_TAG_TABLE
 #undef PSX_INTERNAL_CUSTOM_TAG_ROW
 }
-
-
-#endif

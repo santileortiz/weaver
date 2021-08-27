@@ -38,6 +38,8 @@ struct note_runtime_t {
     mem_pool_t pool;
     struct note_t *notes;
 
+    struct block_allocation_t block_allocation;
+
     struct id_to_note_tree_t notes_by_id;
     struct title_to_note_tree_t notes_by_title;
 } __g_note_runtime;

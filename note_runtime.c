@@ -9,6 +9,9 @@ struct note_runtime_t* rt_get ()
     // always need a runtime...
     struct note_runtime_t *rt = &__g_note_runtime;
     assert (rt != NULL);
+
+    if (rt->block_allocation.pool == NULL) rt->block_allocation.pool = &rt->pool;
+
     return rt;
 }
 
@@ -42,7 +45,6 @@ void rt_link_notes (struct note_t *src, struct note_t *tgt)
 void rt_process_notes (struct note_runtime_t *rt, string_t *error_msg)
 {
     struct psx_parser_ctx_t ctx = {0};
-    ctx.pool = &rt->pool;
     ctx.error_msg = error_msg;
 
     bool has_output = false;
@@ -71,7 +73,7 @@ void rt_process_notes (struct note_runtime_t *rt, string_t *error_msg)
                 ctx.path = str_data(&curr_note->path);
                 ctx.error_msg = &curr_note->error_msg;
 
-                psx_block_tree_user_callbacks (&ctx, &curr_note->tree);
+                psx_block_tree_user_callbacks (&ctx, &rt->block_allocation, &curr_note->tree);
             }
         }
     }
@@ -82,12 +84,6 @@ void rt_process_notes (struct note_runtime_t *rt, string_t *error_msg)
                 ctx.id = curr_note->id;
                 ctx.path = str_data(&curr_note->path);
                 ctx.error_msg = &curr_note->error_msg;
-
-                // HTML generation should not be allocating anything else
-                // besides html nodes, so it should be possible to pass NULL as
-                // pool and don't crash. If this causes a crash, we are doing
-                // something that wasn't intended.
-                ctx.pool = NULL;
 
                 // Parse to html but don't keep the full html tree, only store the
                 // resulting html string. So far the HTML tree hasn't been necesary.

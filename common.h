@@ -903,6 +903,56 @@ bool is_end_of_line (const char *c)
     return *c == '\n';
 }
 
+
+////////////////////
+// SHALLOW STRINGS
+//
+// A string type that doesn't allocate any memory, instead it only points to
+// another string and stores a length.
+typedef struct {
+    char *s;
+    uint32_t len;
+} sstring_t;
+#define SSTRING(s,len) ((sstring_t){s,len})
+#define SSTRING_C(s) SSTRING(s,strlen(s))
+
+static inline
+sstring_t sstr_set (char *s, uint32_t len)
+{
+    return SSTRING(s, len);
+}
+
+static inline
+sstring_t sstr_trim (sstring_t str)
+{
+    while (is_space (str.s) || *(str.s) == '\n') {
+        str.s++;
+        str.len--;
+    }
+
+    while (is_space (str.s + str.len - 1) || str.s[str.len - 1] == '\n') {
+        str.len--;
+    }
+
+    return str;
+}
+
+static inline
+void sstr_extend (sstring_t *str1, sstring_t *str2)
+{
+    assert (str2->s != NULL);
+
+    if (str1->s == NULL) {
+        str1->s = str2->s;
+        str1->len = str2->len;
+
+    } else {
+        assert (str1->s + str1->len == str2->s);
+        str1->len += str2->len;
+    }
+}
+
+
 // Set POSIX locale while storing the previous one. Useful while calling strtod
 // and you know the decimal separator will always be '.', and you don't want it
 // to break if the user changes locale.
