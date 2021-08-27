@@ -488,26 +488,6 @@ struct psx_token_t ps_inline_next(struct psx_parser_state_t *ps)
     return tok;
 }
 
-void ps_expect_inline(struct psx_parser_state_t *ps, enum psx_token_type_t type, char *cstr)
-{
-    ps_inline_next (ps);
-    if (!ps_match(ps, type, cstr)) {
-        if (ps->token.type != type) {
-            if (cstr == NULL) {
-                psx_error (ps, "Expected token of type %s, got '%.*s' of type %s.",
-                           psx_token_type_names[type], ps->token.value.len, ps->token.value.s, psx_token_type_names[ps->token.type]);
-            } else {
-                psx_error (ps, "Expected token '%s' of type %s, got '%.*s' of type %s.",
-                           cstr, psx_token_type_names[type], ps->token.value.len, ps->token.value.s, psx_token_type_names[ps->token.type]);
-            }
-
-        } else {
-            // Value didn't match.
-            psx_error (ps, "Expected '%s', got '%.*s'.", cstr, ps->token.value.len, ps->token.value.s);
-        }
-    }
-}
-
 struct psx_tag_t {
     struct psx_tag_parameters_t parameters;
     string_t content;
@@ -651,9 +631,9 @@ void parse_balanced_brace_block(struct psx_parser_state_t *ps, string_t *str)
 {
     assert (str != NULL);
 
-    if (ps_curr_char(ps) == '{') {
+    ps_inline_next (ps);
+    if (ps_match (ps, TOKEN_TYPE_OPERATOR, "{")) {
         int brace_level = 1;
-        ps_expect_inline (ps, TOKEN_TYPE_OPERATOR, "{");
 
         while (!ps->is_eof && brace_level != 0) {
             ps_inline_next (ps);
