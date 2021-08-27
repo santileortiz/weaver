@@ -166,14 +166,18 @@ def generate ():
     gn.copy_changed(static_dir, out_dir)
     gn.copy_changed(source_files_dir, path_cat(out_dir, files_dir))
 
+    success = True
     if c_needs_rebuild ('weaver.c', './bin/weaver') or ex (f'./bin/weaver --has-js', echo=False) == 0:
         print ('Building weaver...')
-        weaver_build (True)
-        print()
+        if weaver_build (True) != 0:
+            success = False
+        else:
+            print()
 
     # TODO: The HTML generator should only process source notes that changed.
     # Currently it generates all notes, all the time.
-    ex (f'./bin/weaver --generate-static {source_notes_dir} {path_cat(out_dir, notes_dir)}')
+    if success:
+        ex (f'./bin/weaver --generate-static {source_notes_dir} {path_cat(out_dir, notes_dir)}')
 
 
 ensure_dir ("bin")
@@ -200,16 +204,16 @@ def common_build(c_sources, out_fname, use_js):
     else:
         C_FLAGS += " -DNO_JS"
 
-    ex (f'gcc {C_FLAGS} -o {out_fname} {c_sources} -lm -lrt')
+    return ex (f'gcc {C_FLAGS} -o {out_fname} {c_sources} -lm -lrt')
 
 def weaver_build (use_js):
-    common_build ("weaver.c", 'bin/weaver', use_js)
+    return common_build ("weaver.c", 'bin/weaver', use_js)
 
 def weaver():
     weaver_build (check_js_toggle ())
 
 def markup_parser_tests():
-    common_build ("markup_parser_tests.c", 'bin/markup_parser_tests', False)
+    return common_build ("markup_parser_tests.c", 'bin/markup_parser_tests', False)
 
 def cloc():
     ex ('cloc --exclude-list-file=.clocignore .')

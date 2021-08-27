@@ -11,8 +11,6 @@
 
 int psx_content_width = 588; // px
 
-struct html_t* markup_to_html (mem_pool_t *pool, char *path, char *markup, char *id, int x, string_t *error_msg);
-
 #if defined(MARKUP_PARSER_IMPL)
 
 #define TOKEN_TYPES_TABLE                      \
@@ -139,6 +137,19 @@ struct psx_block_t {
     struct psx_block_t *next;
 };
 
+struct psx_parser_ctx_t {
+    mem_pool_t *pool;
+
+    char *id;
+    char *path;
+
+    // TODO: Actually use this free list, right now we only add stuff, but never
+    // use it.
+    struct psx_block_t *blocks_fl;
+
+    string_t *error_msg;
+};
+
 struct psx_parser_state_t {
     mem_pool_t *result_pool;
 
@@ -147,12 +158,6 @@ struct psx_parser_state_t {
     struct note_runtime_t *rt;
 
     char *path;
-
-    // TODO: Actually use this free list, right now we only add stuff, but never
-    // use it. Although, how useful is it?, I don't think a single parser
-    // execution would make good use of this. Maybe block elements should be
-    // allocated at the runtime level.
-    struct psx_block_t *blocks_fl;
 
     bool error;
     string_t error_msg;
@@ -364,6 +369,23 @@ void psx_warning (struct psx_parser_state_t *ps, char *format, ...)
     PRINTF_SET (str_data(&ps->error_msg) + old_len, size, format, args);
 
     str_cat_c (&ps->error_msg, "\n");
+}
+
+GCC_PRINTF_FORMAT(2, 3)
+void psx_warning_ctx (struct psx_parser_ctx_t *ctx, char *format, ...)
+{
+    if (ctx->path != NULL) {
+         str_cat_printf (ctx->error_msg, ECMA_DEFAULT("%s:") ECMA_YELLOW(" warning: "), ctx->path);
+    } else {
+         str_cat_printf (ctx->error_msg, ECMA_YELLOW("warning: "));
+    }
+
+    PRINTF_INIT (format, size, args);
+    size_t old_len = str_len(ctx->error_msg);
+    str_maybe_grow (ctx->error_msg, str_len(ctx->error_msg) + size - 1, true);
+    PRINTF_SET (str_data(ctx->error_msg) + old_len, size, format, args);
+
+    str_cat_c (ctx->error_msg, "\n");
 }
 
 void ps_parse_tag_parameters (struct psx_parser_state_t *ps, struct psx_tag_parameters_t *parameters)
@@ -846,13 +868,95 @@ void compute_media_size (struct psx_tag_parameters_t *parameters, double aspect_
     *h = height;
 }
 
+struct note_t* psx_parse_tag_note (struct psx_parser_state_t *ps, struct psx_tag_t **tag, string_t *target_note_title)
+{
+    struct psx_tag_t *tag_l = ps_parse_tag (ps);
+    if (tag != NULL) *tag = tag_l;
+
+    str_replace (&tag_l->content, "\n", " ", NULL);
+    // TODO: Trim tag_l->content of start/end spaces...
+
+    // TODO: Implement navigation to note's subsections. Right now we
+    // just ignore what comes after the #. Also, this notation is
+    // problematic if there are titles that contain # characters, do we
+    // care about that enough to make the subsection be passed as a
+    // parameter instead of the current shorthand syntax?. Do we want to
+    // allow both?. We can check that a note link is valid because we
+    // did a pre processing of all titles and have a map from titles to
+    // notes, we can't do the same for sections because notes have not
+    // been fully parsed yet. If we want to show warnings in these cases
+    // we will need a post processing phase that validates all note
+    // links that contain a subsection.
+
+    // TODO: This should essentially parse the format
+    //
+    //                 {note-title}#{note-section}
+    //
+    // where the # and note-section are optional and both "capture
+    // groups" trim spaces at the start and end. I though parsing this
+    // with a regular expression was going to be straightforward but the
+    // smallest regex I found was
+    //
+    //                 ^\s*(.+?)(\s*#\s*(.*?)\s*)?$
+    //
+    // then assign capture groups like this
+    //
+    //  note-title <- (1)
+    //  note-section <- (3)
+    //
+    // I'd like to design a notation that allows defining these kinds of
+    // tags easily. So far we also do a very similar thing for links
+    // where we parse the format
+    //
+    //                      {link-title}->{url}
+    //
+    // here the difference being, that optional components are
+    // link-title and the -> characters.
+    //
+    // Designing a syntax for this would have the benefit of letting us
+    // easily recreate the original tag from the components. Also it
+    // would let us automatically define named parameters to set the
+    // components in case the content would need some escaping, for
+    // example
+    //
+    //  \note[note-title="# hash character", note-section="#subsesction"]{}
+    //
+    // We can have the syntax fall back to a regex expression where the
+    // user provides a mapping between capture groups and component
+    // names. But now we would require of them to also add a format to
+    // show how to build the original tag back from the components.
+    // Although, we can always fall back to the tag parameters
+    // notation...?, hmmm this sound promising.
+    //
+    // TeX has a very similar format, but it was created before regular
+    // expressions were a thing and I think it hardcodes some policies
+    // about greediness. The fall back to regular expressions would
+    // allow the full expressibility for defining parsing while reusing
+    // a language somewhat familiar to programmers and not having to
+    // make the big jump to using an actual programming language.
+    char *start = str_data (&tag_l->content);
+    while (is_space (start)) start++;
+
+    char *pos = start;
+    while (*pos != '\0' && *pos != '#') pos++;
+    while (pos > start && is_space (pos-1)) pos--;
+
+    if (pos != start) {
+        strn_set (target_note_title, start, pos-start);
+    } else {
+        str_set (target_note_title, start);
+    }
+
+    return rt_get_note_by_title (target_note_title);
+}
+
 // This function parses the content of a block of text. The formatting is
 // limited to tags that affect the formating inline. This parsing function
 // will not add nested blocks like paragraphs, lists, code blocks etc.
 //
 // TODO: How do we handle the prescence of nested blocks here?, ignore them and
 // print them or raise an error and stop parsing.
-void block_content_parse_text (struct html_t *html, struct html_element_t *container, char *content, string_t *error_msg)
+void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html, struct html_element_t *container, char *content)
 {
     string_t buff = {0};
     struct psx_parser_state_t _ps = {0};
@@ -977,91 +1081,19 @@ void block_content_parse_text (struct html_t *html, struct html_element_t *conta
             str_free (&code_content);
 
         } else if (ps_match(ps, TOKEN_TYPE_TAG, "note")) {
-            struct psx_tag_t *tag = ps_parse_tag (ps);
-            str_replace (&tag->content, "\n", " ", NULL);
-            // TODO: Trim tag->content of start/end spaces...
-
-            // TODO: Implement navigation to note's subsections. Right now we
-            // just ignore what comes after the #. Also, this notation is
-            // problematic if there are titles that contain # characters, do we
-            // care about that enough to make the subsection be passed as a
-            // parameter instead of the current shorthand syntax?. Do we want to
-            // allow both?. We can check that a note link is valid because we
-            // did a pre processing of all titles and have a map from titles to
-            // notes, we can't do the same for sections because notes have not
-            // been fully parsed yet. If we want to show warnings in these cases
-            // we will need a post processing phase that validates all note
-            // links that contain a subsection.
-
-            // TODO: This should essentially parse the format
-            //
-            //                 {note-title}#{note-section}
-            //
-            // where the # and note-section are optional and both "capture
-            // groups" trim spaces at the start and end. I though parsing this
-            // with a regular expression was going to be straightforward but the
-            // smallest regex I found was
-            //
-            //                 ^\s*(.+?)(\s*#\s*(.*?)\s*)?$
-            //
-            // then assign capture groups like this
-            //
-            //  note-title <- (1)
-            //  note-section <- (3)
-            //
-            // I'd like to design a notation that allows defining these kinds of
-            // tags easily. So far we also do a very similar thing for links
-            // where we parse the format
-            //
-            //                      {link-title}->{url}
-            //
-            // here the difference being, that optional components are
-            // link-title and the -> characters.
-            //
-            // Designing a syntax for this would have the benefit of letting us
-            // easily recreate the original tag from the components. Also it
-            // would let us automatically define named parameters to set the
-            // components in case the content would need some escaping, for
-            // example
-            //
-            //  \note[note-title="# hash character", note-section="#subsesction"]{}
-            //
-            // We can have the syntax fall back to a regex expression where the
-            // user provides a mapping between capture groups and component
-            // names. But now we would require of them to also add a format to
-            // show how to build the original tag back from the components.
-            // Although, we can always fall back to the tag parameters
-            // notation...?, hmmm this sound promising.
-            //
-            // TeX has a very similar format, but it was created before regular
-            // expressions were a thing and I think it hardcodes some policies
-            // about greediness. The fall back to regular expressions would
-            // allow the full expressibility for defining parsing while reusing
-            // a language somewhat familiar to programmers and not having to
-            // make the big jump to using an actual programming language.
-            char *start = str_data (&tag->content);
-            while (is_space (start)) start++;
-
-            char *pos = start;
-            while (*pos != '\0' && *pos != '#') pos++;
-            while (pos > start && is_space (pos-1)) pos--;
-
-            if (pos != start) {
-                strn_set (&buff, start, pos-start);
-            } else {
-                str_set (&buff, start);
-            }
-            struct note_t *linked_note = rt_get_note_by_title (&buff);
-
+            struct psx_tag_t *tag = NULL;
+            struct note_t *target_note = psx_parse_tag_note (ps, &tag, &buff);
             struct html_element_t *link_element = html_new_element (html, "a");
             html_element_attribute_set (html, link_element, "href", "#");
-            if (linked_note != NULL) {
-                str_set_printf (&buff, "return open_note('%s');", linked_note->id);
+            if (target_note != NULL) {
+                str_set_printf (&buff, "return open_note('%s');", target_note->id);
                 html_element_attribute_set (html, link_element, "onclick", str_data(&buff));
                 html_element_class_add (html, link_element, "note-link");
             } else {
                 html_element_class_add (html, link_element, "note-link-broken");
-                psx_warning (ps, "broken note link, couldn't find note for title: %s", str_data (&tag->content));
+
+                // :target_note_not_found_error
+                psx_warning (ps, "broken note link, couldn't find note for title: %s", str_data (&buff));
             }
             html_element_append_strn (html, link_element, str_len(&tag->content), str_data(&tag->content));
             psx_append_html_element(ps, html, link_element);
@@ -1084,20 +1116,34 @@ void block_content_parse_text (struct html_t *html, struct html_element_t *conta
         }
     }
 
-    if (error_msg != NULL) {
-        str_cat (error_msg, &ps->error_msg);
-    }
-
     ps_destroy (ps);
     str_free (&buff);
 }
 
+// NOCOMMIT
+// @remove_me
 #define psx_block_new(ps) psx_block_new_cpy(ps,NULL)
 struct psx_block_t* psx_block_new_cpy(struct psx_parser_state_t *ps, struct psx_block_t *original)
 {
     struct psx_block_t *new_block = mem_pool_push_struct (ps->result_pool, struct psx_block_t);
     *new_block = ZERO_INIT (struct psx_block_t);
     str_pool (ps->result_pool, &new_block->inline_content);
+
+    if (original != NULL) {
+        new_block->type = original->type;
+        new_block->margin = original->margin;
+        str_cpy (&new_block->inline_content, &original->inline_content);
+    }
+
+    return new_block;
+}
+
+#define psx_block_new_ctx(ps) psx_block_new_cpy_ctx(ps,NULL)
+struct psx_block_t* psx_block_new_cpy_ctx(struct psx_parser_ctx_t *ctx, struct psx_block_t *original)
+{
+    struct psx_block_t *new_block = mem_pool_push_struct (ctx->pool, struct psx_block_t);
+    *new_block = ZERO_INIT (struct psx_block_t);
+    str_pool (ctx->pool, &new_block->inline_content);
 
     if (original != NULL) {
         new_block->type = original->type;
@@ -1155,7 +1201,7 @@ enum psx_user_tag_cb_status_t {
 // CAUTION: DON'T MODIFY THE BLOCK CONTENT'S STRING FROM A psx_user_tag_cb_t.
 // These callbacks are called while parsing the block's content, modifying
 // block->inline_content will mess up the parser.
-#define PSX_USER_TAG_CB(funcname) enum psx_user_tag_cb_status_t funcname(struct psx_parser_state_t *ps, struct psx_parser_state_t *ps_inline, struct psx_block_t **block, struct str_replacement_t *replacement)
+#define PSX_USER_TAG_CB(funcname) enum psx_user_tag_cb_status_t funcname(struct psx_parser_ctx_t *ctx, struct psx_parser_state_t *ps_inline, struct psx_block_t **block, struct str_replacement_t *replacement)
 typedef PSX_USER_TAG_CB(psx_user_tag_cb_t);
 
 BINARY_TREE_NEW (psx_user_tag_cb, char*, psx_user_tag_cb_t*, strcmp(a, b));
@@ -1165,17 +1211,17 @@ void psx_populate_internal_cb_tree (struct psx_user_tag_cb_tree_t *tree);
 // TODO: User callbacks will be modifying the tree. It's possible the user
 // messes up and for example adds a cycle into the tree, we should detect such
 // problem and avoid maybe later entering an infinite loop.
-#define psx_block_tree_user_callbacks(ps,root) psx_block_tree_user_callbacks_full(ps,root,NULL)
-void psx_block_tree_user_callbacks_full (struct psx_parser_state_t *ps, struct psx_block_t **root, struct psx_block_t **block_p)
+#define psx_block_tree_user_callbacks(ctx,root) psx_block_tree_user_callbacks_full(ctx,root,NULL)
+void psx_block_tree_user_callbacks_full (struct psx_parser_ctx_t *ctx, struct psx_block_t **root, struct psx_block_t **block_p)
 {
     if (block_p == NULL) block_p = root;
 
     struct psx_block_t *block = *block_p;
 
     if (block->block_content != NULL) {
-        struct psx_block_t **sub_block = &((*block_p)->block_content->next);
+        struct psx_block_t **sub_block = &((*block_p)->block_content);
         while (*sub_block != NULL) {
-            psx_block_tree_user_callbacks_full (ps, root, sub_block);
+            psx_block_tree_user_callbacks_full (ctx, root, sub_block);
             sub_block = &(*sub_block)->next;
         }
 
@@ -1200,13 +1246,13 @@ void psx_block_tree_user_callbacks_full (struct psx_parser_state_t *ps, struct p
                 psx_user_tag_cb_t* cb = psx_user_tag_cb_get (&user_cb_tree, str_data(&tag_name));
                 if (cb != NULL) {
                     struct str_replacement_t tmp_replacement = {0};
-                    enum psx_user_tag_cb_status_t status = cb (ps, ps_inline, block_p, &tmp_replacement);
+                    enum psx_user_tag_cb_status_t status = cb (ctx, ps_inline, block_p, &tmp_replacement);
                     tmp_replacement.start_idx = tag_start - block_start;
                     tmp_replacement.len = ps_inline->pos - tag_start;
 
                     if (ps_inline->error) {
-                        psx_warning (ps, "failed parsing custom tag '%s'", str_data(&tag_name));
-                        str_cat_indented_c (&ps->error_msg, str_data(&ps_inline->error_msg), 2);
+                        psx_warning_ctx (ctx, "failed parsing custom tag '%s'", str_data(&tag_name));
+                        str_cat_indented_c (ctx->error_msg, str_data(&ps_inline->error_msg), 2);
                     }
 
                     if (str_len (&tmp_replacement.s) > 0) {
@@ -1246,21 +1292,63 @@ void psx_block_tree_user_callbacks_full (struct psx_parser_state_t *ps, struct p
     }
 }
 
-void block_tree_to_html (struct html_t *html, struct psx_block_t *block,  struct html_element_t *parent, string_t *error_msg)
+#define psx_create_links(ctx,root) psx_create_links_full(ctx,root,NULL)
+void psx_create_links_full (struct psx_parser_ctx_t *ctx, struct psx_block_t **root, struct psx_block_t **block_p)
+{
+    if (block_p == NULL) block_p = root;
+
+    struct psx_block_t *block = *block_p;
+
+    if (block->block_content != NULL) {
+        struct psx_block_t **sub_block = &((*block_p)->block_content);
+        while (*sub_block != NULL) {
+            psx_create_links_full (ctx, root, sub_block);
+            sub_block = &(*sub_block)->next;
+        }
+
+    } else {
+        struct psx_parser_state_t _ps_inline = {0};
+        struct psx_parser_state_t *ps_inline = &_ps_inline;
+        ps_init (ps_inline, str_data(&block->inline_content));
+
+        while (!ps_inline->is_eof && !ps_inline->error) {
+            ps_inline_next (ps_inline);
+            if (ps_match(ps_inline, TOKEN_TYPE_TAG, "note")) {
+                string_t target_note_title = {0};
+
+                struct note_t *target_note = psx_parse_tag_note (ps_inline, NULL, &target_note_title);
+                struct note_t *current_note = rt_get_note_by_id (ctx->id);
+
+                // If the target note is not found, fail silently because we
+                // will show the warning message later, when building the html.
+                // :target_note_not_found_error
+                if (target_note != NULL) {
+                    rt_link_notes (current_note, target_note);
+                }
+
+                str_free (&target_note_title);
+            }
+        }
+
+        ps_destroy (ps_inline);
+    }
+}
+
+void block_tree_to_html (struct psx_parser_ctx_t *ctx, struct html_t *html, struct psx_block_t *block, struct html_element_t *parent)
 {
     string_t buff = {0};
 
     if (block->type == BLOCK_TYPE_PARAGRAPH) {
         struct html_element_t *new_dom_element = html_new_element (html, "p");
         html_element_append_child (html, parent, new_dom_element);
-        block_content_parse_text (html, new_dom_element, str_data(&block->inline_content), error_msg);
+        block_content_parse_text (ctx, html, new_dom_element, str_data(&block->inline_content));
 
     } else if (block->type == BLOCK_TYPE_HEADING) {
         str_set_printf (&buff, "h%i", block->heading_number);
         struct html_element_t *new_dom_element = html_new_element (html, str_data(&buff));
 
         html_element_append_child (html, parent, new_dom_element);
-        block_content_parse_text (html, new_dom_element, str_data(&block->inline_content), error_msg);
+        block_content_parse_text (ctx, html, new_dom_element, str_data(&block->inline_content));
 
     } else if (block->type == BLOCK_TYPE_CODE) {
         struct html_element_t *pre_element = html_new_element (html, "pre");
@@ -1305,7 +1393,7 @@ void block_tree_to_html (struct html_t *html, struct psx_block_t *block,  struct
 
     } else if (block->type == BLOCK_TYPE_ROOT) {
         LINKED_LIST_FOR (struct psx_block_t*, sub_block, block->block_content) {
-            block_tree_to_html(html, sub_block, parent, error_msg);
+            block_tree_to_html(ctx, html, sub_block, parent);
         }
 
     } else if (block->type == BLOCK_TYPE_LIST) {
@@ -1316,7 +1404,7 @@ void block_tree_to_html (struct html_t *html, struct psx_block_t *block,  struct
         html_element_append_child (html, parent, new_dom_element);
 
         LINKED_LIST_FOR (struct psx_block_t*, sub_block, block->block_content) {
-            block_tree_to_html(html, sub_block, new_dom_element, error_msg);
+            block_tree_to_html(ctx, html, sub_block, new_dom_element);
         }
 
     } else if (block->type == BLOCK_TYPE_LIST_ITEM) {
@@ -1324,7 +1412,7 @@ void block_tree_to_html (struct html_t *html, struct psx_block_t *block,  struct
         html_element_append_child (html, parent, new_dom_element);
 
         LINKED_LIST_FOR (struct psx_block_t*, sub_block, block->block_content) {
-            block_tree_to_html(html, sub_block, new_dom_element, error_msg);
+            block_tree_to_html(ctx, html, sub_block, new_dom_element);
         }
     }
 
@@ -1375,32 +1463,8 @@ void psx_append_paragraph_continuation_lines (struct psx_parser_state_t *ps, str
     }
 }
 
-struct psx_block_t* parse_note_text (mem_pool_t *pool, char *path, char *note_text, string_t *error_msg)
+void psx_parse (struct psx_parser_state_t *ps)
 {
-    mem_pool_marker_t mrk = mem_pool_begin_temporary_memory (pool);
-
-    struct psx_parser_state_t _ps = {0};
-    struct psx_parser_state_t *ps = &_ps;
-    ps->result_pool = pool;
-    ps_init_path (ps, path, note_text);
-
-    struct psx_block_t *root_block = psx_container_block_new(ps, BLOCK_TYPE_ROOT, 0);
-    DYNAMIC_ARRAY_APPEND (ps->block_stack, root_block);
-
-    psx_parse_note_title (ps);
-    if (!ps->error) {
-        struct psx_block_t *title_block = psx_push_block (ps, psx_leaf_block_new(ps, BLOCK_TYPE_HEADING, ps->token.margin, ps->token.value));
-        title_block->heading_number = 1;
-
-        if (ps->token.heading_number != 1) {
-            psx_warning (ps, "forcing note title to heading level 1, this note starts with different level");
-        }
-
-        // :pop_leaf_blocks
-        ps->block_stack_len--;
-    }
-
-    // Parse note's content
     while (!ps->is_eof && !ps->error) {
         struct psx_token_t tok = ps_next(ps);
 
@@ -1547,10 +1611,65 @@ struct psx_block_t* parse_note_text (mem_pool_t *pool, char *path, char *note_te
             }
         }
     }
+}
 
+struct psx_block_t* parse_note_text (mem_pool_t *pool, char *path, char *note_text, string_t *error_msg)
+{
+    mem_pool_marker_t mrk = mem_pool_begin_temporary_memory (pool);
+
+    struct psx_parser_state_t _ps = {0};
+    struct psx_parser_state_t *ps = &_ps;
+    ps->result_pool = pool;
+    ps_init_path (ps, path, note_text);
+
+    struct psx_block_t *root_block = psx_container_block_new(ps, BLOCK_TYPE_ROOT, 0);
+    DYNAMIC_ARRAY_APPEND (ps->block_stack, root_block);
+
+    psx_parse_note_title (ps);
     if (!ps->error) {
-        psx_block_tree_user_callbacks (ps, &root_block);
+        struct psx_block_t *title_block = psx_push_block (ps, psx_leaf_block_new(ps, BLOCK_TYPE_HEADING, ps->token.margin, ps->token.value));
+        title_block->heading_number = 1;
+
+        if (ps->token.heading_number != 1) {
+            psx_warning (ps, "forcing note title to heading level 1, this note starts with different level");
+        }
+
+        // :pop_leaf_blocks
+        ps->block_stack_len--;
     }
+
+    // Parse note's content
+    psx_parse (ps);
+
+    // Copy error message even if !ps->error becaue there may be warnings.
+    if (error_msg != NULL) {
+        str_cat (error_msg, &ps->error_msg);
+    }
+
+    if (ps->error) {
+        root_block = NULL;
+        mem_pool_end_temporary_memory (mrk);
+    }
+
+    ps_destroy (ps);
+
+    return root_block;
+}
+
+struct psx_block_t* psx_parse_string (mem_pool_t *pool, char *text, string_t *error_msg)
+{
+    mem_pool_marker_t mrk = mem_pool_begin_temporary_memory (pool);
+
+    struct psx_parser_state_t _ps = {0};
+    struct psx_parser_state_t *ps = &_ps;
+    ps->result_pool = pool;
+    ps_init_path (ps, NULL, text);
+
+    struct psx_block_t *root_block = psx_container_block_new(ps, BLOCK_TYPE_ROOT, 0);
+    DYNAMIC_ARRAY_APPEND (ps->block_stack, root_block);
+
+    // Parse note's content
+    psx_parse (ps);
 
     // Copy error message even if !ps->error becaue there may be warnings.
     if (error_msg != NULL) {
@@ -1601,22 +1720,43 @@ void printf_block_tree (struct psx_block_t *root, int indent)
     str_free (&str);
 }
 
-struct html_t* markup_to_html (mem_pool_t *pool, char *path, char *markup, char *id, int x, string_t *error_msg)
+struct html_t* markup_to_html (mem_pool_t *pool, char *path, char *markup, char *id, string_t *error_msg)
 {
     mem_pool_t pool_l = {0};
+    struct psx_parser_ctx_t ctx = {0};
+    ctx.pool = &pool_l;
+    ctx.id = id;
+    ctx.path = path;
+    ctx.error_msg = error_msg;
 
     struct psx_block_t *root_block = parse_note_text (&pool_l, path, markup, error_msg);
+
+    if (root_block != NULL) {
+        psx_block_tree_user_callbacks (&ctx, &root_block);
+    }
 
     struct html_t *html = NULL;
     if (root_block != NULL) {
         html = html_new (pool, "div");
         html_element_attribute_set (html, html->root, "id", id);
-        block_tree_to_html (html, root_block, html->root, error_msg);
+        block_tree_to_html (&ctx, html, root_block, html->root);
     }
 
     mem_pool_destroy (&pool_l);
 
     return html;
+}
+
+// Replace a block with a linked list of blocks. The block to be replaced is
+// referred to by the double pointer representing its parent. There is also a
+// shorthand for the case where the linked list consists of a single block.
+#define psx_replace_block(ctx,old_block,new_block) psx_replace_block_multiple(ctx,old_block,new_block,new_block)
+void psx_replace_block_multiple (struct psx_parser_ctx_t *ctx, struct psx_block_t **old_block, struct psx_block_t *new_start, struct psx_block_t *new_end)
+{
+    struct psx_block_t *tmp = *old_block;
+    new_end->next = (*old_block)->next;
+    *old_block = new_start;
+    LINKED_LIST_PUSH (ctx->blocks_fl, tmp);
 }
 
 // This is here because it's trying to emulate how users would define custom
@@ -1634,7 +1774,7 @@ PSX_USER_TAG_CB (summary_tag_handler)
         struct psx_block_t *note_tree = parse_note_text (&pool, NULL, str_data(&note->psplx), NULL);
 
         struct psx_block_t *title = note_tree->block_content;
-        struct psx_block_t *new_title = psx_block_new_cpy (ps, title);
+        struct psx_block_t *new_title = psx_block_new_cpy_ctx (ctx, title);
         // NOTE: We can use inline tags because they are processed at a later step.
         str_set_printf (&new_title->inline_content, "\\note{%s}", str_data(&title->inline_content));
         // TODO: Don't use fixed heading of 2, instead look at the context
@@ -1646,17 +1786,13 @@ PSX_USER_TAG_CB (summary_tag_handler)
 
         struct psx_block_t *after_title = note_tree->block_content->next;
         if (after_title != NULL && after_title->type == BLOCK_TYPE_PARAGRAPH) {
-            struct psx_block_t *new_summary = psx_block_new_cpy (ps, after_title);
+            struct psx_block_t *new_summary = psx_block_new_cpy_ctx (ctx, after_title);
             LINKED_LIST_APPEND (result, new_summary);
         }
 
         mem_pool_destroy (&pool);
 
-        // Replace the original block in the tree with the new ones.
-        struct psx_block_t *tmp = *block;
-        result_end->next = (*block)->next;
-        *block = result;
-        LINKED_LIST_PUSH (ps->blocks_fl, tmp);
+        psx_replace_block_multiple (ctx, block, result, result_end);
 
         // TODO: Add some user defined wrapper that allows setting a different
         // style for blocks of summary. For example if we ever get inline
@@ -1699,11 +1835,28 @@ PSX_USER_TAG_CB(math_tag_display_handler)
     return math_tag_handler (ps_inline, replacement, true);
 }
 
+PSX_USER_TAG_CB(orphan_list_tag_handler)
+{
+    string_t res = {0};
+
+    struct note_runtime_t *rt = rt_get ();
+    LINKED_LIST_FOR (struct note_t*, curr_note, rt->notes) {
+        if (curr_note->back_links == NULL) {
+            str_cat_printf (&res, "- \\note{%s}\n", str_data(&curr_note->title));
+        }
+    }
+
+    struct psx_block_t *root = psx_parse_string (ctx->pool, str_data (&res), NULL);
+    psx_replace_block_multiple (ctx, block, root->block_content, root->block_content_end);
+    return USER_TAG_CB_STATUS_BREAK;
+}
+
 // Register internal custom callbacks
 #define PSX_INTERNAL_CUSTOM_TAG_TABLE \
-PSX_INTERNAL_CUSTOM_TAG_ROW ("math", math_tag_inline_handler) \
-PSX_INTERNAL_CUSTOM_TAG_ROW ("Math", math_tag_display_handler) \
-PSX_INTERNAL_CUSTOM_TAG_ROW ("summary", summary_tag_handler) \
+PSX_INTERNAL_CUSTOM_TAG_ROW ("math",        math_tag_inline_handler) \
+PSX_INTERNAL_CUSTOM_TAG_ROW ("Math",        math_tag_display_handler) \
+PSX_INTERNAL_CUSTOM_TAG_ROW ("summary",     summary_tag_handler) \
+PSX_INTERNAL_CUSTOM_TAG_ROW ("orphan_list", orphan_list_tag_handler) \
 
 void psx_populate_internal_cb_tree (struct psx_user_tag_cb_tree_t *tree)
 {

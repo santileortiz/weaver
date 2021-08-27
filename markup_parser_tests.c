@@ -89,7 +89,6 @@ char* get_expected_html (mem_pool_t *pool, char *note_id, size_t *fsize)
 int main(int argc, char** argv)
 {
     mem_pool_t pool = {0};
-    string_t *error_msg = str_new_pooled(&pool, "");
 
     struct test_ctx_t _t = {0};
     struct test_ctx_t *t = &_t;
@@ -105,6 +104,8 @@ int main(int argc, char** argv)
     bool no_output = get_cli_bool_opt ("--none", argv, argc);
     t->show_all_children = get_cli_bool_opt ("--full", argv, argc);
 
+    rt_process_notes (rt, NULL);
+
     if (note_id == NULL) {
         LINKED_LIST_FOR (struct note_t*, note, rt->notes) {
             // Don't allocate these files into pool so we free them on each test
@@ -117,11 +118,9 @@ int main(int argc, char** argv)
                 test_push (t, "%s", note->id);
             }
 
-            rt_parse_to_html (rt, note, error_msg);
-
             test_push (t, "Source parsing");
-            if (!test_bool (t, note->is_html_valid && str_len(error_msg) == 0)) {
-                test_error_c (t, str_data(error_msg));
+            if (!test_bool (t, !note->error && str_len(&note->error_msg) == 0)) {
+                test_error_c (t, str_data(&note->error_msg));
             }
 
             if (expected_html != NULL) {
@@ -137,11 +136,8 @@ int main(int argc, char** argv)
         struct note_t *note = id_to_note_get (&rt->notes_by_id, note_id);
 
         if (note != NULL) {
-            bool success = rt_parse_to_html (rt, note, error_msg);
-            printf ("%s", str_data(error_msg));
-
-            if (success) {
-                if (str_len(error_msg) > 0) printf ("\n");
+            if (!note->error) {
+                if (str_len(&note->error_msg) > 0) printf ("\n");
 
                 if (html_out) {
                     printf ("%s", str_data(&note->html));
@@ -151,6 +147,7 @@ int main(int argc, char** argv)
                     printf_block_tree (root_block, 4);
 
                 } else if (no_output) {
+                    // nothing
 
                 } else {
                     printf (ECMA_MAGENTA("PSPLX") "\n");

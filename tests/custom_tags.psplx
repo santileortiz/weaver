@@ -1,0 +1,9 @@
+# Testing execution of custom tags
+
+Test inline tags in lists
+
+ - \math{x^0}
+ - \math{x^1}
+ - \math{x^2}
+ - \math{x^3}
+ - \math{x^4}

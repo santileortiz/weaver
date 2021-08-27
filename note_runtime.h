@@ -2,6 +2,13 @@
  * Copyright (C) 2021 Santiago León O.
  */
 
+struct note_t;
+
+struct note_link_t {
+    struct note_t *note;
+    struct note_link_t *next;
+};
+
 struct note_t {
     string_t path;
 
@@ -9,11 +16,16 @@ struct note_t {
     string_t title;
     string_t psplx;
 
+    struct psx_block_t *tree;
+
     bool is_html_valid;
     string_t html;
 
     bool error;
     string_t error_msg;
+
+    struct note_link_t *links;
+    struct note_link_t *back_links;
 
     struct note_t *next;
 };
@@ -32,4 +44,5 @@ struct note_runtime_t {
 
 struct note_runtime_t* rt_get ();
 struct note_t* rt_get_note_by_title (string_t *title);
-bool rt_parse_to_html (struct note_runtime_t *rt, struct note_t *note, string_t *error_msg);
+struct note_t* rt_get_note_by_id (char *id);
+void rt_link_notes (struct note_t *src, struct note_t *tgt);

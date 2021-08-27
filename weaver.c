@@ -45,7 +45,6 @@ ITERATE_DIR_CB(test_dir_iter)
         str_pool (&rt->pool, &new_note->title);
         if (!parse_note_title (fname, str_data(&new_note->psplx), &new_note->title, &new_note->error_msg)) {
             new_note->error = true;
-            printf ("%s", str_data(&new_note->error_msg));
 
         } else {
             title_to_note_tree_insert (&rt->notes_by_title, &new_note->title, new_note);
@@ -104,6 +103,8 @@ int main(int argc, char** argv)
     }
 
     if (success) {
+        string_t error_msg = {0};
+
         rt_init_from_dir (rt, str_data(&cfg->source_path));
 
         if (get_cli_bool_opt ("--generate-static", argv, argc)) {
@@ -113,26 +114,25 @@ int main(int argc, char** argv)
                 has_output = true;
             }
 
+            rt_process_notes (rt, &error_msg);
+            if (str_len(&error_msg) > 0) {
+                if (has_output) {
+                    printf ("\n");
+                }
+
+                printf ("%s", str_data(&error_msg));
+                has_output = true;
+            }
+
             string_t html_path = str_new (str_data(&cfg->target_path));
             size_t end = str_len (&cfg->target_path);
             LINKED_LIST_FOR (struct note_t*, curr_note, rt->notes) {
-                string_t error_msg = {0};
                 str_put_printf (&html_path, end, "%s", curr_note->id);
-
-                rt_parse_to_html (rt, curr_note, &error_msg);
-                if (str_len(&error_msg) > 0) {
-                    if (has_output) {
-                        printf ("\n");
-                    }
-
-                    printf ("%s - " ECMA_DEFAULT("%s\n") "%s", str_data(&curr_note->path), str_data(&curr_note->title), str_data(&error_msg));
-                    has_output = true;
-                }
-
                 full_file_write (str_data(&curr_note->html), str_len(&curr_note->html), str_data(&html_path));
-                str_free (&error_msg);
             }
         }
+
+        str_free (&error_msg);
     }
 
     mem_pool_destroy (&rt->pool);
