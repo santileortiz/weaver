@@ -2,15 +2,15 @@
 
 Some initial paragraph with \code{inline} code.
 
+\code
+|minimal
+
 \code[plain]
 | $ echo "Hello world"; echo \code{}
 | Some <b>HTML</b>
 
 \code[]
 | empty parameters
-
-\code
-| no parameters
 
 \code[plain]
 |   
@@ -42,6 +42,15 @@ Some initial paragraph with \code{inline} code.
 |
 | 
 |  
+
+
+Starting paragraph
+
+    \code[plain]
+    |<CODE>
+
+Ending paragraph
+
 
 \code[plain]
 | Single line with trailing space 

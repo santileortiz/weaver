@@ -1336,7 +1336,7 @@ void block_tree_to_html (struct psx_parser_ctx_t *ctx, struct html_t *html, stru
         // column containing the numbers.
         // html_element_style_set(html, code_element, "padding-left", "0.25em");
 
-        html_element_append_no_escape_cstr (html, code_element, str_data(&block->inline_content));
+        html_element_append_cstr (html, code_element, str_data(&block->inline_content));
         html_element_attribute_set (html, code_element, "style", "display: block;");
         html_element_append_child (html, pre_element, code_element);
 
@@ -1526,13 +1526,13 @@ void psx_parse (struct psx_parser_state_t *ps)
                 ps_next(ps);
 
                 if (!is_empty_line(tok_peek.value)) {
-                    int space_count = -1;
-                    while (is_space (tok_peek.value.s + space_count + 1)) {
+                    int space_count = 0;
+                    while (is_space (tok_peek.value.s + space_count)) {
                         space_count++;
                     }
 
                     if (space_count >= 0) { // Ignore empty where we couldn't find any non-whitespace character.
-                        min_leading_spaces = MIN (min_leading_spaces, space_count + 1);
+                        min_leading_spaces = MIN (min_leading_spaces, space_count);
                     }
                 }
 
