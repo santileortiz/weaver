@@ -925,13 +925,15 @@ sstring_t sstr_set (char *s, uint32_t len)
 static inline
 sstring_t sstr_trim (sstring_t str)
 {
-    while (is_space (str.s) || *(str.s) == '\n') {
-        str.s++;
-        str.len--;
-    }
+    if (str.len > 0) {
+        while (is_space (str.s) || *(str.s) == '\n') {
+            str.s++;
+            str.len--;
+        }
 
-    while (is_space (str.s + str.len - 1) || str.s[str.len - 1] == '\n') {
-        str.len--;
+        while (is_space (str.s + str.len - 1) || str.s[str.len - 1] == '\n') {
+            str.len--;
+        }
     }
 
     return str;

@@ -1,0 +1,338 @@
+<div id="tags_stress">
+  <h1>Test edge cases of tag parser</h1>
+  <p>Correct usage of tags</p>
+  <ul>
+    <li>
+      <p><i>itallic</i></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="#" onclick="return open_note('tags_stress');">Test edge cases of tag parser</a></p>
+    </li>
+    <li>
+      <p><a href="http://example.com" target="_blank">link</a></p>
+    </li>
+    <li>
+      <p><img src="files/image_name.jpg" width="588"></p>
+    </li>
+    <li>
+      <p><iframe allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen="" frameborder="0" height="313.875" src="https://www.youtube-nocookie.com/embed/Rpjab--XQ0U" style="margin: 0 auto; display: block;" width="558"></iframe></p>
+    </li>
+    <li>
+      <p><code class="code-inline">some inline code</code></p>
+    </li>
+    <li>
+      <p><span>{inline math: e^{\pi i} = -1}</span></p>
+    </li>
+  </ul>
+  <h2>Broken versions of tags</h2>
+  <p>TODO: It would be nice if this test was smaller. Maybe test tag parser programmatically and not with note files, then we can iterate to generate these tests in a more compact fashion.</p>
+  <p>Tags with broken parameters</p>
+  <ul>
+    <li>
+      <p>\i[</p>
+    </li>
+    <li>
+      <p>\i[name</p>
+    </li>
+    <li>
+      <p>\i[name=</p>
+    </li>
+    <li>
+      <p>\i[name=value</p>
+    </li>
+    <li>
+      <p>\i[name=value,</p>
+    </li>
+    <li>
+      <p>\i[name=value, name1</p>
+    </li>
+    <li>
+      <p>\note[</p>
+    </li>
+    <li>
+      <p>\note[name</p>
+    </li>
+    <li>
+      <p>\note[name=</p>
+    </li>
+    <li>
+      <p>\note[name=value</p>
+    </li>
+    <li>
+      <p>\note[name=value,</p>
+    </li>
+    <li>
+      <p>\note[name=value, name1</p>
+    </li>
+    <li>
+      <p>\link[</p>
+    </li>
+    <li>
+      <p>\link[name</p>
+    </li>
+    <li>
+      <p>\link[name=</p>
+    </li>
+    <li>
+      <p>\link[name=value</p>
+    </li>
+    <li>
+      <p>\link[name=value,</p>
+    </li>
+    <li>
+      <p>\link[name=value, name1</p>
+    </li>
+    <li>
+      <p>\image[</p>
+    </li>
+    <li>
+      <p>\image[name</p>
+    </li>
+    <li>
+      <p>\image[name=</p>
+    </li>
+    <li>
+      <p>\image[name=value</p>
+    </li>
+    <li>
+      <p>\image[name=value,</p>
+    </li>
+    <li>
+      <p>\image[name=value, name1</p>
+    </li>
+    <li>
+      <p>\youtube[</p>
+    </li>
+    <li>
+      <p>\youtube[name</p>
+    </li>
+    <li>
+      <p>\youtube[name=</p>
+    </li>
+    <li>
+      <p>\youtube[name=value</p>
+    </li>
+    <li>
+      <p>\youtube[name=value,</p>
+    </li>
+    <li>
+      <p>\youtube[name=value, name1</p>
+    </li>
+    <li>
+      <p>\code[</p>
+    </li>
+    <li>
+      <p>\code[name</p>
+    </li>
+    <li>
+      <p>\code[name=</p>
+    </li>
+    <li>
+      <p>\code[name=value</p>
+    </li>
+    <li>
+      <p>\code[name=value,</p>
+    </li>
+    <li>
+      <p>\code[name=value, name1</p>
+    </li>
+    <li>
+      <p>\math[</p>
+    </li>
+    <li>
+      <p>\math[name</p>
+    </li>
+    <li>
+      <p>\math[name=</p>
+    </li>
+    <li>
+      <p>\math[name=value</p>
+    </li>
+    <li>
+      <p>\math[name=value,</p>
+    </li>
+    <li>
+      <p>\math[name=value, name1</p>
+    </li>
+  </ul>
+  <p>Tags with broken content</p>
+  <ul>
+    <li>
+      <p><i></i></p>
+    </li>
+    <li>
+      <p><i>url</i></p>
+    </li>
+    <li>
+      <p><i>{{</i>{{}}}</p>
+    </li>
+    <li>
+      <p>\note{</p>
+    </li>
+    <li>
+      <p>\note{url</p>
+    </li>
+    <li>
+      <p>No unbalanced test because it would cause a broken note link warning, and we fail tests on warnings.</p>
+    </li>
+    <li>
+      <p>\link{</p>
+    </li>
+    <li>
+      <p>\link{url</p>
+    </li>
+    <li>
+      <p><a href="{{" target="_blank">{{</a>{{}}}</p>
+    </li>
+    <li>
+      <p>\image{</p>
+    </li>
+    <li>
+      <p>\image{url</p>
+    </li>
+    <li>
+      <p><img src="files/{{" width="588">{{}}}</p>
+    </li>
+    <li>
+      <p>\youtube{</p>
+    </li>
+    <li>
+      <p>\youtube{url</p>
+    </li>
+    <li>
+      <p>\youtube{{{}{{}}}</p>
+    </li>
+    <li>
+      <p><code class="code-inline"></code></p>
+    </li>
+    <li>
+      <p><code class="code-inline">url</code></p>
+    </li>
+    <li>
+      <p><code class="code-inline">{{}{{}}}</code></p>
+    </li>
+    <li>
+      <p><span>{inline math: }</span></p>
+    </li>
+    <li>
+      <p><span>{inline math: url}</span></p>
+    </li>
+    <li>
+      <p><span>{inline math: {{}{{}}}}</span></p>
+    </li>
+  </ul>
+  <p>Broken content but valid parameters</p>
+  <ul>
+    <li>
+      <p>\i[]{</p>
+    </li>
+    <li>
+      <p>\i[name1, name2,name3]{</p>
+    </li>
+    <li>
+      <p>\i[name1=v1, name2=v2,name3=v3]{</p>
+    </li>
+    <li>
+      <p>\note[]{</p>
+    </li>
+    <li>
+      <p>\note[name1, name2, name3]{</p>
+    </li>
+    <li>
+      <p>\note[name1=v1, name2=v2, name3=v3]{</p>
+    </li>
+    <li>
+      <p>\link[]{</p>
+    </li>
+    <li>
+      <p>\link[name1, name2, name3]{</p>
+    </li>
+    <li>
+      <p>\link[name1=v1, name2=v2, name3=v3]{</p>
+    </li>
+    <li>
+      <p>\image[]{</p>
+    </li>
+    <li>
+      <p>\image[name1, name2, name3]{</p>
+    </li>
+    <li>
+      <p>\image[name1=v1, name2=v2, name3=v3]{</p>
+    </li>
+    <li>
+      <p>\youtube[]{</p>
+    </li>
+    <li>
+      <p>\youtube[name1, name2, name3]{</p>
+    </li>
+    <li>
+      <p>\youtube[name1=v1, name2=v2, name3=v3]{</p>
+    </li>
+    <li>
+      <p><code class="code-inline"></code></p>
+    </li>
+    <li>
+      <p><code class="code-inline"></code></p>
+    </li>
+    <li>
+      <p><code class="code-inline"></code></p>
+    </li>
+    <li>
+      <p><span>{inline math: }</span></p>
+    </li>
+    <li>
+      <p><span>{inline math: }</span></p>
+    </li>
+    <li>
+      <p><span>{inline math: }</span></p>
+    </li>
+  </ul>
+  <p>Broken tags with consecutive text</p>
+  <ul>
+    <li>
+      <p>\i,</p>
+    </li>
+    <li>
+      <p>\note,</p>
+    </li>
+    <li>
+      <p>\link,</p>
+    </li>
+    <li>
+      <p>\image,</p>
+    </li>
+    <li>
+      <p>\youtube,</p>
+    </li>
+    <li>
+      <p>\code,</p>
+    </li>
+    <li>
+      <p>\math,</p>
+    </li>
+  </ul>
+  <p>Joint tags</p>
+  <ul>
+    <li>
+      <p>\i<i>itallic</i></p>
+    </li>
+    <li>
+      <p>\note<a class="note-link" href="#" onclick="return open_note('tags_stress');">Test edge cases of tag parser</a></p>
+    </li>
+    <li>
+      <p>\link<a href="http://example.com" target="_blank">link</a></p>
+    </li>
+    <li>
+      <p>\image<img src="files/image_name.jpg" width="588"></p>
+    </li>
+    <li>
+      <p>\youtube<iframe allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen="" frameborder="0" height="313.875" src="https://www.youtube-nocookie.com/embed/Rpjab--XQ0U" style="margin: 0 auto; display: block;" width="558"></iframe></p>
+    </li>
+    <li>
+      <p>\code<code class="code-inline">some inline code</code></p>
+    </li>
+    <li>
+      <p>\math<span>{inline math: e^{\pi i} = -1}</span></p>
+    </li>
+  </ul>
+</div>

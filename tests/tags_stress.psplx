@@ -1,0 +1,144 @@
+# Test edge cases of tag parser
+
+Correct usage of tags
+ - \i{itallic}
+ - \note{Test edge cases of tag parser}
+ - \link{link -> http://example.com}
+ - \image{image_name.jpg}
+ - \youtube{https://youtu.be/Rpjab--XQ0U}
+ - \code{some inline code}
+ - \math{e^{\pi i} = -1}
+
+## Broken versions of tags
+
+TODO: It would be nice if this test was smaller. Maybe test tag parser
+programmatically and not with note files, then we can iterate to generate
+these tests in a more compact fashion.
+
+Tags with broken parameters
+ - \i[
+ - \i[name
+ - \i[name=
+ - \i[name=value
+ - \i[name=value,
+ - \i[name=value, name1
+
+ - \note[
+ - \note[name
+ - \note[name=
+ - \note[name=value
+ - \note[name=value,
+ - \note[name=value, name1
+
+ - \link[
+ - \link[name
+ - \link[name=
+ - \link[name=value
+ - \link[name=value,
+ - \link[name=value, name1
+
+ - \image[
+ - \image[name
+ - \image[name=
+ - \image[name=value
+ - \image[name=value,
+ - \image[name=value, name1
+
+ - \youtube[
+ - \youtube[name
+ - \youtube[name=
+ - \youtube[name=value
+ - \youtube[name=value,
+ - \youtube[name=value, name1
+
+ - \code[
+ - \code[name
+ - \code[name=
+ - \code[name=value
+ - \code[name=value,
+ - \code[name=value, name1
+
+ - \math[
+ - \math[name
+ - \math[name=
+ - \math[name=value
+ - \math[name=value,
+ - \math[name=value, name1
+
+Tags with broken content
+ - \i{
+ - \i{url
+ - \i{{{}{{}}}
+
+ - \note{
+ - \note{url
+ - No unbalanced test because it would cause a broken note link warning, and we
+   fail tests on warnings.
+
+ - \link{
+ - \link{url
+ - \link{{{}{{}}}
+
+ - \image{
+ - \image{url
+ - \image{{{}{{}}}
+
+ - \youtube{
+ - \youtube{url
+ - \youtube{{{}{{}}}
+
+ - \code{
+ - \code{url
+ - \code{{{}{{}}}
+
+ - \math{
+ - \math{url
+ - \math{{{}{{}}}
+
+Broken content but valid parameters
+ - \i[]{
+ - \i[name1, name2,name3]{
+ - \i[name1=v1, name2=v2,name3=v3]{
+
+ - \note[]{
+ - \note[name1, name2,name3]{
+ - \note[name1=v1, name2=v2,name3=v3]{
+
+ - \link[]{
+ - \link[name1, name2,name3]{
+ - \link[name1=v1, name2=v2,name3=v3]{
+
+ - \image[]{
+ - \image[name1, name2,name3]{
+ - \image[name1=v1, name2=v2,name3=v3]{
+
+ - \youtube[]{
+ - \youtube[name1, name2,name3]{
+ - \youtube[name1=v1, name2=v2,name3=v3]{
+
+ - \code[]{
+ - \code[name1, name2,name3]{
+ - \code[name1=v1, name2=v2,name3=v3]{
+
+ - \math[]{
+ - \math[name1, name2,name3]{
+ - \math[name1=v1, name2=v2,name3=v3]{
+
+Broken tags with consecutive text
+ - \i,
+ - \note,
+ - \link,
+ - \image,
+ - \youtube,
+ - \code,
+ - \math,
+
+Joint tags
+ - \i\i{itallic}
+ - \note\note{Test edge cases of tag parser}
+ - \link\link{link -> http://example.com}
+ - \image\image{image_name.jpg}
+ - \youtube\youtube{https://youtu.be/Rpjab--XQ0U}
+ - \code\code{some inline code}
+ - \math\math{e^{\pi i} = -1}
+

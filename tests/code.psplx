@@ -3,7 +3,14 @@
 Some initial paragraph with \code{inline} code.
 
 \code[plain]
-| $ echo "Hello world"; echo \casa{}
+| $ echo "Hello world"; echo \code{}
+| Some <b>HTML</b>
+
+\code[]
+| empty parameters
+
+\code
+| no parameters
 
 \code[plain]
 |   

@@ -137,8 +137,6 @@ int main(int argc, char** argv)
 
         if (note != NULL) {
             if (!note->error) {
-                if (str_len(&note->error_msg) > 0) printf ("\n");
-
                 if (html_out) {
                     printf ("%s", str_data(&note->html));
 
@@ -157,9 +155,13 @@ int main(int argc, char** argv)
                     printf (ECMA_MAGENTA("RESULTING HTML") "\n");
                     prnt_debug_string (str_data(&note->html));
 
+                    if (str_len(&note->error_msg) > 0) {
+                        printf (ECMA_MAGENTA("\nERRORS") "\n");
+                        printf ("%s", str_data (&note->error_msg));
+                    }
+
                     char *expected_html = get_expected_html (&pool, note->id, NULL);
                     if (expected_html != NULL && strcmp(str_data(&note->html), expected_html) != 0) {
-
                         char *tmp_fname = "html_test.html";
                         full_file_write (str_data(&note->html), str_len(&note->html), tmp_fname);
 

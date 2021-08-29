@@ -79,7 +79,7 @@ char ps_curr_char (struct psx_parser_state_t *ps)
 
 bool pos_is_eof (struct psx_parser_state_t *ps)
 {
-    return ps_curr_char(ps) == '\0';
+    return ps->is_eof || ps_curr_char(ps) == '\0';
 }
 
 bool pos_is_operator (struct psx_parser_state_t *ps)
@@ -248,13 +248,18 @@ void psx_warning_ctx (struct psx_parser_ctx_t *ctx, char *format, ...)
     str_cat_c (ctx->error_msg, "\n");
 }
 
-void ps_parse_tag_parameters (struct psx_parser_state_t *ps, struct psx_tag_parameters_t *parameters)
+bool ps_parse_tag_parameters (struct psx_parser_state_t *ps, struct psx_tag_parameters_t *parameters)
 {
+    bool has_parameters = false;
+
     if (parameters != NULL) {
         parameters->named.pool = &ps->pool;
     }
 
+    char *original_pos = ps->pos;
     if (ps_curr_char(ps) == '[') {
+        has_parameters = true;
+
         while (!ps->is_eof && ps_curr_char(ps) != ']') {
             ps_advance_char (ps);
 
@@ -264,10 +269,16 @@ void ps_parse_tag_parameters (struct psx_parser_state_t *ps, struct psx_tag_para
                 // values containing "," or "]".
             }
 
-            while (ps_curr_char(ps) != ',' &&
+            while (!ps->is_eof &&
+                   ps_curr_char(ps) != ',' &&
                    ps_curr_char(ps) != '=' &&
-                   ps_curr_char(ps) != ']') {
+                   ps_curr_char(ps) != ']')
+            {
                 ps_advance_char (ps);
+            }
+
+            if (ps->is_eof) {
+                has_parameters = false;
             }
 
             if (ps_curr_char(ps) == ',' || ps_curr_char(ps) == ']') {
@@ -276,16 +287,22 @@ void ps_parse_tag_parameters (struct psx_parser_state_t *ps, struct psx_tag_para
                     new_param->v = sstr_trim(SSTRING(start, ps->pos - start));
                 }
 
-            } else {
+            } else if (ps_curr_char(ps) == '=') {
                 sstring_t name = sstr_trim(SSTRING(start, ps->pos - start));
 
                 // Advance over the '=' character
                 ps_advance_char (ps);
 
                 char *value_start = ps->pos;
-                while (ps_curr_char(ps) != ',' &&
-                       ps_curr_char(ps) != ']') {
+                while (!ps->is_eof &&
+                       ps_curr_char(ps) != ',' &&
+                       ps_curr_char(ps) != ']')
+                {
                     ps_advance_char (ps);
+                }
+
+                if (ps->is_eof) {
+                    has_parameters = false;
                 }
 
                 sstring_t value = sstr_trim(SSTRING(value_start, ps->pos - value_start));
@@ -294,14 +311,21 @@ void ps_parse_tag_parameters (struct psx_parser_state_t *ps, struct psx_tag_para
                     sstring_map_tree_insert (&parameters->named, name, value);
                 }
             }
-
-            if (ps_curr_char(ps) != ']') {
-                ps_advance_char (ps);
-            }
         }
 
-        ps_advance_char (ps);
+        if (ps_curr_char(ps) == ']') {
+            ps_advance_char (ps);
+        } else {
+            has_parameters = false;
+        }
     }
+
+    if (!has_parameters) {
+        ps->pos = original_pos;
+        ps->is_eof = false;
+    }
+
+    return has_parameters;
 }
 
 struct psx_token_t ps_next_peek(struct psx_parser_state_t *ps)
@@ -366,7 +390,7 @@ struct psx_token_t ps_next_peek(struct psx_parser_state_t *ps)
     } else if (ps_match_str(ps, "\\code")) {
         ps_parse_tag_parameters(ps, NULL);
 
-        if (!ps_match_str(ps, "{")) {
+        if (ps_match_str(ps, "\n")) {
             tok->type = TOKEN_TYPE_CODE_HEADER;
             while (pos_is_space(ps) || ps_curr_char(ps) == '\n') {
                 ps_advance_char (ps);
@@ -478,10 +502,6 @@ struct psx_token_t ps_inline_next(struct psx_parser_state_t *ps)
         tok.type = TOKEN_TYPE_TEXT;
     }
 
-    if (pos_is_eof(ps)) {
-        ps->is_eof = true;
-    }
-
     ps->token = tok;
 
     //printf ("%s: %.*s\n", psx_token_type_names[tok.type], tok.value.len, tok.value.s);
@@ -489,22 +509,93 @@ struct psx_token_t ps_inline_next(struct psx_parser_state_t *ps)
 }
 
 struct psx_tag_t {
+    struct psx_token_t token;
+
+    bool has_parameters;
     struct psx_tag_parameters_t parameters;
+
+    bool has_content;
     string_t content;
 };
 
-// TODO: Add balanced brace parsing here.
-void psx_cat_tag_content (struct psx_parser_state_t *ps, string_t *str)
+void ps_restore_pos (struct psx_parser_state_t *ps, char *original_pos)
 {
-    struct psx_token_t tok = ps_inline_next(ps);
+    ps->pos = original_pos;
+    ps->is_eof = false;
+}
+
+void str_cat_literal_token (string_t *str, struct psx_token_t token)
+{
+    if (token.type == TOKEN_TYPE_TAG) {
+        str_cat_c (str, "\\");
+        strn_cat_c (str, token.value.s, token.value.len);
+
+    } else if (token.type == TOKEN_TYPE_NUMBERED_LIST) {
+        strn_cat_c(str, token.value.s, token.value.len);
+        str_cat_c (str, ".");
+
+    } else {
+        strn_cat_c (str, token.value.s, token.value.len);
+    }
+}
+
+// This function returns the same string that was parsed as the current token.
+// It's used as fallback, for example in the case of ',' and '#' characters in
+// the middle of paragraphs, or unrecognized tag sequences.
+//
+// TODO: I feel that using this for operators isn't nice, we should probably
+// have a stateful tokenizer that will consider ',' as part of a TEXT token
+// sometimes and as operators other times. It's probably best to just have an
+// attribute tokenizer/parser, then the inline parser only deals with tags.
+void str_cat_literal_token_ps (string_t *str, struct psx_parser_state_t *ps)
+{
+    str_cat_literal_token (str, ps->token);
+}
+
+bool psx_cat_tag_content (struct psx_parser_state_t *ps, string_t *str, bool expect_balanced_braces)
+{
+    bool has_content = false;
+
+    char *original_pos = ps->pos;
+    ps_inline_next(ps);
     if (ps_match(ps, TOKEN_TYPE_OPERATOR, "{")) {
-        tok = ps_inline_next(ps);
-        while (!ps->is_eof && !ps->error && !ps_match(ps, TOKEN_TYPE_OPERATOR, "}")) {
-            strn_cat_c (str, tok.value.s, tok.value.len);
-            tok = ps_inline_next(ps);
+        has_content = true;
+
+        if (!expect_balanced_braces) {
+            char *content_start = ps->pos;
+            while (!ps->is_eof && ps_curr_char(ps) != '}') {
+                ps_advance_char (ps);
+            }
+
+            if (ps_curr_char(ps) == '}') {
+                strn_cat_c (str, content_start, ps->pos - content_start);
+
+                // Advance over the '}' character
+                ps_advance_char (ps);
+            } else {
+                has_content = false;
+            }
+
+        } else {
+            int brace_level = 1;
+
+            while (!ps->is_eof && brace_level != 0) {
+                ps_inline_next (ps);
+                if (ps_match (ps, TOKEN_TYPE_OPERATOR, "{")) {
+                    brace_level++;
+                } else if (ps_match (ps, TOKEN_TYPE_OPERATOR, "}")) {
+                    brace_level--;
+                }
+
+                if (brace_level != 0) { // Avoid appending the closing }
+                    str_cat_literal_token_ps (str, ps);
+                }
+            }
         }
 
     } else if (ps_match(ps, TOKEN_TYPE_OPERATOR, "|")) {
+        has_content = true;
+
         char *start = ps->pos;
         while (!ps->is_eof && *(ps->pos) != '|') {
             ps_advance_char (ps);
@@ -527,6 +618,12 @@ void psx_cat_tag_content (struct psx_parser_state_t *ps, string_t *str)
             }
         }
     }
+
+    if (!has_content) {
+        ps_restore_pos (ps, original_pos);
+    }
+
+    return has_content;
 }
 
 struct psx_tag_t* ps_tag_new (struct psx_parser_state_t *ps)
@@ -539,14 +636,29 @@ struct psx_tag_t* ps_tag_new (struct psx_parser_state_t *ps)
     return tag;
 }
 
-struct psx_tag_t* ps_parse_tag (struct psx_parser_state_t *ps)
+#define ps_parse_tag(ps,end) ps_parse_tag_full(ps,end,false)
+struct psx_tag_t* ps_parse_tag_full (struct psx_parser_state_t *ps, char **end, bool expect_balanced_braces)
 {
+    if (end != NULL) *end = ps->pos;
+
     mem_pool_marker_t mrk = mem_pool_begin_temporary_memory (&ps->pool);
 
     struct psx_tag_t *tag = ps_tag_new (ps);
+    tag->token = ps->token;
 
-    ps_parse_tag_parameters(ps, &tag->parameters);
-    psx_cat_tag_content(ps, &tag->content);
+    char *original_pos = ps->pos;
+    if (ps_curr_char(ps) == '[' || ps_curr_char(ps) == '{' || ps_curr_char(ps) == '|') {
+        tag->has_parameters = ps_parse_tag_parameters(ps, &tag->parameters);
+
+        if (tag->has_parameters && end != NULL) *end = ps->pos;
+
+        tag->has_content = psx_cat_tag_content(ps, &tag->content, expect_balanced_braces);
+
+        if (!tag->has_parameters && !tag->has_content) {
+            ps->pos = original_pos;
+            ps->is_eof = false;
+        }
+    }
 
     if (ps->error) {
         mem_pool_end_temporary_memory (mrk);
@@ -599,72 +711,41 @@ struct psx_block_unit_t* psx_block_unit_pop (struct psx_parser_state_t *ps)
     return DYNAMIC_ARRAY_POP_LAST(ps->block_unit_stack);
 }
 
-void str_cat_literal_token (string_t *str, struct psx_token_t token)
+void ps_html_cat_literal_tag (struct psx_parser_state_t *ps, struct psx_tag_t *tag, struct html_t *html)
 {
-    if (token.type == TOKEN_TYPE_TAG) {
-        str_cat_c (str, "\\");
-        strn_cat_c (str, token.value.s, token.value.len);
+    string_t literal_tag = {0};
+    struct psx_block_unit_t *curr_unit = DYNAMIC_ARRAY_GET_LAST(ps->block_unit_stack);
+    str_cat_literal_token (&literal_tag, tag->token);
 
-    } else if (token.type == TOKEN_TYPE_NUMBERED_LIST) {
-        strn_cat_c(str, token.value.s, token.value.len);
-        str_cat_c (str, ".");
+    if (tag->has_parameters) {
+        bool is_first = true;
+        str_cat_c (&literal_tag, "[");
 
-    } else {
-        strn_cat_c (str, token.value.s, token.value.len);
-    }
-}
-
-// This function returns the same string that was parsed as the current token.
-// It's used as fallback, for example in the case of ',' and '#' characters in
-// the middle of paragraphs, or unrecognized tag sequences.
-//
-// TODO: I feel that using this for operators isn't nice, we should probably
-// have a stateful tokenizer that will consider ',' as part of a TEXT token
-// sometimes and as operators other times. It's probably best to just have an
-// attribute tokenizer/parser, then the inline parser only deals with tags.
-void str_cat_literal_token_ps (string_t *str, struct psx_parser_state_t *ps)
-{
-    str_cat_literal_token (str, ps->token);
-}
-
-void parse_balanced_brace_block(struct psx_parser_state_t *ps, string_t *str)
-{
-    assert (str != NULL);
-
-    ps_inline_next (ps);
-    if (ps_match (ps, TOKEN_TYPE_OPERATOR, "{")) {
-        int brace_level = 1;
-
-        while (!ps->is_eof && brace_level != 0) {
-            ps_inline_next (ps);
-            if (ps_match (ps, TOKEN_TYPE_OPERATOR, "{")) {
-                brace_level++;
-            } else if (ps_match (ps, TOKEN_TYPE_OPERATOR, "}")) {
-                brace_level--;
+        LINKED_LIST_FOR (struct sstring_ll_l *, pos_param, tag->parameters.positional) {
+            if (!is_first) {
+                str_cat_c (&literal_tag, ", ");
             }
+            is_first = false;
 
-            if (brace_level != 0) { // Avoid appending the closing }
-                str_cat_literal_token_ps (str, ps);
-            }
+            strn_cat_c (&literal_tag, pos_param->v.s, pos_param->v.len);
         }
-    }
-}
 
-struct psx_tag_t* ps_parse_tag_balanced_braces (struct psx_parser_state_t *ps)
-{
-    mem_pool_marker_t mrk = mem_pool_begin_temporary_memory (&ps->pool);
+        BINARY_TREE_FOR(sstring_map, &tag->parameters.named, named_param) {
+            if (!is_first) {
+                str_cat_c (&literal_tag, ", ");
+            }
+            is_first = false;
 
-    struct psx_tag_t *tag = ps_tag_new (ps);
+            strn_cat_c (&literal_tag, named_param->key.s, named_param->key.len);
+            str_cat_c (&literal_tag, "=");
+            strn_cat_c (&literal_tag, named_param->value.s, named_param->value.len);
+        }
 
-    ps_parse_tag_parameters(ps, &tag->parameters);
-    parse_balanced_brace_block(ps, &tag->content);
-
-    if (ps->error) {
-        mem_pool_end_temporary_memory (mrk);
-        tag = NULL;
+        str_cat_c (&literal_tag, "]");
     }
 
-    return tag;
+    html_element_append_strn (html, curr_unit->html_element, str_len(&literal_tag), str_data (&literal_tag));
+    str_free (&literal_tag);
 }
 
 void compute_media_size (struct psx_tag_parameters_t *parameters, double aspect_ratio, double max_width, double *w, double *h)
@@ -708,13 +789,13 @@ void compute_media_size (struct psx_tag_parameters_t *parameters, double aspect_
     *h = height;
 }
 
-struct note_t* psx_parse_tag_note (struct psx_parser_state_t *ps, struct psx_tag_t **tag, string_t *target_note_title)
+struct psx_tag_t* psx_parse_tag_note (struct psx_parser_state_t *ps, char **original_pos, struct note_t **target_note, string_t *target_note_title)
 {
-    struct psx_tag_t *tag_l = ps_parse_tag (ps);
-    if (tag != NULL) *tag = tag_l;
+    assert (target_note != NULL);
+    struct psx_tag_t *tag = ps_parse_tag (ps, original_pos);
 
-    str_replace (&tag_l->content, "\n", " ", NULL);
-    // TODO: Trim tag_l->content of start/end spaces...
+    str_replace (&tag->content, "\n", " ", NULL);
+    // TODO: Trim tag->content of start/end spaces...
 
     // TODO: Implement navigation to note's subsections. Right now we
     // just ignore what comes after the #. Also, this notation is
@@ -774,7 +855,7 @@ struct note_t* psx_parse_tag_note (struct psx_parser_state_t *ps, struct psx_tag
     // allow the full expressibility for defining parsing while reusing
     // a language somewhat familiar to programmers and not having to
     // make the big jump to using an actual programming language.
-    char *start = str_data (&tag_l->content);
+    char *start = str_data (&tag->content);
     while (is_space (start)) start++;
 
     char *pos = start;
@@ -787,7 +868,9 @@ struct note_t* psx_parse_tag_note (struct psx_parser_state_t *ps, struct psx_tag
         str_set (target_note_title, start);
     }
 
-    return rt_get_note_by_title (target_note_title);
+    *target_note = rt_get_note_by_title (target_note_title);
+
+    return tag;
 }
 
 // This function parses the content of a block of text. The formatting is
@@ -803,7 +886,12 @@ void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html
     struct psx_parser_state_t *ps = &_ps;
     ps->ctx = *ctx;
     ps_init (ps, content);
+    char *original_pos = NULL;
 
+    // TODO: I'm starting to think inline parser shouldn't use a stack based
+    // state for handling nested tags. I'm starting to think that a recursive
+    // parser would  better?, but it's just a feeling, It's possible the code
+    // will still look the same.
     DYNAMIC_ARRAY_APPEND (ps->block_unit_stack, psx_block_unit_new (&ps->pool, BLOCK_UNIT_TYPE_ROOT, container));
     while (!ps->is_eof && !ps->error) {
         struct psx_token_t tok = ps_inline_next (ps);
@@ -824,140 +912,188 @@ void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html
         } else if (ps_match(ps, TOKEN_TYPE_TAG, "i") || ps_match(ps, TOKEN_TYPE_TAG, "b")) {
             struct psx_token_t tag = ps->token;
 
+            char *original_pos = ps->pos;
             ps_inline_next (ps);
             if (ps_match(ps, TOKEN_TYPE_OPERATOR, "{")) {
+                // If there was an opening { but the rest of the tag's content
+                // was missing we still push a styling unit. This is different
+                // to all other tags that require content, for these we bail out
+                // and print the literal tag.
+                //
+                // TODO: Is this the correct behavior?, we did this stack based
+                // inline parser just to support nested tags like these, and to
+                // defer the handling of broken tag definitions to each tag. But
+                // now, we have a pretty well defined behavior for handling tags
+                // with broken content component, we could just use
+                // ps_parse_tag() here, and bail out in the same way we do for
+                // other tags if the content block is broken.
                 psx_push_block_unit_new (ps, html, tag.value);
 
             } else {
                 // Don't fail, instead print literal tag.
                 struct psx_block_unit_t *curr_unit = DYNAMIC_ARRAY_GET_LAST(ps->block_unit_stack);
                 str_cat_literal_token (&buff, tag);
-                str_cat_c (&buff, " ");
                 html_element_append_strn (html, curr_unit->html_element, str_len(&buff), str_data (&buff));
+
+                ps_restore_pos (ps, original_pos);
             }
 
         } else if (ps_match(ps, TOKEN_TYPE_TAG, "link")) {
-            struct psx_tag_t *tag = ps_parse_tag (ps);
+            struct psx_tag_t *tag = ps_parse_tag (ps, &original_pos);
+            if (tag->has_content) {
+                // We parse the URL from the title starting at the end. I thinkg is
+                // far less likely to have a non URL encoded > character in the
+                // URL, than a user wanting to use > inside their title.
+                //
+                // TODO: Support another syntax for the rare case of a user that
+                // wants a > character in a URL. Or make sure URLs are URL encoded
+                // from the UI that will be used to edit this.
+                ssize_t pos = str_len(&tag->content) - 1;
+                while (pos > 0 && str_data(&tag->content)[pos] != '>') {
+                    pos--;
+                }
 
-            // We parse the URL from the title starting at the end. I thinkg is
-            // far less likely to have a non URL encoded > character in the
-            // URL, than a user wanting to use > inside their title.
-            //
-            // TODO: Support another syntax for the rare case of a user that
-            // wants a > character in a URL. Or make sure URLs are URL encoded
-            // from the UI that will be used to edit this.
-            ssize_t pos = tag->content.len - 1;
-            while (pos > 0 && str_data(&tag->content)[pos] != '>') {
-                pos--;
+                sstring_t url = SSTRING(str_data(&tag->content), str_len(&tag->content));
+                sstring_t title = SSTRING(str_data(&tag->content), str_len(&tag->content));
+                if (pos > 0 && str_data(&tag->content)[pos - 1] == '-') {
+                    pos--;
+                    url = sstr_trim(SSTRING(str_data(&tag->content) + pos + 2, str_len(&tag->content) - (pos + 2)));
+                    title = sstr_trim(SSTRING(str_data(&tag->content), pos));
+
+                    // TODO: It would be nice to have this API...
+                    //sstr_trim(sstr_substr(pos+2));
+                    //sstr_trim(sstr_substr(0, pos));
+                }
+
+                struct html_element_t *link_element = html_new_element (html, "a");
+                strn_set (&buff, url.s, url.len);
+                str_replace (&buff, "\n", "", NULL);
+                html_element_attribute_set (html, link_element, "href", str_data(&buff));
+                html_element_attribute_set (html, link_element, "target", "_blank");
+
+                strn_set (&buff, title.s, title.len);
+                str_replace (&buff, "\n", " ", NULL);
+                html_element_append_strn (html, link_element, str_len(&buff), str_data(&buff));
+
+                psx_append_html_element(ps, html, link_element);
+
+            } else {
+                ps_restore_pos (ps, original_pos);
+                ps_html_cat_literal_tag (ps, tag, html);
             }
-
-            sstring_t url = SSTRING(str_data(&tag->content), str_len(&tag->content));
-            sstring_t title = SSTRING(str_data(&tag->content), str_len(&tag->content));
-            if (pos > 0 && str_data(&tag->content)[pos - 1] == '-') {
-                pos--;
-                url = sstr_trim(SSTRING(str_data(&tag->content) + pos + 2, str_len(&tag->content) - (pos + 2)));
-                title = sstr_trim(SSTRING(str_data(&tag->content), pos));
-
-                // TODO: It would be nice to have this API...
-                //sstr_trim(sstr_substr(pos+2));
-                //sstr_trim(sstr_substr(0, pos));
-            }
-
-            struct html_element_t *link_element = html_new_element (html, "a");
-            strn_set (&buff, url.s, url.len);
-            str_replace (&buff, "\n", "", NULL);
-            html_element_attribute_set (html, link_element, "href", str_data(&buff));
-            html_element_attribute_set (html, link_element, "target", "_blank");
-
-            strn_set (&buff, title.s, title.len);
-            str_replace (&buff, "\n", " ", NULL);
-            html_element_append_strn (html, link_element, str_len(&buff), str_data(&buff));
-
-            psx_append_html_element(ps, html, link_element);
 
         } else if (ps_match(ps, TOKEN_TYPE_TAG, "youtube")) {
-            struct psx_tag_t *tag = ps_parse_tag (ps);
-            str_replace (&tag->content, "\n", " ", NULL);
+            // TODO: I'm thinking this would look cleaner as a custom tag
+            bool success = true;
 
-            sstring_t video_id = {0};
-            const char *error;
-            Resub m;
-            Reprog *regex = regcomp("^.*(youtu.be\\/|youtube(-nocookie)?.com\\/(v\\/|.*u\\/\\w\\/|embed\\/|.*v=))([\\w-]{11}).*", 0, &error);
-            if (!regexec(regex, str_data(&tag->content), &m, 0)) {
-                video_id = SSTRING((char*) m.sub[4].sp, m.sub[4].ep - m.sub[4].sp);
+            struct psx_tag_t *tag = ps_parse_tag (ps, &original_pos);
+            if (tag->has_content) {
+                str_replace (&tag->content, "\n", " ", NULL);
+
+                const char *error;
+                Resub m;
+                Reprog *regex = regcomp("^.*(youtu.be\\/|youtube(-nocookie)?.com\\/(v\\/|.*u\\/\\w\\/|embed\\/|.*v=))([\\w-]{11}).*", 0, &error);
+
+                if (!regexec(regex, str_data(&tag->content), &m, 0)) {
+                    sstring_t video_id = SSTRING((char*) m.sub[4].sp, m.sub[4].ep - m.sub[4].sp);
+
+                    // Assume 16:9 aspect ratio
+                    double width, height;
+                    compute_media_size(&tag->parameters, 16.0L/9, psx_content_width - 30, &width, &height);
+
+                    struct html_element_t *html_element = html_new_element (html, "iframe");
+                    str_set_printf (&buff, "%.6g", width);
+                    html_element_attribute_set (html, html_element, "width", str_data(&buff));
+                    str_set_printf (&buff, "%.6g", height);
+                    html_element_attribute_set (html, html_element, "height", str_data(&buff));
+                    html_element_attribute_set (html, html_element, "style", "margin: 0 auto; display: block;");
+                    str_set_printf (&buff, "https://www.youtube-nocookie.com/embed/%.*s", video_id.len, video_id.s);
+                    html_element_attribute_set (html, html_element, "src", str_data(&buff));
+                    html_element_attribute_set (html, html_element, "frameborder", "0");
+                    html_element_attribute_set (html, html_element, "allow", "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture");
+                    html_element_attribute_set (html, html_element, "allowfullscreen", "");
+                    psx_append_html_element(ps, html, html_element);
+                    regfree (regex);
+
+                } else { success = false; }
+            } else { success = false; }
+
+            if (!success) {
+                ps_restore_pos (ps, original_pos);
+                ps_html_cat_literal_tag (ps, tag, html);
             }
-
-            // Assume 16:9 aspect ratio
-            double width, height;
-            compute_media_size(&tag->parameters, 16.0L/9, psx_content_width - 30, &width, &height);
-
-            struct html_element_t *html_element = html_new_element (html, "iframe");
-            str_set_printf (&buff, "%.6g", width);
-            html_element_attribute_set (html, html_element, "width", str_data(&buff));
-            str_set_printf (&buff, "%.6g", height);
-            html_element_attribute_set (html, html_element, "height", str_data(&buff));
-            html_element_attribute_set (html, html_element, "style", "margin: 0 auto; display: block;");
-            str_set_printf (&buff, "https://www.youtube-nocookie.com/embed/%.*s", video_id.len, video_id.s);
-            html_element_attribute_set (html, html_element, "src", str_data(&buff));
-            html_element_attribute_set (html, html_element, "frameborder", "0");
-            html_element_attribute_set (html, html_element, "allow", "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture");
-            html_element_attribute_set (html, html_element, "allowfullscreen", "");
-            psx_append_html_element(ps, html, html_element);
-            regfree (regex);
 
         } else if (ps_match(ps, TOKEN_TYPE_TAG, "image")) {
-            struct psx_tag_t *tag = ps_parse_tag (ps);
-            str_replace (&tag->content, "\n", " ", NULL);
+            struct psx_tag_t *tag = ps_parse_tag (ps, &original_pos);
+            if (tag->has_content) {
+                str_replace (&tag->content, "\n", " ", NULL);
 
-            struct html_element_t *img_element = html_new_element (html, "img");
-            str_set_printf (&buff, "files/%s", str_data(&tag->content));
-            html_element_attribute_set (html, img_element, "src", str_data(&buff));
-            str_set_printf (&buff, "%d", psx_content_width);
-            html_element_attribute_set (html, img_element, "width", str_data(&buff));
-            psx_append_html_element(ps, html, img_element);
+                struct html_element_t *img_element = html_new_element (html, "img");
+                str_set_printf (&buff, "files/%s", str_data(&tag->content));
+                html_element_attribute_set (html, img_element, "src", str_data(&buff));
+                str_set_printf (&buff, "%d", psx_content_width);
+                html_element_attribute_set (html, img_element, "width", str_data(&buff));
+                psx_append_html_element(ps, html, img_element);
+
+            } else {
+                ps_restore_pos (ps, original_pos);
+                ps_html_cat_literal_tag (ps, tag, html);
+            }
 
         } else if (ps_match(ps, TOKEN_TYPE_TAG, "code")) {
-            ps_parse_tag_parameters(ps, NULL);
             // TODO: Actually do something with the passed language name
+            struct psx_tag_t *tag = ps_parse_tag_full (ps, &original_pos, true);
+            if (tag->has_content) {
+                str_replace (&tag->content, "\n", " ", NULL);
 
-            string_t code_content = {0};
-            parse_balanced_brace_block(ps, &code_content);
-            str_replace (&code_content, "\n", " ", NULL);
-            if (str_len(&code_content) > 0) {
                 struct html_element_t *code_element = html_new_element (html, "code");
                 html_element_class_add(html, code_element, "code-inline");
-                html_element_append_strn (html, code_element, str_len(&code_content), str_data(&code_content));
+                if (str_len(&tag->content) > 0) {
+                    html_element_append_strn (html, code_element, str_len(&tag->content), str_data(&tag->content));
+                }
 
                 psx_append_html_element(ps, html, code_element);
+
+            } else {
+                ps_restore_pos (ps, original_pos);
+                ps_html_cat_literal_tag (ps, tag, html);
             }
-            str_free (&code_content);
 
         } else if (ps_match(ps, TOKEN_TYPE_TAG, "note")) {
-            struct psx_tag_t *tag = NULL;
-            struct note_t *target_note = psx_parse_tag_note (ps, &tag, &buff);
-            struct html_element_t *link_element = html_new_element (html, "a");
-            html_element_attribute_set (html, link_element, "href", "#");
-            if (target_note != NULL) {
-                str_set_printf (&buff, "return open_note('%s');", target_note->id);
-                html_element_attribute_set (html, link_element, "onclick", str_data(&buff));
-                html_element_class_add (html, link_element, "note-link");
-            } else {
-                html_element_class_add (html, link_element, "note-link-broken");
+            struct note_t *target_note = NULL;
+            struct psx_tag_t *tag = psx_parse_tag_note (ps, &original_pos, &target_note, &buff);
+            if (tag->has_content) {
+                struct html_element_t *link_element = html_new_element (html, "a");
+                html_element_attribute_set (html, link_element, "href", "#");
+                if (target_note != NULL) {
+                    str_set_printf (&buff, "return open_note('%s');", target_note->id);
+                    html_element_attribute_set (html, link_element, "onclick", str_data(&buff));
+                    html_element_class_add (html, link_element, "note-link");
+                } else {
+                    html_element_class_add (html, link_element, "note-link-broken");
 
-                // :target_note_not_found_error
-                psx_warning (ps, "broken note link, couldn't find note for title: %s", str_data (&buff));
+                    // :target_note_not_found_error
+                    psx_warning (ps, "broken note link, couldn't find note for title: %s", str_data (&buff));
+                }
+                html_element_append_strn (html, link_element, str_len(&tag->content), str_data(&tag->content));
+                psx_append_html_element(ps, html, link_element);
+
+            } else {
+                ps_restore_pos (ps, original_pos);
+                ps_html_cat_literal_tag (ps, tag, html);
             }
-            html_element_append_strn (html, link_element, str_len(&tag->content), str_data(&tag->content));
-            psx_append_html_element(ps, html, link_element);
 
         } else if (ps_match(ps, TOKEN_TYPE_TAG, "html")) {
             // TODO: How can we support '}' characters here?. I don't think
             // assuming there will be balanced braces is an option here, as it
             // is in the \code tag. We most likely will need to implement user
             // defined termintating strings.
-            struct psx_tag_t *tag = ps_parse_tag (ps);
+            struct psx_tag_t *tag = ps_parse_tag (ps, NULL);
             struct psx_block_unit_t *head_unit = ps->block_unit_stack[ps->block_unit_stack_len-1];
             html_element_append_strn (html, head_unit->html_element, str_len(&tag->content), str_data(&tag->content));
+
+        } else if (ps->is_eof) {
+            // do nothing
 
         } else {
             struct psx_block_unit_t *curr_unit = DYNAMIC_ARRAY_GET_LAST(ps->block_unit_stack);
@@ -1156,7 +1292,8 @@ void psx_create_links_full (struct psx_parser_ctx_t *ctx, struct psx_block_t **r
             if (ps_match(ps_inline, TOKEN_TYPE_TAG, "note")) {
                 string_t target_note_title = {0};
 
-                struct note_t *target_note = psx_parse_tag_note (ps_inline, NULL, &target_note_title);
+                struct note_t *target_note = NULL;
+                psx_parse_tag_note (ps_inline, NULL, &target_note, &target_note_title);
                 struct note_t *current_note = rt_get_note_by_id (ctx->id);
 
                 // If the target note is not found, fail silently because we
@@ -1599,7 +1736,7 @@ void psx_replace_block_multiple (struct block_allocation_t *ba, struct psx_block
 // tags. We use it for an internal tag just as test for the API.
 PSX_USER_TAG_CB (summary_tag_handler)
 {
-    struct psx_tag_t *tag = ps_parse_tag (ps_inline);
+    struct psx_tag_t *tag = ps_parse_tag (ps_inline, NULL);
 
     struct note_t *note = rt_get_note_by_title (&tag->content);
     if (note != NULL) {
@@ -1644,14 +1781,20 @@ PSX_USER_TAG_CB (summary_tag_handler)
 
 enum psx_user_tag_cb_status_t math_tag_handler (struct psx_parser_state_t *ps_inline, struct str_replacement_t *replacement, bool is_display_mode)
 {
-    string_t res = {0};
-    struct psx_tag_t *tag = ps_parse_tag_balanced_braces (ps_inline);
-    str_replace (&tag->content, "\n", " ", NULL);
+    char *original_pos;
+    struct psx_tag_t *tag = ps_parse_tag_full (ps_inline, &original_pos, true);
+    if (tag->has_content) {
+        string_t res = {0};
+        str_replace (&tag->content, "\n", " ", NULL);
 
-    str_cat_math_strn (&res, is_display_mode, str_len(&tag->content), str_data(&tag->content));
+        str_cat_math_strn (&res, is_display_mode, str_len(&tag->content), str_data(&tag->content));
 
-    str_set_printf (&replacement->s, "\\html|%d|%s", str_len(&res), str_data (&res));
-    str_free (&res);
+        str_set_printf (&replacement->s, "\\html|%d|%s", str_len(&res), str_data (&res));
+        str_free (&res);
+
+    } else {
+        ps_restore_pos (ps_inline, original_pos);
+    }
 
     return USER_TAG_CB_STATUS_CONTINUE;
 }
