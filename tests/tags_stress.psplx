@@ -7,6 +7,7 @@ Correct usage of tags
  - \image{image_name.jpg}
  - \youtube{https://youtu.be/Rpjab--XQ0U}
  - \code{some inline code}
+ - \html{<span>some<\span> inline <span>html<\span>}
  - \math{e^{\pi i} = -1}
 
 ## Broken versions of tags
@@ -58,6 +59,13 @@ Tags with broken parameters
  - \code[name=value,
  - \code[name=value, name1
 
+ - \html[
+ - \html[name
+ - \html[name=
+ - \html[name=value
+ - \html[name=value,
+ - \html[name=value, name1
+
  - \math[
  - \math[name
  - \math[name=
@@ -91,6 +99,10 @@ Tags with broken content
  - \code{url
  - \code{{{}{{}}}
 
+ - \html{
+ - \html{url
+ - \html{{{}{{}}}
+
  - \math{
  - \math{url
  - \math{{{}{{}}}
@@ -120,6 +132,10 @@ Broken content but valid parameters
  - \code[name1, name2,name3]{
  - \code[name1=v1, name2=v2,name3=v3]{
 
+ - \html[]{
+ - \html[name1, name2,name3]{
+ - \html[name1=v1, name2=v2,name3=v3]{
+
  - \math[]{
  - \math[name1, name2,name3]{
  - \math[name1=v1, name2=v2,name3=v3]{
@@ -131,6 +147,7 @@ Broken tags with consecutive text
  - \image,
  - \youtube,
  - \code,
+ - \html,
  - \math,
 
 Joint tags
@@ -140,5 +157,6 @@ Joint tags
  - \image\image{image_name.jpg}
  - \youtube\youtube{https://youtu.be/Rpjab--XQ0U}
  - \code\code{some inline code}
+ - \html\html{<span>some<\span> inline <span>html<\span>}
  - \math\math{e^{\pi i} = -1}
 

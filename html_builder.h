@@ -36,6 +36,12 @@ void html_destroy (struct html_t *html)
     }                                  \
 }
 
+void html_escape (string_t *str)
+{
+    str_replace (str, "<", "&lt;", NULL);
+    str_replace (str, ">", "&gt;", NULL);
+}
+
 struct html_element_t* html_new_node (struct html_t *html)
 {
     mem_pool_variable_ensure (html);
@@ -109,6 +115,15 @@ void html_element_set_text (struct html_t *html, struct html_element_t *html_ele
 
 #define html_element_append_cstr(html,html_element,cstr) html_element_append_strn(html, html_element, strlen(cstr), cstr);
 void html_element_append_strn (struct html_t *html, struct html_element_t *html_element, size_t len, char *text)
+{
+    struct html_element_t *new_text_node = html_new_node (html);
+    strn_set (&new_text_node->text, text, len);
+    html_escape (&new_text_node->text);
+    LINKED_LIST_APPEND (html_element->children, new_text_node);
+}
+
+#define html_element_append_no_escape_cstr(html,html_element,cstr) html_element_append_no_escape_strn(html, html_element, strlen(cstr), cstr);
+void html_element_append_no_escape_strn (struct html_t *html, struct html_element_t *html_element, size_t len, char *text)
 {
     struct html_element_t *new_text_node = html_new_node (html);
     strn_set (&new_text_node->text, text, len);

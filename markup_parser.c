@@ -902,8 +902,6 @@ void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html
 
             strn_set (&buff, tok.value.s, tok.value.len);
             str_replace (&buff, "\n", " ", NULL);
-            str_replace (&buff, "<", "&lt;", NULL);
-            str_replace (&buff, ">", "&gt;", NULL);
             html_element_append_strn (html, curr_unit->html_element, str_len(&buff), str_data(&buff));
 
         } else if (ps_match(ps, TOKEN_TYPE_OPERATOR, "}") && DYNAMIC_ARRAY_GET_LAST(ps->block_unit_stack)->type != BLOCK_UNIT_TYPE_ROOT) {
@@ -1084,13 +1082,14 @@ void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html
             }
 
         } else if (ps_match(ps, TOKEN_TYPE_TAG, "html")) {
-            // TODO: How can we support '}' characters here?. I don't think
-            // assuming there will be balanced braces is an option here, as it
-            // is in the \code tag. We most likely will need to implement user
-            // defined termintating strings.
-            struct psx_tag_t *tag = ps_parse_tag (ps, NULL);
-            struct psx_block_unit_t *head_unit = ps->block_unit_stack[ps->block_unit_stack_len-1];
-            html_element_append_strn (html, head_unit->html_element, str_len(&tag->content), str_data(&tag->content));
+            struct psx_tag_t *tag = ps_parse_tag (ps, &original_pos);
+            if (tag->has_content) {
+                struct psx_block_unit_t *head_unit = ps->block_unit_stack[ps->block_unit_stack_len-1];
+                html_element_append_no_escape_strn (html, head_unit->html_element, str_len(&tag->content), str_data(&tag->content));
+            } else {
+                ps_restore_pos (ps, original_pos);
+                ps_html_cat_literal_tag (ps, tag, html);
+            }
 
         } else if (ps->is_eof) {
             // do nothing
@@ -1337,7 +1336,7 @@ void block_tree_to_html (struct psx_parser_ctx_t *ctx, struct html_t *html, stru
         // column containing the numbers.
         // html_element_style_set(html, code_element, "padding-left", "0.25em");
 
-        html_element_append_cstr (html, code_element, str_data(&block->inline_content));
+        html_element_append_no_escape_cstr (html, code_element, str_data(&block->inline_content));
         html_element_attribute_set (html, code_element, "style", "display: block;");
         html_element_append_child (html, pre_element, code_element);
 

@@ -1,0 +1,27 @@
+# Test escaping of < and > characters
+
+We don't allow inline HTML, so > and < characters need to be escaped almost
+everywhere.
+
+\i{< itallics \b{<bold>} >}
+
+\b{< bold \i{<itallics>} >}
+
+\note{Test escaping of < and > characters}
+
+\link{Name < - needs - > escaping -> http://example.com}
+
+\code{some <b>HTML<\b> code}
+
+
+
+In the case of the \html tag we don't escape these characters.
+
+\html{here <b>HTML<\b> is <i>not<\i> escaped}
+
+In the \math tag we don't escape these characters before passing expressions to
+the math expression engine.
+
+\math{x^p+y^p > (x+y)^p}
+
+\math{(x+y)^p < x^p+y^p}
