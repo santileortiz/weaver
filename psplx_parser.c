@@ -58,59 +58,40 @@ void ps_destroy (struct psx_parser_state_t *ps)
     mem_pool_destroy (&ps->pool);
 }
 
-bool char_in_str (char c, char *str)
-{
-    while (*str != '\0') {
-        if (*str == c) {
-            return true;
-        }
-
-        str++;
-    }
-
-    return false;
-}
-
 static inline
-char ps_curr_char (struct psx_parser_state_t *ps)
+char pps_curr_char (struct psx_parser_state_t *ps)
 {
     return *(ps->pos);
 }
 
-bool pos_is_eof (struct psx_parser_state_t *ps)
+static inline
+bool pps_is_eof (struct psx_parser_state_t *ps)
 {
-    return ps->is_eof || ps_curr_char(ps) == '\0';
-}
-
-bool pos_is_operator (struct psx_parser_state_t *ps)
-{
-    return !pos_is_eof(ps) && char_in_str(ps_curr_char(ps), ",=[]{}\\|");
-}
-
-bool pos_is_digit (struct psx_parser_state_t *ps)
-{
-    return !pos_is_eof(ps) && char_in_str(ps_curr_char(ps), "1234567890");
-}
-
-bool pos_is_space (struct psx_parser_state_t *ps)
-{
-    return !pos_is_eof(ps) && is_space(ps->pos);
-}
-
-bool is_empty_line (sstring_t line)
-{
-    int count = 0;
-    while (is_space(line.s + count)) {
-        count++;
-    }
-
-    return line.s[count] == '\n' || count == line.len;
+    return ps->is_eof || pps_curr_char(ps) == '\0';
 }
 
 static inline
-void ps_advance_char (struct psx_parser_state_t *ps)
+bool pps_is_digit (struct psx_parser_state_t *ps)
 {
-    if (!pos_is_eof(ps)) {
+    return !pps_is_eof(ps) && char_in_str(pps_curr_char(ps), "1234567890");
+}
+
+static inline
+bool pps_is_space (struct psx_parser_state_t *ps)
+{
+    return !pps_is_eof(ps) && is_space(ps->pos);
+}
+
+static inline
+bool pps_is_operator (struct psx_parser_state_t *ps)
+{
+    return !pps_is_eof(ps) && char_in_str(pps_curr_char(ps), ",=[]{}\\|");
+}
+
+static inline
+void pps_advance_char (struct psx_parser_state_t *ps)
+{
+    if (!pps_is_eof(ps)) {
         ps->pos++;
 
         ps->column_number++;
@@ -126,18 +107,18 @@ void ps_advance_char (struct psx_parser_state_t *ps)
 }
 
 // NOTE: c_str MUST be null terminated!!
-bool ps_match_str(struct psx_parser_state_t *ps, char *c_str)
+bool pps_match_str(struct psx_parser_state_t *ps, char *c_str)
 {
     char *backup_pos = ps->pos;
 
     bool found = true;
     while (*c_str) {
-        if (ps_curr_char(ps) != *c_str) {
+        if (pps_curr_char(ps) != *c_str) {
             found = false;
             break;
         }
 
-        ps_advance_char (ps);
+        pps_advance_char (ps);
         c_str++;
     }
 
@@ -147,39 +128,39 @@ bool ps_match_str(struct psx_parser_state_t *ps, char *c_str)
 }
 
 static inline
-bool ps_match_digits (struct psx_parser_state_t *ps)
+bool pps_match_digits (struct psx_parser_state_t *ps)
 {
     bool found = false;
-    if (pos_is_digit(ps)) {
+    if (pps_is_digit(ps)) {
         found = true;
-        while (pos_is_digit(ps)) {
-            ps_advance_char (ps);
+        while (pps_is_digit(ps)) {
+            pps_advance_char (ps);
         }
     }
     return found;
 }
 
-static inline
-void ps_consume_spaces (struct psx_parser_state_t *ps)
-{
-    while (pos_is_space(ps)) {
-        ps_advance_char (ps);
-    }
-}
-
-sstring_t advance_line(struct psx_parser_state_t *ps)
+sstring_t pps_advance_line(struct psx_parser_state_t *ps)
 {
     char *start = ps->pos;
-    while (!pos_is_eof(ps) && ps_curr_char(ps) != '\n') {
-        ps_advance_char (ps);
+    while (!pps_is_eof(ps) && pps_curr_char(ps) != '\n') {
+        pps_advance_char (ps);
     }
 
     // Advance over the \n character. We leave \n characters because they are
     // handled by the inline parser. Sometimes they are ignored (between URLs),
     // and sometimes they are replaced to space (multiline paragraphs).
-    ps_advance_char (ps);
+    pps_advance_char (ps);
 
     return SSTRING(start, ps->pos - start);
+}
+
+static inline
+void pps_consume_spaces (struct psx_parser_state_t *ps)
+{
+    while (pps_is_space(ps)) {
+        pps_advance_char (ps);
+    }
 }
 
 BINARY_TREE_NEW (sstring_map, sstring_t, sstring_t, strncmp(a.s, b.s, MIN(a.len, b.len)))
@@ -257,48 +238,48 @@ bool ps_parse_tag_parameters (struct psx_parser_state_t *ps, struct psx_tag_para
     }
 
     char *original_pos = ps->pos;
-    if (ps_curr_char(ps) == '[') {
+    if (pps_curr_char(ps) == '[') {
         has_parameters = true;
 
-        while (!ps->is_eof && ps_curr_char(ps) != ']') {
-            ps_advance_char (ps);
+        while (!ps->is_eof && pps_curr_char(ps) != ']') {
+            pps_advance_char (ps);
 
             char *start = ps->pos;
-            if (ps_curr_char(ps) != '\"') {
+            if (pps_curr_char(ps) != '\"') {
                 // TODO: Allow quote strings for values. This is to allow
                 // values containing "," or "]".
             }
 
             while (!ps->is_eof &&
-                   ps_curr_char(ps) != ',' &&
-                   ps_curr_char(ps) != '=' &&
-                   ps_curr_char(ps) != ']')
+                   pps_curr_char(ps) != ',' &&
+                   pps_curr_char(ps) != '=' &&
+                   pps_curr_char(ps) != ']')
             {
-                ps_advance_char (ps);
+                pps_advance_char (ps);
             }
 
             if (ps->is_eof) {
                 has_parameters = false;
             }
 
-            if (ps_curr_char(ps) == ',' || ps_curr_char(ps) == ']') {
+            if (pps_curr_char(ps) == ',' || pps_curr_char(ps) == ']') {
                 if (parameters != NULL) {
                     LINKED_LIST_APPEND_NEW (&ps->pool, struct sstring_ll_l, parameters->positional, new_param);
                     new_param->v = sstr_trim(SSTRING(start, ps->pos - start));
                 }
 
-            } else if (ps_curr_char(ps) == '=') {
+            } else if (pps_curr_char(ps) == '=') {
                 sstring_t name = sstr_trim(SSTRING(start, ps->pos - start));
 
                 // Advance over the '=' character
-                ps_advance_char (ps);
+                pps_advance_char (ps);
 
                 char *value_start = ps->pos;
                 while (!ps->is_eof &&
-                       ps_curr_char(ps) != ',' &&
-                       ps_curr_char(ps) != ']')
+                       pps_curr_char(ps) != ',' &&
+                       pps_curr_char(ps) != ']')
                 {
-                    ps_advance_char (ps);
+                    pps_advance_char (ps);
                 }
 
                 if (ps->is_eof) {
@@ -313,8 +294,8 @@ bool ps_parse_tag_parameters (struct psx_parser_state_t *ps, struct psx_tag_para
             }
         }
 
-        if (ps_curr_char(ps) == ']') {
-            ps_advance_char (ps);
+        if (pps_curr_char(ps) == ']') {
+            pps_advance_char (ps);
         } else {
             has_parameters = false;
         }
@@ -336,28 +317,28 @@ struct psx_token_t ps_next_peek(struct psx_parser_state_t *ps)
     char *backup_pos = ps->pos;
     int backup_column_number = ps->column_number;
 
-    ps_consume_spaces (ps);
+    pps_consume_spaces (ps);
     tok->margin = MAX(ps->column_number-1, 0);
     tok->type = TOKEN_TYPE_PARAGRAPH;
 
     char *non_space_pos = ps->pos;
-    if (pos_is_eof(ps)) {
+    if (pps_is_eof(ps)) {
         ps->is_eof = true;
         ps->is_eol = true;
         tok->type = TOKEN_TYPE_END_OF_FILE;
 
-    } else if (ps_match_str(ps, "- ") || ps_match_str(ps, "* ")) {
-        ps_consume_spaces (ps);
+    } else if (pps_match_str(ps, "- ") || pps_match_str(ps, "* ")) {
+        pps_consume_spaces (ps);
 
         tok->type = TOKEN_TYPE_BULLET_LIST;
         tok->value = SSTRING(non_space_pos, 1);
         tok->margin = non_space_pos - backup_pos;
         tok->content_start = ps->pos - non_space_pos;
 
-    } else if (ps_match_digits(ps)) {
+    } else if (pps_match_digits(ps)) {
         char *number_end = ps->pos;
-        if (ps->pos - non_space_pos <= 9 && ps_match_str(ps, ". ")) {
-            ps_consume_spaces (ps);
+        if (ps->pos - non_space_pos <= 9 && pps_match_str(ps, ". ")) {
+            pps_consume_spaces (ps);
 
             tok->type = TOKEN_TYPE_NUMBERED_LIST;
             tok->value = SSTRING(non_space_pos, number_end - non_space_pos);
@@ -370,30 +351,30 @@ struct psx_token_t ps_next_peek(struct psx_parser_state_t *ps)
             ps->column_number = backup_column_number;
         }
 
-    } else if (ps_match_str(ps, "#")) {
+    } else if (pps_match_str(ps, "#")) {
         int heading_number = 1;
-        while (ps_curr_char(ps) == '#') {
+        while (pps_curr_char(ps) == '#') {
             heading_number++;
-            ps_advance_char (ps);
+            pps_advance_char (ps);
         }
 
         if (heading_number <= 6) {
-            ps_consume_spaces (ps);
+            pps_consume_spaces (ps);
 
-            tok->value = sstr_trim(advance_line (ps));
+            tok->value = sstr_trim(pps_advance_line (ps));
             tok->is_eol = true;
             tok->margin = non_space_pos - backup_pos;
             tok->type = TOKEN_TYPE_TITLE;
             tok->heading_number = heading_number;
         }
 
-    } else if (ps_match_str(ps, "\\code")) {
+    } else if (pps_match_str(ps, "\\code")) {
         ps_parse_tag_parameters(ps, NULL);
 
-        if (ps_match_str(ps, "\n")) {
+        if (pps_match_str(ps, "\n")) {
             tok->type = TOKEN_TYPE_CODE_HEADER;
-            while (pos_is_space(ps) || ps_curr_char(ps) == '\n') {
-                ps_advance_char (ps);
+            while (pps_is_space(ps) || pps_curr_char(ps) == '\n') {
+                pps_advance_char (ps);
             }
 
         } else {
@@ -402,17 +383,17 @@ struct psx_token_t ps_next_peek(struct psx_parser_state_t *ps)
             ps->column_number = backup_column_number;
         }
 
-    } else if (ps_match_str(ps, "|")) {
-        tok->value = advance_line (ps);
+    } else if (pps_match_str(ps, "|")) {
+        tok->value = pps_advance_line (ps);
         tok->is_eol = true;
         tok->type = TOKEN_TYPE_CODE_LINE;
 
-    } else if (ps_match_str(ps, "\n")) {
+    } else if (pps_match_str(ps, "\n")) {
         tok->type = TOKEN_TYPE_BLANK_LINE;
     }
 
     if (tok->type == TOKEN_TYPE_PARAGRAPH) {
-        tok->value = sstr_trim(advance_line (ps));
+        tok->value = sstr_trim(pps_advance_line (ps));
         tok->is_eol = true;
     }
 
@@ -464,29 +445,29 @@ struct psx_token_t ps_inline_next(struct psx_parser_state_t *ps)
 {
     struct psx_token_t tok = {0};
 
-    if (pos_is_eof(ps)) {
+    if (pps_is_eof(ps)) {
         ps->is_eof = true;
 
-    } else if (ps_curr_char(ps) == '\\') {
+    } else if (pps_curr_char(ps) == '\\') {
         // :tag_parsing
-        ps_advance_char (ps);
+        pps_advance_char (ps);
 
         char *start = ps->pos;
-        while (!pos_is_eof(ps) && !pos_is_operator(ps) && !pos_is_space(ps)) {
-            ps_advance_char (ps);
+        while (!pps_is_eof(ps) && !pps_is_operator(ps) && !pps_is_space(ps)) {
+            pps_advance_char (ps);
         }
         tok.value = SSTRING(start, ps->pos - start);
         tok.type = TOKEN_TYPE_TAG;
 
-    } else if (pos_is_operator(ps)) {
+    } else if (pps_is_operator(ps)) {
         tok.type = TOKEN_TYPE_OPERATOR;
         tok.value = SSTRING(ps->pos, 1);
-        ps_advance_char (ps);
+        pps_advance_char (ps);
 
-    } else if (pos_is_space(ps)) {
+    } else if (pps_is_space(ps)) {
         // This collapses consecutive spaces into a single one.
-        while (pos_is_space(ps)) {
-            ps_advance_char (ps);
+        while (pps_is_space(ps)) {
+            pps_advance_char (ps);
         }
 
         tok.value = SSTRING(" ", 1);
@@ -494,8 +475,8 @@ struct psx_token_t ps_inline_next(struct psx_parser_state_t *ps)
 
     } else {
         char *start = ps->pos;
-        while (!pos_is_eof(ps) && !pos_is_operator(ps) && !pos_is_space(ps)) {
-            ps_advance_char (ps);
+        while (!pps_is_eof(ps) && !pps_is_operator(ps) && !pps_is_space(ps)) {
+            pps_advance_char (ps);
         }
 
         tok.value = SSTRING(start, ps->pos - start);
@@ -563,15 +544,15 @@ bool psx_cat_tag_content (struct psx_parser_state_t *ps, string_t *str, bool exp
 
         if (!expect_balanced_braces) {
             char *content_start = ps->pos;
-            while (!ps->is_eof && ps_curr_char(ps) != '}') {
-                ps_advance_char (ps);
+            while (!ps->is_eof && pps_curr_char(ps) != '}') {
+                pps_advance_char (ps);
             }
 
-            if (ps_curr_char(ps) == '}') {
+            if (pps_curr_char(ps) == '}') {
                 strn_cat_c (str, content_start, ps->pos - content_start);
 
                 // Advance over the '}' character
-                ps_advance_char (ps);
+                pps_advance_char (ps);
             } else {
                 has_content = false;
             }
@@ -598,7 +579,7 @@ bool psx_cat_tag_content (struct psx_parser_state_t *ps, string_t *str, bool exp
 
         char *start = ps->pos;
         while (!ps->is_eof && *(ps->pos) != '|') {
-            ps_advance_char (ps);
+            pps_advance_char (ps);
         }
 
         if (ps->is_eof) {
@@ -608,7 +589,7 @@ bool psx_cat_tag_content (struct psx_parser_state_t *ps, string_t *str, bool exp
             char *number_end;
             size_t size = strtoul (start, &number_end, 10);
             if (ps->pos == number_end) {
-                ps_advance_char (ps);
+                pps_advance_char (ps);
                 strn_cat_c (str, ps->pos, size);
                 ps->pos += size;
 
@@ -647,7 +628,7 @@ struct psx_tag_t* ps_parse_tag_full (struct psx_parser_state_t *ps, char **end, 
     tag->token = ps->token;
 
     char *original_pos = ps->pos;
-    if (ps_curr_char(ps) == '[' || ps_curr_char(ps) == '{' || ps_curr_char(ps) == '|') {
+    if (pps_curr_char(ps) == '[' || pps_curr_char(ps) == '{' || pps_curr_char(ps) == '|') {
         tag->has_parameters = ps_parse_tag_parameters(ps, &tag->parameters);
 
         if (tag->has_parameters && end != NULL) *end = ps->pos;

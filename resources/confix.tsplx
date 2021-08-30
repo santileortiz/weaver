@@ -1,0 +1,7 @@
+// Weaver Configuration
+
+// The directory where note and media files are located.
+source-dir "{app-home}/notes/"
+
+// The directory where the HTML static site will be generated into.
+target-dir "~/.cache/weaver/www/notes/"

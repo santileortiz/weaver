@@ -810,7 +810,7 @@ void prnt_debug_string (char *str)
     string_t buff = {0};
     str_cat_debugstr (&buff, 0, ESC_COLOR_DEFAULT, str);
     printf ("%s", str_data(&buff));
-    str_set (&buff, str);
+    str_free (&buff);
 }
 
 //////////////////////
@@ -903,6 +903,19 @@ bool is_end_of_line (const char *c)
     return *c == '\n';
 }
 
+static inline
+bool char_in_str (char c, char *str)
+{
+    while (*str != '\0') {
+        if (*str == c) {
+            return true;
+        }
+
+        str++;
+    }
+
+    return false;
+}
 
 ////////////////////
 // SHALLOW STRINGS
@@ -952,6 +965,29 @@ void sstr_extend (sstring_t *str1, sstring_t *str2)
         assert (str1->s + str1->len == str2->s);
         str1->len += str2->len;
     }
+}
+
+bool is_empty_line (sstring_t line)
+{
+    int count = 0;
+    while (is_space(line.s + count)) {
+        count++;
+    }
+
+    return line.s[count] == '\n' || count == line.len;
+}
+
+void prnt_debug_sstring (sstring_t *str)
+{
+    string_t s = {0};
+    strn_set (&s, str->s, str->len);
+
+    string_t buff = {0};
+    str_cat_debugstr (&buff, 0, ESC_COLOR_DEFAULT, str_data(&s));
+    printf ("%s", str_data(&buff));
+
+    str_free (&buff);
+    str_free (&s);
 }
 
 

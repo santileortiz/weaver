@@ -10,7 +10,7 @@
 #include "block.h"
 #include "note_runtime.h"
 
-#include "markup_parser.c"
+#include "psplx_parser.c"
 #include "note_runtime.c"
 
 #define TESTS_DIR "tests"

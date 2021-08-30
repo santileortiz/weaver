@@ -212,8 +212,8 @@ def weaver_build (use_js):
 def weaver():
     weaver_build (check_js_toggle ())
 
-def markup_parser_tests():
-    return common_build ("markup_parser_tests.c", 'bin/markup_parser_tests', False)
+def psplx_parser_tests():
+    return common_build ("psplx_parser_tests.c", 'bin/psplx_parser_tests', False)
 
 def cloc():
     ex ('cloc --exclude-list-file=.clocignore .')

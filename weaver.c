@@ -10,7 +10,8 @@
 #include "block.h"
 #include "note_runtime.h"
 
-#include "markup_parser.c"
+#include "psplx_parser.c"
+#include "tsplx_parser.c"
 #include "note_runtime.c"
 
 //////////////////////////////////////
@@ -54,10 +55,12 @@ ITERATE_DIR_CB(test_dir_iter)
     }
 }
 
-void rt_init_from_dir (struct note_runtime_t *rt, char *path)
+void rt_init_from_dir (struct note_runtime_t *rt, char *path, struct splx_data_t *config)
 {
     rt->notes_by_id.pool = &rt->pool;
     rt->notes_by_title.pool = &rt->pool;
+
+    splx_get_value_cstr_arr (config, &rt->pool, CFG_TITLE_NOTES, &rt->title_note_ids, &rt->title_note_ids_len);
 
     iterate_dir (path, test_dir_iter, rt);
 }
@@ -65,9 +68,12 @@ void rt_init_from_dir (struct note_runtime_t *rt, char *path)
 //////////////////////////////////////
 
 struct config_t {
+    string_t config_path;
     string_t source_path;
     string_t target_path;
 };
+
+#define APP_HOME "~/.weaver"
 
 int main(int argc, char** argv)
 {
@@ -83,12 +89,19 @@ int main(int argc, char** argv)
 #endif
     if (get_cli_bool_opt ("--has-js", argv, argc)) return has_js;
 
+    // TODO: If configuration file doesn't exist, copy the default one from the
+    // resources. The resources should be embedded in the app's binary.
 
     struct config_t _cfg = {0};
     struct config_t *cfg = &_cfg;
 
-    str_set_path (&cfg->source_path, "~/.weaver/notes/");
+    str_set_path (&cfg->source_path, APP_HOME "/notes/");
     str_set_path (&cfg->target_path, "~/.cache/weaver/www/notes/");
+    str_set_path (&cfg->config_path, APP_HOME "/config.tsplx");
+
+    struct splx_data_t config = {0};
+    tsplx_parse (&config, str_data(&cfg->config_path));
+    //tsplx_print_tokens (&config, str_data(&cfg->config_path));
 
     // TODO: Read these paths from some configuration file and from command line
     // parameters.
@@ -105,7 +118,7 @@ int main(int argc, char** argv)
     if (success) {
         string_t error_msg = {0};
 
-        rt_init_from_dir (rt, str_data(&cfg->source_path));
+        rt_init_from_dir (rt, str_data(&cfg->source_path), &config);
 
         if (get_cli_bool_opt ("--generate-static", argv, argc)) {
             bool has_output = false;
