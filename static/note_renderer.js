@@ -40,6 +40,21 @@ let max_scrollbar_width = 15 // px
 
 let opened_notes = [];
 
+function append_collapsed_note_element(note_container, id, x)
+{
+    let note_element = document.createElement("div")
+    note_element.id = id
+    note_element.classList.add("note")
+    note_element.style.left = x + "px"
+
+    note_element.classList.add("collapsed")
+    note_element.classList.add("right-shadow")
+    let collapsed_title = collapsed_element_new(id)
+    note_element.appendChild(collapsed_title)
+
+    note_container.appendChild(note_element)
+}
+
 function note_text_to_element (container, id, note_html, x)
 {
     container.insertAdjacentHTML ('beforeend', note_html);
@@ -194,28 +209,15 @@ function open_notes(note_ids, expanded_note_id)
 
             let i = 0
             for (; note_ids[i] !== expanded_note_id; i++) {
-                let new_collapsed_note = note_element_new(note_ids[i], i*collapsed_note_width)
-                new_collapsed_note.classList.add("collapsed")
-                new_collapsed_note.classList.add("right-shadow")
-                let collapsed_title = collapsed_element_new(note_ids[i])
-                new_collapsed_note.appendChild(collapsed_title)
-
-                note_container.appendChild(new_collapsed_note)
+                append_collapsed_note_element(note_container, note_ids[i], i*collapsed_note_width)
             }
 
             note_text_to_element(note_container, expanded_note_id, response, i*collapsed_note_width)
             i++
 
             for (; i<note_ids.length; i++) {
-                let new_collapsed_note = note_element_new(note_ids[i], (i-1)*collapsed_note_width + expanded_note_width)
-                new_collapsed_note.classList.add("collapsed")
-                new_collapsed_note.classList.add("left-shadow")
-                let collapsed_title = collapsed_element_new(note_ids[i])
-                new_collapsed_note.appendChild(collapsed_title)
-
-                note_container.appendChild(new_collapsed_note)
+                append_collapsed_note_element(note_container, note_ids[i], (i-1)*collapsed_note_width + expanded_note_width)
             }
-
         }
     )
 }
