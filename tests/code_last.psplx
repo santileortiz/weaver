@@ -1,0 +1,5 @@
+# Note with code block at the end
+
+   \code[bash]
+   | 
+   | ls -al

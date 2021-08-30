@@ -1540,10 +1540,17 @@ void psx_parse (struct psx_parser_state_t *ps)
             }
             ps_next(ps);
 
+            // TODO: I don't thing the token peek API was a very good idea.
+            // Backing up the position then restoring the parser seems like a
+            // more powerful approach as it allows restoring after an arbitrary
+            // number of calls to the tokenizer. This seems to be the only place
+            // where we heavily use the peek API, maybe refactor this to not use
+            // it and then remove the peek functions.
+            ps_restore_pos (ps, start);
+
             // Concatenate lines to inline content while removing  the most
             // leading spaces we can remove. I call this automatic space
             // normalization.
-            ps->pos = start;
             bool is_start = true; // Used to strip trailing empty lines.
             tok_peek = ps_next_peek(ps);
             while (tok_peek.is_eol && tok_peek.type == TOKEN_TYPE_CODE_LINE) {
