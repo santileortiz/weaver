@@ -796,7 +796,7 @@ void str_cat_debugstr (string_t *str, int curr_indent, int esc_color, char *c_st
     str_replace (&result, "\n", str_data(&buff), NULL);
 
     if (c_str[strlen(c_str) - 1] != '\n') {
-        str_cat_c (&result,ECMA_GRAY(75, "∎\n"));
+        str_cat_c (&result,ECMA_GRAY(75, "∎") "\n");
     }
 
     str_cat_indented_printf (str, curr_indent, "%s", str_data(&result));

@@ -101,7 +101,7 @@ int main(int argc, char** argv)
 
     struct splx_data_t config = {0};
     tsplx_parse (&config, str_data(&cfg->config_path));
-    //tsplx_print_tokens (&config, str_data(&cfg->config_path));
+    print_splx_node (&config, config.root);
 
     // TODO: Read these paths from some configuration file and from command line
     // parameters.
