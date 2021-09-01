@@ -1808,7 +1808,18 @@ PSX_USER_TAG_CB(orphan_list_tag_handler)
     struct note_runtime_t *rt = rt_get ();
     LINKED_LIST_FOR (struct note_t*, curr_note, rt->notes) {
         if (curr_note->back_links == NULL) {
-            str_cat_printf (&res, "- \\note{%s}\n", str_data(&curr_note->title));
+            // TODO: Maybe use a map so we don't do an O(n) search in each iteration
+            // to determine if a root note is a title note?.
+            bool is_title_note = false;
+            for (int i=0; i < rt->title_note_ids_len; i++) {
+                if (strcmp (curr_note->id, rt->title_note_ids[i]) == 0) {
+                    is_title_note = true;
+                }
+            }
+
+            if (!is_title_note) {
+                str_cat_printf (&res, "- \\note{%s}\n", str_data(&curr_note->title));
+            }
         }
     }
 

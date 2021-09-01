@@ -443,7 +443,24 @@ void tsplx_parse (struct splx_data_t *sd, char *path)
     free (f);
 }
 
-bool splx_get_value_cstr_arr (struct splx_data_t *sd, mem_pool_t *pool, char *attr, char ***arr, int *arr_len)
+#define splx_get_value_cstr_arr(sd,pool,attr,arr,arr_len) splx_node_get_value_cstr_arr(sd,sd->root,pool,attr,arr,arr_len)
+bool splx_node_get_value_cstr_arr (struct splx_data_t *sd, struct splx_node_t *node, mem_pool_t *pool, char *attr, char ***arr, int *arr_len)
 {
+    struct splx_node_t *value = cstr_to_splx_node_map_get (&node->attributes, attr);
+    if (value != NULL) {
+        int len = 0;
+        LINKED_LIST_FOR (struct splx_node_t *, curr_node_0, value) {
+            len++;
+        }
+
+        if (arr_len != NULL) *arr_len = len;
+        *arr = mem_pool_push_array (pool, len, char*);
+
+        int idx = 0;
+        LINKED_LIST_FOR (struct splx_node_t *, curr_node_1, value) {
+            (*arr)[idx++] = pom_strdup (pool, str_data(&curr_node_1->str));
+        }
+    }
+
     return false;
 }
