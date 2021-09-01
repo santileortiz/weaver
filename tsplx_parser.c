@@ -341,6 +341,19 @@ void print_splx_node (struct splx_data_t *sd, struct splx_node_t *node)
     str_free (&buff);
 }
 
+void tps_parse_node (struct tsplx_parser_state_t *tps, struct splx_node_t *node)
+{
+    if (tps_match(tps, TSPLX_TOKEN_TYPE_IDENTIFIER, NULL) || tps_match(tps, TSPLX_TOKEN_TYPE_STRING, NULL)) {
+        strn_set (&node->str, tps->token.value.s, tps->token.value.len);
+
+        if (tps_match(tps, TSPLX_TOKEN_TYPE_IDENTIFIER, NULL)) {
+            node->type = SPLX_NODE_TYPE_OBJECT;
+        } else if (tps_match(tps, TSPLX_TOKEN_TYPE_STRING, NULL)) {
+            node->type = SPLX_NODE_TYPE_STRING;
+        }
+    }
+}
+
 void tsplx_parse (struct splx_data_t *sd, char *path)
 {
     size_t f_len;
@@ -364,39 +377,62 @@ void tsplx_parse (struct splx_data_t *sd, char *path)
     while (!tps->is_eof && !tps->error) {
         tps_next (tps);
         if (tps_match(tps, TSPLX_TOKEN_TYPE_IDENTIFIER, NULL) || tps_match(tps, TSPLX_TOKEN_TYPE_STRING, NULL)) {
-            if (triple_idx < 2) {
-                struct splx_node_t *node = triple + triple_idx;
-                strn_set (&node->str, tps->token.value.s, tps->token.value.len);
-                triple_idx++;
-            } else {
-                // error
+            struct splx_node_t *node = triple + triple_idx;
+            tps_parse_node (tps, node);
+            strn_set (&node->str, tps->token.value.s, tps->token.value.len);
+            triple_idx++;
+
+        } else if (tps_match(tps, TSPLX_TOKEN_TYPE_OPERATOR, "[")) {
+            struct splx_node_t *list_item = triple + triple_idx;
+            do {
+                tps_next (tps);
+                tps_parse_node (tps, list_item);
+
+                tps_next (tps);
+                if (tps_match(tps, TSPLX_TOKEN_TYPE_OPERATOR, ",")) {
+                    list_item->next = splx_node_new (sd);
+                    list_item = list_item->next;
+                } else {
+                    break;
+                }
+            } while (!tps->error);
+
+            if (!tps_match (tps, TSPLX_TOKEN_TYPE_OPERATOR, "]")) {
+                // error: unexpected end of list
             }
+
+            triple_idx++;
 
         } else if (tps_match(tps, TSPLX_TOKEN_TYPE_OPERATOR, ".")) {
             if (triple_idx == 2) {
-                // Completed a triple with respect to the current object.
+                if (triple[0].type == SPLX_NODE_TYPE_OBJECT) {
+                    // Completed a triple with respect to the current object.
 
-                // Add the predicate to the nodes map, but don't allocate an
-                // actual node yet. So far it's only being used as predicate,
-                // it's possible we won't need to create a node because no one
-                // is using it as an object or subject.
-                char *predicate_str = NULL;
-                if (cstr_to_splx_node_map_get (&sd->nodes, str_data(&triple[0].str)) == NULL) {
-                    // TODO: Should use a string pool...
-                    predicate_str = pom_strdup (&sd->pool, str_data(&triple[0].str));
-                    cstr_to_splx_node_map_tree_insert (&sd->nodes, predicate_str, NULL);
+                    // Add the predicate to the nodes map, but don't allocate an
+                    // actual node yet. So far it's only being used as predicate,
+                    // it's possible we won't need to create a node because no one
+                    // is using it as an object or subject.
+                    char *predicate_str = NULL;
+                    if (cstr_to_splx_node_map_get (&sd->nodes, str_data(&triple[0].str)) == NULL) {
+                        // TODO: Should use a string pool...
+                        predicate_str = pom_strdup (&sd->pool, str_data(&triple[0].str));
+                        cstr_to_splx_node_map_tree_insert (&sd->nodes, predicate_str, NULL);
+                    }
+
+                    struct splx_node_t *subject_node = cstr_to_splx_node_map_get (&sd->nodes, str_data(&triple[1].str));
+                    if (subject_node == NULL) {
+                        subject_node = splx_node_new (sd);
+                        splx_node_cpy (subject_node, &triple[1]);
+                        cstr_to_splx_node_map_tree_insert (&sd->nodes, str_data(&subject_node->str), subject_node);
+                    }
+
+                    cstr_to_splx_node_map_tree_insert (&curr_object->attributes, predicate_str, subject_node);
+
+                    triple_idx = 0;
+
+                } else {
+                    // error: unexpected predicate type
                 }
-
-                struct splx_node_t *subject_node = cstr_to_splx_node_map_get (&sd->nodes, str_data(&triple[1].str));
-                if (subject_node == NULL) {
-                    subject_node = splx_node_new (sd);
-                    splx_node_cpy (subject_node, &triple[1]);
-                    cstr_to_splx_node_map_tree_insert (&sd->nodes, str_data(&subject_node->str), subject_node);
-                }
-
-                cstr_to_splx_node_map_tree_insert (&curr_object->attributes, predicate_str, subject_node);
-
-                triple_idx = 0;
             }
         }
     }
