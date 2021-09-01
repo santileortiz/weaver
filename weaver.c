@@ -100,8 +100,8 @@ int main(int argc, char** argv)
     str_set_path (&cfg->config_path, APP_HOME "/config.tsplx");
 
     struct splx_data_t config = {0};
-    tsplx_parse (&config, str_data(&cfg->config_path));
-    print_splx_node (&config, config.root);
+    tsplx_parse_name (&config, str_data(&cfg->config_path), "tsplx-test");
+    print_splx_expanded (&config, config.root);
 
     // TODO: Read these paths from some configuration file and from command line
     // parameters.
