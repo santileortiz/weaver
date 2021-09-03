@@ -13,7 +13,7 @@
 #include "psplx_parser.c"
 #include "note_runtime.c"
 
-#define TESTS_DIR "tests"
+#include "testing.c"
 
 //////////////////////////////////////
 // Platform functions for testing
@@ -71,24 +71,16 @@ void rt_init_from_dir (struct note_runtime_t *rt, char *path)
 //
 //////////////////////////////////////
 
-char* get_expected_html (mem_pool_t *pool, char *note_id, size_t *fsize)
+void set_expected_html_path (string_t *str, char *note_id)
 {
-    char *expected_html = NULL;
-
-    string_t expected_html_path = {0};
-    str_set_printf (&expected_html_path, TESTS_DIR "/%s.html", note_id);
-
-    if (path_exists (str_data(&expected_html_path))) {
-        expected_html = full_file_read (pool, str_data(&expected_html_path), fsize);
-    }
-
-    str_free (&expected_html_path);
-    return expected_html;
+    str_set_printf (str, TESTS_DIR "/%s.html", note_id);
 }
 
 int main(int argc, char** argv)
 {
     mem_pool_t pool = {0};
+
+    string_t buff = {0};
 
     struct test_ctx_t _t = {0};
     struct test_ctx_t *t = &_t;
@@ -110,7 +102,11 @@ int main(int argc, char** argv)
         LINKED_LIST_FOR (struct note_t*, note, rt->notes) {
             // Don't allocate these files into pool so we free them on each test
             // execution. This avoids keeping all in memory until the end.
-            char *expected_html = get_expected_html (NULL, note->id, NULL);
+            set_expected_html_path (&buff, note->id);
+            char *expected_html = NULL;
+            if (path_exists (str_data(&buff))) {
+                expected_html = full_file_read (NULL, str_data(&buff), NULL);
+            }
 
             if (expected_html == NULL) {
                 test_push (t, "%s " ECMA_YELLOW("(No HTML)"), note->id);
@@ -152,7 +148,7 @@ int main(int argc, char** argv)
                     prnt_debug_string (str_data(&note->psplx));
                     printf ("\n");
 
-                    printf (ECMA_MAGENTA("RESULTING HTML") "\n");
+                    printf (ECMA_MAGENTA("HTML") "\n");
                     prnt_debug_string (str_data(&note->html));
 
                     if (str_len(&note->error_msg) > 0) {
@@ -160,21 +156,8 @@ int main(int argc, char** argv)
                         printf ("%s", str_data (&note->error_msg));
                     }
 
-                    char *expected_html = get_expected_html (&pool, note->id, NULL);
-                    if (expected_html != NULL && strcmp(str_data(&note->html), expected_html) != 0) {
-                        char *tmp_fname = "html_test.html";
-                        full_file_write (str_data(&note->html), str_len(&note->html), tmp_fname);
-
-                        string_t cmd = {0};
-
-                        printf (ECMA_MAGENTA("\nHTML DIFF TO EXPECTED") "\n");
-                        str_set_printf (&cmd, "git diff --no-index tests/%s.html %s", note->id, tmp_fname);
-                        printf ("%s\n", str_data(&cmd));
-                        system (str_data(&cmd));
-
-                        unlink (tmp_fname);
-                    }
-
+                    set_expected_html_path (&buff, note->id);
+                    print_diff_str_to_expected_file (&note->html, str_data (&buff));
                 }
             }
 
@@ -189,5 +172,6 @@ int main(int argc, char** argv)
     test_ctx_destroy (t);
     mem_pool_destroy (&pool);
     js_destroy ();
+    str_free (&buff);
     return 0;
 }

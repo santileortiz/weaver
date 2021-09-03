@@ -267,14 +267,11 @@ bool tps_match(struct tsplx_parser_state_t *tps, enum tsplx_token_type_t type, c
     return match;
 }
 
-void tsplx_print_tokens (struct splx_data_t *sd, char *path)
+void print_tsplx_tokens (char *tsplx_str)
 {
-    size_t f_len;
-    char *f = full_file_read (NULL, path, &f_len);
-
     struct tsplx_parser_state_t _tps = {0};
     struct tsplx_parser_state_t *tps = &_tps;
-    tps_init (tps, f);
+    tps_init (tps, tsplx_str);
 
     while (!tps->is_eof && !tps->error) {
         tps_next (tps);
@@ -288,8 +285,6 @@ void tsplx_print_tokens (struct splx_data_t *sd, char *path)
             printf ("\n");
         }
     }
-
-    free (f);
 }
 
 struct splx_node_t* splx_node_new (struct splx_data_t *sd)
@@ -405,7 +400,7 @@ void tps_parse_node (struct tsplx_parser_state_t *tps, struct splx_node_t *node)
     }
 }
 
-void tsplx_parse_str_name (struct splx_data_t *sd, char *str, char* root_name)
+bool tsplx_parse_str_name (struct splx_data_t *sd, char *str, char* root_name, string_t *error_msg)
 {
     struct tsplx_parser_state_t _tps = {0};
     struct tsplx_parser_state_t *tps = &_tps;
@@ -488,13 +483,15 @@ void tsplx_parse_str_name (struct splx_data_t *sd, char *str, char* root_name)
     for (int i=0; i<3; i++) {
         str_free (&triple[i].str);
     }
+
+    return true;
 }
 
 void tsplx_parse_name (struct splx_data_t *sd, char *path, char* root_name)
 {
     size_t f_len;
     char *f = full_file_read (NULL, path, &f_len);
-    tsplx_parse_str_name (sd, f, root_name);
+    tsplx_parse_str_name (sd, f, root_name, NULL);
     free (f);
 }
 

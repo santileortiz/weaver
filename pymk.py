@@ -215,6 +215,9 @@ def weaver():
 def psplx_parser_tests():
     return common_build ("psplx_parser_tests.c", 'bin/psplx_parser_tests', False)
 
+def tsplx_parser_tests():
+    return common_build ("tsplx_parser_tests.c", 'bin/tsplx_parser_tests', False)
+
 def cloc():
     ex ('cloc --exclude-list-file=.clocignore .')
 

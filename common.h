@@ -2940,6 +2940,8 @@ bool full_file_write (const void *data, ssize_t size, const char *path)
     return failed;
 }
 
+// TODO: Make this silent, then we will be able to just call it, without needing
+// to make sure the file exists beforehand.
 char* full_file_read (mem_pool_t *pool, const char *path, uint64_t *len)
 {
     bool success = true;

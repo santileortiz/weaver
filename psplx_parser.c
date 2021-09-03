@@ -165,14 +165,14 @@ void pps_consume_spaces (struct psx_parser_state_t *ps)
 
 BINARY_TREE_NEW (sstring_map, sstring_t, sstring_t, strncmp(a.s, b.s, MIN(a.len, b.len)))
 
-struct sstring_ll_l {
+struct sstring_ll_t {
     sstring_t v;
-    struct sstring_ll_l *next;
+    struct sstring_ll_t *next;
 };
 
 struct psx_tag_parameters_t {
-    struct sstring_ll_l *positional;
-    struct sstring_ll_l *positional_end;
+    struct sstring_ll_t *positional;
+    struct sstring_ll_t *positional_end;
 
     struct sstring_map_tree_t named;
 };
@@ -264,7 +264,7 @@ bool ps_parse_tag_parameters (struct psx_parser_state_t *ps, struct psx_tag_para
 
             if (pps_curr_char(ps) == ',' || pps_curr_char(ps) == ']') {
                 if (parameters != NULL) {
-                    LINKED_LIST_APPEND_NEW (&ps->pool, struct sstring_ll_l, parameters->positional, new_param);
+                    LINKED_LIST_APPEND_NEW (&ps->pool, struct sstring_ll_t, parameters->positional, new_param);
                     new_param->v = sstr_trim(SSTRING(start, ps->pos - start));
                 }
 
@@ -702,7 +702,7 @@ void ps_html_cat_literal_tag (struct psx_parser_state_t *ps, struct psx_tag_t *t
         bool is_first = true;
         str_cat_c (&literal_tag, "[");
 
-        LINKED_LIST_FOR (struct sstring_ll_l *, pos_param, tag->parameters.positional) {
+        LINKED_LIST_FOR (struct sstring_ll_t *, pos_param, tag->parameters.positional) {
             if (!is_first) {
                 str_cat_c (&literal_tag, ", ");
             }
