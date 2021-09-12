@@ -2,6 +2,7 @@
 from mkpy.utility import *
 import common_note_graph as gn
 
+import psutil
 import uuid
 import json
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -34,17 +35,22 @@ def default ():
     target = store_get ('last_snip', default='money_flow')
     call_user_function(target)
 
-def open_browser ():
-    # So... AJAX GET requests are forbidden to URLs using the file:// protocol,
-    # I don't understand why... supposedly, Firefox did allow it a while back,
-    # as long as the page was originally loaded as file://, I don't know why
-    # they changed it, but it doesn't work anymore.
-    #
-    # TODO: What happens if we don't use --user-data-dir and there's a chrome
-    # session already open?
-    chrome_data_dir = path_cat (cache_dir, 'chrome_data')
-    ensure_dir (chrome_data_dir)
-    ex (f'google-chrome --user-data-dir={chrome_data_dir} --allow-file-access-from-files {path_cat(out_dir,"index.html")}&')
+server_pid_pname = 'server_pid'
+def server_start ():
+    last_pid = store_get (server_pid_pname, default=None)
+    if last_pid != None and psutil.pid_exists(last_pid):
+        print (f'Server is already running, PID: {last_pid}')
+    else:
+        pid = ex_bg (f'./nocache_server.py', cwd=out_dir)
+        print (f'Started server, PID: {pid}')
+        store (server_pid_pname, pid)
+
+def server_stop ():
+    pid = store_get (server_pid_pname, default=None)
+    if pid != None and psutil.pid_exists(int(pid)):
+        ex (f'kill {pid}')
+    else:
+        print ('Server is not running.')
 
 def new_note ():
     is_vim_mode = get_cli_bool_opt('--vim')
@@ -220,6 +226,9 @@ def tsplx_parser_tests():
 
 def cloc():
     ex ('cloc --exclude-list-file=.clocignore .')
+
+def install_dependencies ():
+    ex ("sudo apt-get install python3-jinja2 build-essential python3-psutil")
 
 builtin_completions = ['--get_build_deps']
 if __name__ == "__main__":
