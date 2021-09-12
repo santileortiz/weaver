@@ -389,6 +389,28 @@ def set_echo_mode():
 def ex_escape (s):
     return s.replace ('\n', '').replace ('{', '{{').replace ('}','}}')
 
+def ex_bg (cmd, echo=True, cwd=None):
+    global g_dry_run
+    global g_echo_mode
+
+    ex_cmds.append(cmd)
+    if g_dry_run:
+        return
+
+    if echo or g_echo_mode: print (cmd)
+
+    if g_echo_mode:
+        return
+
+    redirect = open(os.devnull, 'wb')
+
+    # NOTE: Passing cmd as a string does not work when shell=False, and we want
+    # shell=False so that we return the real PID, so that later we can send
+    # signals to the process, for example to kill it or check it's running.
+    process = subprocess.Popen(cmd.split(), shell=False, stdout=redirect, stderr=redirect, cwd=cwd)
+
+    return process.pid
+
 def ex (cmd, no_stdout=False, ret_stdout=False, echo=True):
     # NOTE: This fails if there are braces {} in cmd but the content is not a
     # variable. If this is the case, escape the content that has braces using
