@@ -1,0 +1,165 @@
+// A reified statement should be equivalent to the flattened representation so
+// that both notations used to define the properties of quantity-value are
+// equivalent.
+quantity-value a type ;
+  has-property value @ {
+    type number ;
+    occurs oslc:ExactlyOnce ;
+  } ;
+  has-property property[unit, string] {
+    occurs oslc:ExactlyOnce ;
+  } .
+
+
+// This is an attempt to declare constructors that splits a string into its
+// components. It uses a regular expression.
+def quantity-value[string ?value/(\d*)\s+([a-zA-Z]+)/]{
+  value ?value.1 ;
+  date ?unit.2 .
+}
+
+// In the general case, we want to allow falling back to a real programming
+// language very easily. Somehow through the API we should be able to declare a
+// constructor, pass the parameters and the type of entity it will generate
+// then defer to a (functional?) method in some programming language. In fact,
+// a better version of the above would normalize different notations for units,
+// for example g, gr, grams, gram should all be stored as g. This type of
+// advanced behavior is better described in a programming language.
+
+
+purchased-item a type ;
+  has-property property[price, quantity-value] {
+    occurs oslc:ExactlyOnce ;
+  } .
+
+buffer a type ;
+  has-property property[name, string] .
+
+simple-movement a type ;
+  has-property property[date, date] ;
+  has-property property[from, buffer] ;
+  has-property property[to, buffer] ;
+
+
+m0 a simple-movement ;
+  date "2020-1-12" ;
+  from "Carter" ;
+  to "Walmart" ;
+  value quantity-value[20,"USD"] ;
+  has-purchased-item [
+    brand "Nestle" ;
+    net-weight quantity-value[43,"g"] .
+    price "5 USD" ;
+    quantity 4 ;
+  ] .
+
+
+// Define the product as a separate instance, then using the "a" predicate to a
+// usage, means the properties should be collapsed.
+
+chocolate a product ;
+  brand "Nestle" ;
+  net-weight quantity-value[43,"g"] .
+
+m1 a simple-movement ;
+  date "2020-1-12" ;
+  from "Carter" ;
+  to "Walmart" ;
+  value quantity-value[20,"USD"] ;
+  has-purchased-item [
+    a chocolate ;
+    price "5 USD" ;
+    quantity 4 ;
+  ] .
+
+
+def simple-movement[string ?p_value, string ?p_from, string ?p_to, string ?date]{
+  value ?p_value ;
+  from ?p_from ;
+  to ?p_to ;
+  date ?p_date .
+}
+
+def purchased-item[quantity-value ?price, number ?quantity]{
+  price ?price ;
+  quantity ?quantity ;
+}
+
+def purchased-item[quantity-value ?price, number ?quantity]
+
+m2 = simple-movement["20 USD", "Carter", "Walmart", "2020-1-12"]
+  purchased-item ["5 USD", 4] {
+    a chocolate ;
+  } .
+
+// At this point m0, m1 and m2 should be structurally equivalent. We use
+// equallity test symbol == to mean that the graphs are isomorphic, although
+// different instances.
+// assert (m0 == m1)
+// assert (m0 == m2)
+
+simple-movement a type ;
+  has-property property[date, date] ;
+  has-property property[exchange, string] ;
+  has-property property[from-value, quantity-value] ;
+  has-property property[from, buffer] ;
+  has-property property[to-value, quantity-value] ;
+  has-property property[to, buffer] ;
+
+
+// This is a more sophisticated constructor that expands structured values
+// passed as strings into multiple parameters. See how value number and
+// currency are passed separately.
+
+def exchange-movement[number ?from_value, string ?from-currency, string from, number ?to-value, string ?to-currency, string ?to, string ?date, string ?exchange]{
+  date ?date ;
+  exchange ?exchange ;
+
+  from ?from ;
+  from-value.value ?from-value ;
+  from-value.unit ?from-currency ;
+
+  to ?to ;
+  to-value.value ?to-value ;
+  to-value.unit ?to-currency ;
+}
+
+n0 a exchange-movement ;
+  date "2020-2-18" ;
+  exchange "BBVA" ;
+  from-value "20 USD" ;
+  from "John" ;
+  to-value "500 MXN" .
+  to "Amazon" ;
+
+n1 = exchange-movement["20 USD","John","500 MXN","Amazon","2020-2-18","BBVA"]
+
+// assert (n0 == n1)
+
+
+// Pass _ to a constructor parameter to mean that a statement should not be
+// created.
+
+k0 a exchange-movement ;
+  date "2020-2-18" ;
+  from-value "20 USD" ;
+  from "John" ;
+  to-value "500 MXN" .
+  to "Amazon" ;
+
+k1 = exchange-movement["20 USD","John","500 MXN","Amazon","2020-2-18",_]
+
+// assert (k0 == k1)
+
+
+// In the end, quantities of products are a set of linear equations that
+// transfrorm from different units 1pz has 1 kcal, 1pz is 100g, 1pz contains
+// 1L, we want to use uniform semantics so that later it's easy to buld a
+// linear system of equations and automcatically convert from one unit to
+// another one. Answering questions like "how much calories per USD do I get?"
+// and so on.
+
+unit-equivalence a type ;
+  has-property property[q1, quantity-value] ;
+  has-property property[r, string] ;
+  has-property property[q2, quantity-value] .
