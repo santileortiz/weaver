@@ -813,6 +813,24 @@ void prnt_debug_string (char *str)
     str_free (&buff);
 }
 
+static inline
+char sys_path_sep ()
+{
+    // TODO: Actually return the system's path separator.
+    return '/';
+}
+
+#define path_cat(str,path) str_cat_path(str,path)
+void str_cat_path (string_t *str, char *path)
+{
+    if (str_last (str) != '/') {
+        // TODO: Using printf for this feels like overkill
+        str_cat_printf (str, "%c", sys_path_sep());
+    }
+
+    str_cat_c (str, path);
+}
+
 //////////////////////
 // PARSING UTILITIES
 //
@@ -2758,6 +2776,41 @@ char* cstr_rstrip (char *str)
     return str;
 }
 
+void cstr_split (mem_pool_t *pool, char *str, char *sep, char ***arr_out, int *arr_len_out)
+{
+    assert (arr_out != NULL && arr_len_out != NULL);
+
+    char **arr = NULL;
+    int arr_len = 0;
+
+    if (str != NULL) {
+        ssize_t sep_len = strlen(sep);
+        char *p = strstr (str, sep);
+        while (p != NULL) {
+            arr_len++;
+            p += sep_len;
+            p = strstr (p, sep);
+        }
+        arr_len++;
+
+        arr = pom_push_array (pool, arr_len, char*);
+        p = str;
+        char *end = strstr (str, sep);
+        int i=0;
+        while (end != NULL) {
+            arr[i++] = pom_strndup (pool, p, end-p);
+
+            p = end + sep_len;
+            end = strstr (p, sep);
+        }
+
+        arr[i++] = pom_strdup (pool, p);
+    }
+
+    *arr_out = arr;
+    *arr_len_out = arr_len;
+}
+
 // Flatten an array of null terminated strings into a single string allocated
 // into _pool_ or heap.
 char* collapse_str_arr (char **arr, int n, mem_pool_t *pool)
@@ -2825,13 +2878,6 @@ char* sh_expand (char *str, mem_pool_t *pool)
     char *res = collapse_str_arr (out.we_wordv, out.we_wordc, pool);
     wordfree (&out);
     return res;
-}
-
-static inline
-char sys_path_sep ()
-{
-    // TODO: Actually return the system's path separator.
-    return '/';
 }
 
 char *resolve_user_path (char *path, mem_pool_t *pool)
@@ -3122,6 +3168,38 @@ bool ensure_path_exists (char *path)
     }
 
     return success;
+}
+
+void vpath_build (string_t *path, va_list args)
+{
+    char *p = va_arg (args, char*);
+    if (p != NULL) {
+        str_set (path, p);
+        p = va_arg (args, char*);
+
+        while (p != NULL) {
+            str_cat_path (path, p);
+            p = va_arg (args, char*);
+        }
+
+    } else {
+        str_set (path, "");
+    }
+}
+
+void path_build (string_t *path, ...)
+{
+    va_list args;
+    va_start (args, path);
+    vpath_build (path, args);
+}
+
+char* path_build_dup (mem_pool_t *pool, string_t *path, ...)
+{
+    va_list args;
+    va_start (args, path);
+    vpath_build (path, args);
+    return pom_strndup (pool, str_data(path), str_len(path));
 }
 
 bool read_dir (DIR *dirp, struct dirent **res)
