@@ -16,8 +16,7 @@
 
 #include "testing.c"
 
-#define push_test_note(rt,source) push_test_note_full(rt,source,strlen(source),(char*)__func__,strlen(__func__),NULL)
-struct note_t* push_test_note_full (struct note_runtime_t *rt, char *source, size_t source_len, char *note_id, size_t note_id_len, char *path)
+struct note_t* push_test_note (struct note_runtime_t *rt, char *source, size_t source_len, char *note_id, size_t note_id_len, char *path)
 {
     LINKED_LIST_PUSH_NEW (&rt->pool, struct note_t, rt->notes, new_note);
     new_note->id = pom_strndup (&rt->pool, note_id, note_id_len);
@@ -64,7 +63,7 @@ ITERATE_DIR_CB(test_dir_iter)
 
             size_t source_len;
             char *source = full_file_read (NULL, fname, &source_len);
-            push_test_note_full (rt, source, source_len, p, basename_len - 1/*.*/ - strlen(PSPLX_EXTENSION), fname);
+            push_test_note (rt, source, source_len, p, basename_len - 1/*.*/ - strlen(PSPLX_EXTENSION), fname);
             free (source);
         }
     }
@@ -134,7 +133,7 @@ void negative_programmatic_test (struct test_ctx_t *t, struct note_runtime_t *rt
     str_set (&t->test_stack->success_string, "-OK");
     NEW_SHARED_VARIABLE_NAMED (bool, errored_successfuly, false, "NEGATIVE_TEST_subprocess_success");
     CRASH_TEST(no_crash, t->error,
-        struct note_t *test_note = push_test_note_full (rt, source, strlen(source), test_id, strlen(test_id), test_id);
+        struct note_t *test_note = push_test_note (rt, source, strlen(source), test_id, strlen(test_id), test_id);
         rt_process_note (&rt->pool, test_note);
 
         if (test_note->error) {
