@@ -266,13 +266,18 @@ void parent_test_pop (struct test_ctx_t *tc)
 #define CRASH_SAFE_TEST_SHARED_VARIABLE_NAME "TEST_CRASH_SAFE_success"
 
 bool __crash_safe_wait_and_output (mem_pool_t *pool, bool *success,
-                                   char *stdout_fname, char *stderr_fname,
+                                   char *output_fname, char *stdout_fname, char *stderr_fname,
                                    string_t *result)
 {
     bool res = false;
 
     int child_status;
     wait (&child_status);
+
+    char *output_str = full_file_read (pool, output_fname, NULL);
+    if (*output_str != '\0') {
+        str_cat_c (result, output_str);
+    }
 
     if (!WIFEXITED(child_status)) {
         *success = false;
@@ -295,6 +300,7 @@ bool __crash_safe_wait_and_output (mem_pool_t *pool, bool *success,
 
     res = *success;
 
+    unlink (output_fname);
     unlink (stdout_fname);
     unlink (stderr_fname);
 
@@ -304,26 +310,32 @@ bool __crash_safe_wait_and_output (mem_pool_t *pool, bool *success,
 }
 
 #if !defined TEST_NO_SUBPROCESS
-#define CRASH_TEST(SUCCESS,OUTPUT,CODE)                                                                 \
-{                                                                                                       \
-    char *__crash_safe_stdout_fname = "tmp_stdout";                                                     \
-    char *__crash_safe_stderr_fname = "tmp_stderr";                                                     \
-    mem_pool_t __crash_safe_pool = {0};                                                                 \
-    NEW_SHARED_VARIABLE_NAMED (bool, __crash_safe_success, true, CRASH_SAFE_TEST_SHARED_VARIABLE_NAME); \
-    if (fork() == 0) {                                                                                  \
-        freopen (__crash_safe_stdout_fname, "w", stdout);                                               \
-        setvbuf (stdout, NULL, _IONBF, 0);                                                              \
-                                                                                                        \
-        freopen (__crash_safe_stderr_fname, "w", stderr);                                               \
-        setvbuf (stderr, NULL, _IONBF, 0);                                                              \
-                                                                                                        \
-        CODE                                                                                            \
-                                                                                                        \
-        exit(0);                                                                                        \
-    }                                                                                                   \
-    SUCCESS = __crash_safe_wait_and_output (&__crash_safe_pool, __crash_safe_success,                   \
-                                            __crash_safe_stdout_fname, __crash_safe_stderr_fname,       \
-                                            OUTPUT);                                                    \
+#define CRASH_TEST(SUCCESS,OUTPUT,CODE)                                                                             \
+{                                                                                                                   \
+    char *__crash_safe_output_fname = "tmp_output";                                                                 \
+    char *__crash_safe_stdout_fname = "tmp_stdout";                                                                 \
+    char *__crash_safe_stderr_fname = "tmp_stderr";                                                                 \
+    mem_pool_t __crash_safe_pool = {0};                                                                             \
+    NEW_SHARED_VARIABLE_NAMED (bool, __crash_safe_success, true, CRASH_SAFE_TEST_SHARED_VARIABLE_NAME);             \
+    if (fork() == 0) {                                                                                              \
+        freopen (__crash_safe_stdout_fname, "w", stdout);                                                           \
+        setvbuf (stdout, NULL, _IONBF, 0);                                                                          \
+                                                                                                                    \
+        freopen (__crash_safe_stderr_fname, "w", stderr);                                                           \
+        setvbuf (stderr, NULL, _IONBF, 0);                                                                          \
+                                                                                                                    \
+        string_t __subprocess_output = {0};                                                                         \
+                                                                                                                    \
+        CODE                                                                                                        \
+                                                                                                                    \
+        full_file_write (str_data(&__subprocess_output), str_len(&__subprocess_output), __crash_safe_output_fname); \
+                                                                                                                    \
+        exit(0);                                                                                                    \
+    }                                                                                                               \
+    SUCCESS = __crash_safe_wait_and_output (&__crash_safe_pool, __crash_safe_success,                               \
+                                            __crash_safe_output_fname,                                              \
+                                            __crash_safe_stdout_fname, __crash_safe_stderr_fname,                   \
+                                            OUTPUT);                                                                \
 }
 
 #define CRASH_TEST_AND_RUN(SUCCESS,OUTPUT,CODE)  \

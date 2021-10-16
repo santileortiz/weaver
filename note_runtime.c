@@ -42,77 +42,102 @@ void rt_link_notes (struct note_t *src, struct note_t *tgt)
     tgt_link->note = src;
 }
 
+void rt_process_note (mem_pool_t *pool_out, struct note_t *note)
+{
+    mem_pool_t *pool_l = pool_out;
+
+    char *id = note->id;
+    char *path = str_data(&note->path);
+    char *markup = str_data(&note->psplx);
+
+    string_t *error_msg = &note->error_msg;
+
+    struct psx_parser_ctx_t _ctx = {0};
+    struct psx_parser_ctx_t *ctx = &_ctx;
+    ctx->id = id;
+    ctx->path = path;
+    ctx->error_msg = &note->error_msg;
+
+    struct block_allocation_t _ba = {0};
+    struct block_allocation_t *ba = &_ba;
+    ba->pool = pool_l;
+
+
+    PROCESS_NOTE_PARSE
+
+
+    PROCESS_NOTE_CREATE_LINKS
+
+
+    PROCESS_NOTE_USER_CALLBACKS
+
+
+    {
+        mem_pool_t _html_pool = {0};
+        mem_pool_t *pool_l = &_html_pool;
+        PROCESS_NOTE_GENERATE_HTML
+        mem_pool_destroy (&_html_pool);
+    }
+}
+
 void rt_process_notes (struct note_runtime_t *rt, string_t *error_msg)
 {
-    struct psx_parser_ctx_t ctx = {0};
-    ctx.error_msg = error_msg;
+    struct psx_parser_ctx_t _ctx = {0};
+    struct psx_parser_ctx_t *ctx = &_ctx;
+    ctx->error_msg = error_msg;
 
-    bool has_output = false;
     {
         LINKED_LIST_FOR (struct note_t*, curr_note, rt->notes) {
-            curr_note->tree = parse_note_text (&rt->pool, str_data(&curr_note->path), str_data(&curr_note->psplx), &curr_note->error_msg);
+            mem_pool_t *pool_l = &rt->pool;
+            struct note_t *note = curr_note;
+            char *path = str_data(&curr_note->path);
+            char *markup = str_data(&curr_note->psplx);
+            error_msg = &curr_note->error_msg;
+
+            PROCESS_NOTE_PARSE
         }
     }
 
     {
         LINKED_LIST_FOR (struct note_t*, curr_note, rt->notes) {
-            if (curr_note->tree != NULL) {
-                ctx.id = curr_note->id;
-                ctx.path = str_data(&curr_note->path);
-                ctx.error_msg = &curr_note->error_msg;
+            struct note_t *note = curr_note;
+            ctx->id = curr_note->id;
+            ctx->path = str_data(&curr_note->path);
+            ctx->error_msg = &curr_note->error_msg;
 
-                psx_create_links (&ctx, &curr_note->tree);
-            }
+            PROCESS_NOTE_CREATE_LINKS
         }
     }
 
     {
         LINKED_LIST_FOR (struct note_t*, curr_note, rt->notes) {
-            if (curr_note->tree != NULL) {
-                ctx.id = curr_note->id;
-                ctx.path = str_data(&curr_note->path);
-                ctx.error_msg = &curr_note->error_msg;
+            struct note_t *note = curr_note;
+            struct block_allocation_t *ba = &rt->block_allocation;
+            ctx->id = curr_note->id;
+            ctx->path = str_data(&curr_note->path);
+            ctx->error_msg = &curr_note->error_msg;
 
-                psx_block_tree_user_callbacks (&ctx, &rt->block_allocation, &curr_note->tree);
-            }
+            PROCESS_NOTE_USER_CALLBACKS
         }
     }
 
     {
         LINKED_LIST_FOR (struct note_t*, curr_note, rt->notes) {
-            if (!curr_note->error) {
-                ctx.id = curr_note->id;
-                ctx.path = str_data(&curr_note->path);
-                ctx.error_msg = &curr_note->error_msg;
+            struct note_t *note = curr_note;
+            ctx->id = curr_note->id;
+            ctx->path = str_data(&curr_note->path);
+            ctx->error_msg = &curr_note->error_msg;
 
-                // Parse to html but don't keep the full html tree, only store the
-                // resulting html string. So far the HTML tree hasn't been necesary.
-                mem_pool_t html_pool = {0};
+            // Parse to html but don't keep the full html tree, only store the
+            // resulting html string. So far the HTML tree hasn't been necesary.
+            mem_pool_t _html_pool = {0};
+            mem_pool_t *pool_l = &_html_pool;
 
-                struct html_t *html = html_new (&html_pool, "div");
-                html_element_attribute_set (html, html->root, "id", curr_note->id);
-                block_tree_to_html (&ctx, html, curr_note->tree, html->root);
+            PROCESS_NOTE_GENERATE_HTML
 
-                if (html != NULL) {
-                    str_set (&curr_note->html, "");
-                    str_cat_html (&curr_note->html, html, 2);
-                    curr_note->is_html_valid = true;
+            mem_pool_destroy (&_html_pool);
 
-                } else {
-                    curr_note->error = true;
-                }
-
-                mem_pool_destroy (&html_pool);
-            }
-
-            if (error_msg != NULL && str_len(&curr_note->error_msg) > 0) {
-                if (has_output) {
-                    str_cat_printf (error_msg, "\n");
-                }
-
-                str_cat_printf (error_msg, "%s - " ECMA_DEFAULT("%s\n") "%s", str_data(&curr_note->path), str_data(&curr_note->title), str_data(&curr_note->error_msg));
-                has_output = true;
-            }
+            PROCESS_NOTE_HANDLE_ERRORS
         }
     }
 }

@@ -9,6 +9,35 @@
 
 #include "js.c"
 
+struct note_t;
+
+struct note_link_t {
+    struct note_t *note;
+    struct note_link_t *next;
+};
+
+struct note_t {
+    string_t path;
+
+    char *id;
+    string_t title;
+    string_t psplx;
+
+    struct psx_block_t *tree;
+
+    bool is_html_valid;
+    string_t html;
+
+    bool error;
+    string_t error_msg;
+
+    struct note_link_t *links;
+    struct note_link_t *back_links;
+
+    struct note_t *next;
+};
+
+
 int psx_content_width = 588; // px
 
 struct psx_parser_ctx_t {
@@ -1678,33 +1707,83 @@ void printf_block_tree (struct psx_block_t *root, int indent)
     str_free (&str);
 }
 
-struct html_t* markup_to_html (mem_pool_t *pool, char *path, char *markup, char *id, string_t *error_msg)
+// @AUTO_MACRO_PREFIX(PROCESS_NOTE_)
+char* markup_to_html (mem_pool_t *pool_out, char *path, char *markup, char *id, string_t *error_msg)
 {
-    mem_pool_t pool_l = {0};
-    struct psx_parser_ctx_t ctx = {0};
-    ctx.id = id;
-    ctx.path = path;
-    ctx.error_msg = error_msg;
+    mem_pool_t _pool_l = {0};
+    mem_pool_t *pool_l = &_pool_l;
 
-    struct block_allocation_t ba = {0};
-    ba.pool = &pool_l;
+    struct note_t _note = {0};
+    struct note_t *note = &_note;
 
-    struct psx_block_t *root_block = parse_note_text (&pool_l, path, markup, error_msg);
+    struct psx_parser_ctx_t _ctx = {0};
+    struct psx_parser_ctx_t *ctx = &_ctx;
+    ctx->id = id;
+    ctx->path = path;
+    ctx->error_msg = error_msg;
 
-    if (root_block != NULL) {
-        psx_block_tree_user_callbacks (&ctx, &ba, &root_block);
+    struct block_allocation_t _ba = {0};
+    struct block_allocation_t *ba = &_ba;
+    ba->pool = pool_l;
+
+
+    // Parse                  @AUTO_MACRO(BEGIN)
+    note->tree = parse_note_text (pool_l, path, markup, error_msg);
+    if (note->tree == NULL) {
+        note->error = true;
     }
+    // @AUTO_MACRO(END)
 
-    struct html_t *html = NULL;
-    if (root_block != NULL) {
-        html = html_new (pool, "div");
-        html_element_attribute_set (html, html->root, "id", id);
-        block_tree_to_html (&ctx, html, root_block, html->root);
+
+    // Create Links           @AUTO_MACRO(BEGIN)
+    if (!note->error) {
+        psx_create_links (ctx, &note->tree);
     }
+    // @AUTO_MACRO(END)
 
-    mem_pool_destroy (&pool_l);
 
-    return html;
+    // User Callbacks         @AUTO_MACRO(BEGIN)
+    if (!note->error) {
+        psx_block_tree_user_callbacks (ctx, ba, &note->tree);
+    }
+    // @AUTO_MACRO(END)
+
+
+    // Generate HTML          @AUTO_MACRO(BEGIN)
+    if (!note->error) {
+        struct html_t *html = html_new (pool_l, "div");
+        html_element_attribute_set (html, html->root, "id", note->id);
+        block_tree_to_html (ctx, html, note->tree, html->root);
+
+        if (html != NULL) {
+            str_set (&note->html, "");
+            str_cat_html (&note->html, html, 2);
+            note->is_html_valid = true;
+
+        } else {
+            note->error = true;
+        }
+    }
+    // @AUTO_MACRO(END)
+
+
+    // Handle Errors          @AUTO_MACRO(BEGIN)
+    bool has_output = false;
+    if (error_msg != NULL && str_len(&note->error_msg) > 0) {
+        if (has_output) {
+            str_cat_printf (error_msg, "\n");
+        }
+
+        str_cat_printf (error_msg, "%s - " ECMA_DEFAULT("%s\n") "%s", str_data(&note->path), str_data(&note->title), str_data(&note->error_msg));
+        has_output = true;
+    }
+    // @AUTO_MACRO(END)
+
+
+    mem_pool_destroy (&_pool_l);
+
+    char *html_out = pom_strndup (pool_out, str_data(&note->html), str_len(&note->html));
+    return html_out;
 }
 
 // Replace a block with a linked list of blocks. The block to be replaced is

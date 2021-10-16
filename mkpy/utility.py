@@ -2,6 +2,8 @@ import sys, subprocess, os, ast, shutil, platform, re, json, pickle
 
 import importlib.util, inspect, pathlib, filecmp
 
+from enum import Enum
+
 """
 !!!!!!IMPOTRANT!!!!!
 The idea of this library is to make easy to call python functions located in
@@ -119,6 +121,9 @@ def recommended_opt (s):
         res = opt_lst[0]
     return res
 
+def is_interactive():
+    return "i" in ex("echo $-", ret_stdout=True, echo=False)
+
 builtin_completions = []
 cli_completions = {}
 cli_bool_options = set()
@@ -131,7 +136,7 @@ def handle_tab_complete ():
     global cli_completions, builtin_completions
 
     # Check that the tab completion script is installed
-    if not check_completions ():
+    if not check_completions () and is_interactive():
         if get_cli_bool_opt('--install_completions'):
             print ('Installing tab completions...')
             ex ('cp mkpy/pymk.py {}'.format(get_completions_path()))
@@ -1317,3 +1322,205 @@ def regex_test(regex, test_str, should_match):
             print (ecma_red('FAIL NO MATCH'), end=' ')
             regex_match_print (test_str, result)
 
+
+############################################
+# Implementation of control flow reuse for C
+#
+
+def generate_automacros (out_fname, files=None):
+    class TokenType(Enum):
+        OPERATOR = 1
+        KEYWORD = 2
+        COMMENT = 3
+        SPACE = 4
+        OTHER = 5
+
+    class Scanner():
+        def __init__(self, data, pos):
+            self.str = data
+            self.pos = pos
+
+    class Token():
+        def __init__(self, token_type, value):
+            self.type = token_type
+            self.value = value
+
+    def token_next (scnr):
+        new_token = None
+
+        if scnr.str.startswith ('//', scnr.pos):
+            scnr.pos += 2
+            start = scnr.pos
+            while scnr.str[scnr.pos] != '\n' and scnr.pos < len(scnr.str):
+                scnr.pos += 1
+            new_token = Token(TokenType.COMMENT,  scnr.str[start:scnr.pos])
+
+        if new_token == None and scnr.str.startswith ('/*', scnr.pos):
+            scnr.pos += 2
+            start = scnr.pos
+            comment_end = scnr.str.find('*/')
+            if comment_end != -1:
+                comment = scnr.str[start:comment_end]
+            else:
+                comment = scnr.str[start:]
+
+            new_token = Token(TokenType.COMMENT, comment)
+
+        if new_token == None:
+            operators = [';','{', '}', '(', ')', ',']
+            for op in operators:
+                if scnr.str.startswith (op, scnr.pos):
+                    scnr.pos += len(op)
+                    new_token = Token(TokenType.OPERATOR, op)
+                    break
+
+        if new_token == None:
+            keywords = ['if', 'else', 'do', 'while', 'for']
+            for kwd in keywords:
+                if scnr.str.startswith (kwd, scnr.pos):
+                    scnr.pos += len(kwd)
+                    new_token = Token(TokenType.KEYWORD, kwd)
+
+        if new_token == None:
+            start = scnr.pos
+            spaces = ['\n', ' ', '\t']
+            if scnr.str[scnr.pos] in spaces:
+                while scnr.str[scnr.pos] in spaces and scnr.pos < len(scnr.str):
+                    scnr.pos += 1
+                new_token = Token(TokenType.SPACE, scnr.str[start:scnr.pos])
+
+        if new_token == None:
+            start = scnr.pos
+            while scnr.str[scnr.pos] not in operators and scnr.pos < len(scnr.str):
+                scnr.pos += 1
+
+            new_token = Token(TokenType.OTHER, scnr.str[start:scnr.pos])
+
+        # For all non-comment tokens, append the spacing to its value. We do this
+        # to preserve formatting in the generated code. When matching token values
+        # we strip spaces.
+        if new_token != None and new_token.type != TokenType.COMMENT:
+            space_start = scnr.pos
+            spaces = ['\n', ' ', '\t']
+            while scnr.str[scnr.pos] in spaces and scnr.pos < len(scnr.str):
+                scnr.pos += 1
+            new_token.value += scnr.str[space_start:scnr.pos]
+
+        return new_token
+
+    def token_match_error (token, token_type, token_value=None):
+        if token.type != token_type:
+            if token_value == None:
+                print (f"error: Expected token type {token_type.name}, got '{token.value}' of type {token.type.name}.")
+            else:
+                print (f"error: Expected token '{token_value}' of type {token_type.name}, got '{token.value}' of type {token.type.name}.")
+
+        elif token_value != None and token.value != token_value:
+            print (f"error: Expected '{token_value}', got '{token.value}'.")
+
+    def token_match (token, token_type, token_value=None):
+        match = False
+        if token.type == token_type:
+            if token_value == None or token.value.strip() == token_value:
+                match = True
+
+        return match
+
+    def token_expect (scnr, token_type, token_value=None):
+        token = token_next (scnr)
+        if not token_match (token, token_type, token_value):
+            token_match_error (token, token_type, token_value)
+
+    ## START OF IMPLEMENTATION ##
+
+    if files == None:
+        files = []
+        source_code_dir = os.path.abspath(path_resolve('.'))
+        for dirpath, dirnames, filenames in os.walk(source_code_dir):
+            for fname in filenames:
+                abs_path = path_cat(dirpath, fname)
+                if abs_path.endswith(".c") or abs_path.endswith(".h"):
+                    files.append(abs_path)
+
+
+    result = ''
+    curr_macro_name = ''
+    curr_macro = ''
+    macros = {}
+    for abs_path in files:
+        f = open(abs_path)
+        file_data = f.read()
+        f.close()
+
+        auto_macro_start = file_data.find ('@AUTO_MACRO_PREFIX')
+        while auto_macro_start != -1:
+            prefix = ''
+            stub = ''
+            macro_dict = {}
+
+            scnr = Scanner(file_data, auto_macro_start)
+
+            token = token_next(scnr)
+            token_expect(scnr, TokenType.OPERATOR, '(')
+            prefix = token_next(scnr).value
+            token_expect(scnr, TokenType.OPERATOR, ')')
+
+            token = token_next(scnr)
+            while not token_match(token, TokenType.OPERATOR, '{'):
+                stub += token.value
+                token = token_next(scnr)
+            stub += token.value
+
+            brace_count = 1
+            while brace_count > 0:
+                token = token_next (scnr)
+
+                if token_match(token, TokenType.OPERATOR, '{'):
+                    brace_count += 1
+                elif token_match(token, TokenType.OPERATOR, '}'):
+                    brace_count -= 1
+
+                if token_match (token, TokenType.COMMENT):
+                    marker_start = token.value.find ('@AUTO_MACRO(BEGIN)')
+                    if marker_start != -1:
+                        macro_name = token.value[:marker_start].strip()
+                        curr_macro_name = prefix + macro_name.upper().replace(' ', '_')
+
+                    else:
+                        marker_end = token.value.find ('@AUTO_MACRO(END)')
+                        if marker_end != -1:
+                            macro_dict[curr_macro_name] = curr_macro
+                            stub += curr_macro_name
+                            curr_macro_name = ''
+                            curr_macro = ''
+
+                else:
+                    # TODO: Keep comments in macros, we need to avoid adding
+                    # '\' at line end. Right now we ignore them.
+                    if curr_macro_name != '':
+                        added_continuation = token.value.replace('\n', ' \\\n')
+                        curr_macro += added_continuation
+
+                    elif not (stub.strip(" ").endswith('\n') and token.value.strip() == ''):
+                        # Add line to stub, except if it would create consecutive empty lines.
+                        stub += token.value
+
+                #print (f'({token.type.name}, "{token.value}")')
+
+            if prefix not in macros.keys():
+                macros[prefix] = ((stub, macro_dict))
+            else:
+                print (f"error: There is already an automacro with prefix '{prefix}'")
+
+            auto_macro_start = file_data.find ('@AUTO_MACRO_PREFIX', scnr.pos)
+
+    for prefix, (stub, macro_dict) in macros.items():
+        result += f"/* Stub for '{prefix}'\n" + stub.strip() + '\n*/\n\n'
+        for macro_name, definition in macro_dict.items():
+            result += f'#define {macro_name}'
+            result += definition + '\n'
+
+
+    out_f = open (out_fname, 'w')
+    out_f.write (result)
+    out_f.close()

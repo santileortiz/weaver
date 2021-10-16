@@ -6,6 +6,7 @@
 #include "binary_tree.c"
 #include "test_logger.c"
 #include "cli_parser.c"
+#include "automacros.h"
 
 #include "block.h"
 #include "note_runtime.h"
@@ -14,6 +15,33 @@
 #include "note_runtime.c"
 
 #include "testing.c"
+
+#define push_test_note(rt,source) push_test_note_full(rt,source,strlen(source),(char*)__func__,strlen(__func__),NULL)
+struct note_t* push_test_note_full (struct note_runtime_t *rt, char *source, size_t source_len, char *note_id, size_t note_id_len, char *path)
+{
+    LINKED_LIST_PUSH_NEW (&rt->pool, struct note_t, rt->notes, new_note);
+    new_note->id = pom_strndup (&rt->pool, note_id, note_id_len);
+    id_to_note_tree_insert (&rt->notes_by_id, new_note->id, new_note);
+
+    str_pool (&rt->pool, &new_note->error_msg);
+    if (path != NULL) str_set_pooled (&rt->pool, &new_note->path, path);
+
+    str_pool (&rt->pool, &new_note->psplx);
+    strn_set (&new_note->psplx, source, source_len);
+
+    str_pool (&rt->pool, &new_note->title);
+    if (!parse_note_title (path, str_data(&new_note->psplx), &new_note->title, &new_note->error_msg)) {
+        new_note->error = true;
+        printf ("%s", str_data(&new_note->error_msg));
+
+    } else {
+        title_to_note_tree_insert (&rt->notes_by_title, &new_note->title, new_note);
+    }
+
+    str_pool (&rt->pool, &new_note->html);
+
+    return new_note;
+}
 
 //////////////////////////////////////
 // Platform functions for testing
@@ -34,29 +62,10 @@ ITERATE_DIR_CB(test_dir_iter)
             }
             p++; // advance '/'
 
-            LINKED_LIST_PUSH_NEW (&rt->pool, struct note_t, rt->notes, new_note);
-            new_note->id = pom_strndup (&rt->pool, p, basename_len - 1/*.*/ - strlen(PSPLX_EXTENSION));
-            id_to_note_tree_insert (&rt->notes_by_id, new_note->id, new_note);
-
-            str_pool (&rt->pool, &new_note->error_msg);
-            str_set_pooled (&rt->pool, &new_note->path, fname);
-
             size_t source_len;
             char *source = full_file_read (NULL, fname, &source_len);
-            str_pool (&rt->pool, &new_note->psplx);
-            strn_set (&new_note->psplx, source, source_len);
+            push_test_note_full (rt, source, source_len, p, basename_len - 1/*.*/ - strlen(PSPLX_EXTENSION), fname);
             free (source);
-
-            str_pool (&rt->pool, &new_note->title);
-            if (!parse_note_title (fname, str_data(&new_note->psplx), &new_note->title, &new_note->error_msg)) {
-                new_note->error = true;
-                printf ("%s", str_data(&new_note->error_msg));
-
-            } else {
-                title_to_note_tree_insert (&rt->notes_by_title, &new_note->title, new_note);
-            }
-
-            str_pool (&rt->pool, &new_note->html);
         }
     }
 }
@@ -70,6 +79,10 @@ void rt_init_from_dir (struct note_runtime_t *rt, char *path)
 }
 //
 //////////////////////////////////////
+
+void single_hash_test (struct note_runtime_t *rt)
+{
+}
 
 void set_expected_html_path (string_t *str, char *note_id)
 {
@@ -96,7 +109,40 @@ int main(int argc, char** argv)
     bool no_output = get_cli_bool_opt ("--none", argv, argc);
     t->show_all_children = get_cli_bool_opt ("--full", argv, argc);
 
-    rt_process_notes (rt, NULL);
+    bool crash_fail = true;
+
+    test_push (t, "Process all notes");
+    CRASH_TEST_AND_RUN (crash_fail, t->error,
+        rt_process_notes (rt, NULL);
+    );
+    test_pop (t, crash_fail);
+
+
+
+    char *test_id = "single_hash_test()";
+    test_push (t, "%s - [NEGATIVE]", test_id);
+    NEW_SHARED_VARIABLE_NAMED (bool, subprocess_success, true, "NEGATIVE_TEST_subprocess_success");
+    CRASH_TEST(crash_fail, t->error,
+        char *source =
+            "# Single Hash Test\n"
+            "\n"
+            "A note can't have single hash titles besides its title\n"
+            "\n"
+            "# This should fail (but not crash)\n";
+        struct note_t *test_note = push_test_note_full (rt, source, strlen(source), test_id, strlen(test_id), test_id);
+        rt_process_note (&rt->pool, test_note);
+
+        if (test_note->error) {
+            subprocess_success = false;
+            str_set (&__subprocess_output, str_data(&test_note->error_msg));
+        }
+    );
+
+    UNLINK_SHARED_VARIABLE_NAMED ("NEGATIVE_TEST_subprocess_success");
+
+    test_pop (t, !crash_fail && subprocess_success);
+
+
 
     if (note_id == NULL) {
         LINKED_LIST_FOR (struct note_t*, note, rt->notes) {

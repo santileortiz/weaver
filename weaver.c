@@ -6,6 +6,7 @@
 #include "binary_tree.c"
 #include "test_logger.c"
 #include "cli_parser.c"
+#include "automacros.h"
 
 #include "block.h"
 #include "note_runtime.h"

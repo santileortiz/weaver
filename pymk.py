@@ -210,6 +210,8 @@ def common_build(c_sources, out_fname, use_js):
     else:
         C_FLAGS += " -DNO_JS"
 
+    generate_automacros ('automacros.h')
+
     return ex (f'gcc {C_FLAGS} -o {out_fname} {c_sources} -lm -lrt')
 
 def weaver_build (use_js):
