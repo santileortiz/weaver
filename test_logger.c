@@ -13,6 +13,7 @@
 #include <sys/mman.h>
 
 struct test_t {
+    string_t success_string;
     string_t output;
     string_t error;
     string_t children;
@@ -74,6 +75,7 @@ void test_push (struct test_ctx_t *tc, char *fmt, ...)
     struct test_t *test;
     if (tc->test_fl == NULL) {
         LINKED_LIST_PUSH_NEW (&tc->pool, struct test_t, tc->test_stack, new_test);
+        str_set_pooled (&tc->pool, &new_test->success_string, "OK");
         str_set_pooled (&tc->pool, &new_test->error, "");
         str_set_pooled (&tc->pool, &new_test->output, "");
         str_set_pooled (&tc->pool, &new_test->children, "");
@@ -147,8 +149,18 @@ void test_pop (struct test_ctx_t *tc, bool success)
     }
 
     if (success) {
-        str_cat_printf (&curr_test->output, "%s\n",
-                        OPT_COLOR(!tc->disable_colors, ECMA_GREEN, "OK"));
+        if (!tc->disable_colors) {
+            str_cat_c (&curr_test->output, ESC_COLOR_BEGIN(1, 32 /*GREEN*/));
+        }
+
+        str_cat (&curr_test->output, &curr_test->success_string);
+
+        if (!tc->disable_colors) {
+            str_cat_c (&curr_test->output, ESC_COLOR_END);
+        }
+
+        str_cat_c (&curr_test->output, "\n");
+
     } else {
         str_cat_printf (&curr_test->output, "%s\n",
                         OPT_COLOR(!tc->disable_colors, ECMA_RED, "FAILED"));

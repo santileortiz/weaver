@@ -80,8 +80,84 @@ void rt_init_from_dir (struct note_runtime_t *rt, char *path)
 //
 //////////////////////////////////////
 
-void single_hash_test (struct note_runtime_t *rt)
+void negative_programmatic_test (struct test_ctx_t *t, struct note_runtime_t *rt, char *test_id, char *source)
 {
+    bool no_crash = false;
+
+    // TODO: Abstract this out in a more generic and usable way into
+    // test_logger.c
+    //
+    // Negative testing is somewhat different from normal testing. When this is
+    // abstracted out, take into account the following to provide a user
+    // firiendly experience:
+    //
+    //   - In the common case, negative testing makes a limited subset of
+    //     assertions. Normally we will only test that we successfuly produced
+    //     an error. In a more sophisticated case where we have error codes, we
+    //     may want to compare and check we got the correct error. Or, if there
+    //     are different levels of failures info(?)/warning/error, we just want
+    //     to check we got the correct level.
+    //
+    //   - It's always confusing how to pass the result to the API. Is the
+    //     negation of the result boolean expected to be done by the user, or is
+    //     it done internally?. A good fix for this is to use mnemonic naming of
+    //     the API, for example, I think the variable name
+    //     "errored_successfully" clearly conveys the correct semantics.
+    //
+    //   - The current test suite receives as parameter a test ID (as printed in the
+    //     execution output), then it runs this single test. Because negative
+    //     tests may produce a different output in such case, it's good to
+    //     somehow show in the test execution output that these are negative
+    //     tests. I settled for useing the "-OK" string as success string.
+    //
+    //   - We most likely want to run negative tests in a separate process,
+    //     mainly because:
+    //
+    //       - User most likely doesn't want negative tests to have sideffects
+    //         in the execution of the rest of the test suite.
+    //
+    //       - Negative tests will probably crash more often than normal tests (?).
+    //
+    //     This has a copule of consequences:
+    //
+    //       - We need to use a shared variable to report the result of the
+    //         test. This is different than the success variable passed to
+    //         CRASH_TEST macro, whose only purpose is to report if the
+    //         subprocess crashed or exited successfully.
+    //
+    //       - To unconditionally report a message to the parent process I
+    //         implemented a mechanism where writing to a string in the child
+    //         process will pass the data to the parent through a temporary file
+    //         (like we do for stdout and stderr).
+    //
+    test_push (t, "%s", test_id);
+    str_set (&t->test_stack->success_string, "-OK");
+    NEW_SHARED_VARIABLE_NAMED (bool, errored_successfuly, false, "NEGATIVE_TEST_subprocess_success");
+    CRASH_TEST(no_crash, t->error,
+        struct note_t *test_note = push_test_note_full (rt, source, strlen(source), test_id, strlen(test_id), test_id);
+        rt_process_note (&rt->pool, test_note);
+
+        if (test_note->error) {
+            *errored_successfuly = true;
+            str_set (&__subprocess_output, str_data(&test_note->error_msg));
+        }
+    );
+
+    UNLINK_SHARED_VARIABLE_NAMED ("NEGATIVE_TEST_subprocess_success");
+
+    test_pop (t, no_crash && *errored_successfuly);
+}
+
+void negative_tests (struct test_ctx_t *t, struct note_runtime_t *rt)
+{
+    char *test_id = "single_hash_test()";
+    char *source =
+        "# Single Hash Test\n"
+        "\n"
+        "A note can't have single hash titles besides its title\n"
+        "\n"
+        "# This should fail (but not crash)\n";
+    negative_programmatic_test (t, rt, test_id, source);
 }
 
 void set_expected_html_path (string_t *str, char *note_id)
@@ -109,40 +185,16 @@ int main(int argc, char** argv)
     bool no_output = get_cli_bool_opt ("--none", argv, argc);
     t->show_all_children = get_cli_bool_opt ("--full", argv, argc);
 
-    bool crash_fail = true;
-
+    bool notes_processed = true;
     test_push (t, "Process all notes");
-    CRASH_TEST_AND_RUN (crash_fail, t->error,
+    CRASH_TEST_AND_RUN (notes_processed, t->error,
         rt_process_notes (rt, NULL);
     );
-    test_pop (t, crash_fail);
+    test_pop (t, notes_processed);
 
-
-
-    char *test_id = "single_hash_test()";
-    test_push (t, "%s - [NEGATIVE]", test_id);
-    NEW_SHARED_VARIABLE_NAMED (bool, subprocess_success, true, "NEGATIVE_TEST_subprocess_success");
-    CRASH_TEST(crash_fail, t->error,
-        char *source =
-            "# Single Hash Test\n"
-            "\n"
-            "A note can't have single hash titles besides its title\n"
-            "\n"
-            "# This should fail (but not crash)\n";
-        struct note_t *test_note = push_test_note_full (rt, source, strlen(source), test_id, strlen(test_id), test_id);
-        rt_process_note (&rt->pool, test_note);
-
-        if (test_note->error) {
-            subprocess_success = false;
-            str_set (&__subprocess_output, str_data(&test_note->error_msg));
-        }
-    );
-
-    UNLINK_SHARED_VARIABLE_NAMED ("NEGATIVE_TEST_subprocess_success");
-
-    test_pop (t, !crash_fail && subprocess_success);
-
-
+    if (notes_processed) {
+        negative_tests (t, rt);
+    }
 
     if (note_id == NULL) {
         LINKED_LIST_FOR (struct note_t*, note, rt->notes) {
