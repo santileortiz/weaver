@@ -1,0 +1,3 @@
+# Broken Note Link
+
+Weaver should warn whenever a tag points to a \note{Non-existent Note}

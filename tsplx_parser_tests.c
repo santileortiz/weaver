@@ -83,14 +83,14 @@ int main(int argc, char** argv)
 
     string_t error_msg = {0};
 
-    struct test_ctx_t _t = {0};
-    struct test_ctx_t *t = &_t;
+    STACK_ALLOCATE (struct test_ctx_t , t);
 
-    char *test_name = get_cli_no_opt_arg (argv, argc);
-    bool expanded_out = get_cli_bool_opt ("--expanded", argv, argc);
-    bool tokens_out = get_cli_bool_opt ("--tokens", argv, argc);
-    bool no_output = get_cli_bool_opt ("--none", argv, argc);
-    t->show_all_children = get_cli_bool_opt ("--full", argv, argc);
+    STACK_ALLOCATE (struct cli_ctx_t, cli_ctx);
+    bool expanded_out = get_cli_bool_opt_ctx (cli_ctx, "--expanded", argv, argc);
+    bool tokens_out = get_cli_bool_opt_ctx (cli_ctx, "--tokens", argv, argc);
+    bool no_output = get_cli_bool_opt_ctx (cli_ctx, "--none", argv, argc);
+    t->show_all_children = get_cli_bool_opt_ctx (cli_ctx, "--full", argv, argc);
+    char *test_name = get_cli_no_opt_arg (cli_ctx, argv, argc);
 
     if (test_name == NULL) {
         struct get_test_names_clsr_t clsr = {0};

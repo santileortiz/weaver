@@ -18,9 +18,7 @@
 
 struct note_t* push_test_note (struct note_runtime_t *rt, char *source, size_t source_len, char *note_id, size_t note_id_len, char *path)
 {
-    LINKED_LIST_PUSH_NEW (&rt->pool, struct note_t, rt->notes, new_note);
-    new_note->id = pom_strndup (&rt->pool, note_id, note_id_len);
-    id_to_note_tree_insert (&rt->notes_by_id, new_note->id, new_note);
+    struct note_t *new_note = rt_new_note (rt, note_id, note_id_len);
 
     str_pool (&rt->pool, &new_note->error_msg);
     if (path != NULL) str_set_pooled (&rt->pool, &new_note->path, path);
@@ -136,14 +134,16 @@ void negative_programmatic_test (struct test_ctx_t *t, struct note_runtime_t *rt
         struct note_t *test_note = push_test_note (rt, source, strlen(source), test_id, strlen(test_id), test_id);
         rt_process_note (&rt->pool, test_note);
 
-        if (test_note->error) {
+        if (test_note->error || str_len (&test_note->error_msg) > 0) {
             *errored_successfuly = true;
             str_set (&__subprocess_output, str_data(&test_note->error_msg));
         }
     );
 
     UNLINK_SHARED_VARIABLE_NAMED ("NEGATIVE_TEST_subprocess_success");
-
+    if (!(*errored_successfuly)) {
+        test_error_current (t, "Expected an error but note parsed successfully.");
+    }
     test_pop (t, no_crash && *errored_successfuly);
 }
 
@@ -156,6 +156,13 @@ void negative_tests (struct test_ctx_t *t, struct note_runtime_t *rt)
         "A note can't have single hash titles besides its title\n"
         "\n"
         "# This should fail (but not crash)\n";
+    negative_programmatic_test (t, rt, test_id, source);
+
+    test_id = "broken_note_link()";
+    source =
+        "# Broken Note Link\n"
+        "\n"
+        "Weaver should warn whenever a tag points to a \\note{Non-existent Note} \n";
     negative_programmatic_test (t, rt, test_id, source);
 }
 
@@ -170,19 +177,19 @@ int main(int argc, char** argv)
 
     string_t buff = {0};
 
-    struct test_ctx_t _t = {0};
-    struct test_ctx_t *t = &_t;
+    STACK_ALLOCATE (struct test_ctx_t , t);
 
     __g_note_runtime = ZERO_INIT (struct note_runtime_t);
     struct note_runtime_t *rt = &__g_note_runtime;
 
     rt_init_from_dir (rt, TESTS_DIR);
 
-    char *note_id = get_cli_no_opt_arg (argv, argc);
-    bool html_out = get_cli_bool_opt ("--html", argv, argc);
-    bool blocks_out = get_cli_bool_opt ("--blocks", argv, argc);
-    bool no_output = get_cli_bool_opt ("--none", argv, argc);
-    t->show_all_children = get_cli_bool_opt ("--full", argv, argc);
+    STACK_ALLOCATE (struct cli_ctx_t, cli_ctx);
+    bool html_out = get_cli_bool_opt_ctx (cli_ctx, "--html", argv, argc);
+    bool blocks_out = get_cli_bool_opt_ctx (cli_ctx, "--blocks", argv, argc);
+    bool no_output = get_cli_bool_opt_ctx (cli_ctx, "--none", argv, argc);
+    t->show_all_children = get_cli_bool_opt_ctx (cli_ctx, "--full", argv, argc);
+    char *note_id = get_cli_no_opt_arg (cli_ctx, argv, argc);
 
     bool notes_processed = true;
     test_push (t, "Process all notes");

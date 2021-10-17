@@ -183,7 +183,7 @@ def generate ():
     # TODO: The HTML generator should only process source notes that changed.
     # Currently it generates all notes, all the time.
     if success:
-        ex (f'./bin/weaver --generate-static {source_notes_dir} {path_cat(out_dir, notes_dir)}')
+        ex (f'./bin/weaver --generate-static --output-dir {path_cat(out_dir, notes_dir)}')
 
 
 ensure_dir ("bin")

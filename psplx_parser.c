@@ -1715,6 +1715,7 @@ char* markup_to_html (mem_pool_t *pool_out, char *path, char *markup, char *id, 
 
     struct note_t _note = {0};
     struct note_t *note = &_note;
+    note->id = id;
 
     struct psx_parser_ctx_t _ctx = {0};
     struct psx_parser_ctx_t *ctx = &_ctx;
@@ -1765,20 +1766,6 @@ char* markup_to_html (mem_pool_t *pool_out, char *path, char *markup, char *id, 
         }
     }
     // @AUTO_MACRO(END)
-
-
-    // Handle Errors          @AUTO_MACRO(BEGIN)
-    bool has_output = false;
-    if (error_msg != NULL && str_len(&note->error_msg) > 0) {
-        if (has_output) {
-            str_cat_printf (error_msg, "\n");
-        }
-
-        str_cat_printf (error_msg, "%s - " ECMA_DEFAULT("%s\n") "%s", str_data(&note->path), str_data(&note->title), str_data(&note->error_msg));
-        has_output = true;
-    }
-    // @AUTO_MACRO(END)
-
 
     mem_pool_destroy (&_pool_l);
 

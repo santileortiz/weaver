@@ -8,6 +8,7 @@ BINARY_TREE_NEW (title_to_note, string_t*, struct note_t*, strcmp(str_data(a),st
 
 struct note_runtime_t {
     mem_pool_t pool;
+    int notes_len;
     struct note_t *notes;
 
     int title_note_ids_len;
@@ -19,6 +20,7 @@ struct note_runtime_t {
     struct title_to_note_tree_t notes_by_title;
 } __g_note_runtime;
 
+struct note_t* rt_new_note (struct note_runtime_t *rt, char *id, size_t id_len);
 struct note_runtime_t* rt_get ();
 struct note_t* rt_get_note_by_title (string_t *title);
 struct note_t* rt_get_note_by_id (char *id);

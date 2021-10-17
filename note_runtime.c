@@ -20,6 +20,16 @@ void rt_destroy (struct note_runtime_t *rt)
     mem_pool_destroy (&rt->pool);
 }
 
+struct note_t* rt_new_note (struct note_runtime_t *rt, char *id, size_t id_len)
+{
+    LINKED_LIST_PUSH_NEW (&rt->pool, struct note_t, rt->notes, new_note);
+    new_note->id = pom_strndup (&rt->pool, id, id_len);
+    id_to_note_tree_insert (&rt->notes_by_id, new_note->id, new_note);
+    rt->notes_len++;
+
+    return new_note;
+}
+
 struct note_t* rt_get_note_by_title (string_t *title)
 {
     struct note_runtime_t *rt = rt_get ();
@@ -80,11 +90,10 @@ void rt_process_note (mem_pool_t *pool_out, struct note_t *note)
     }
 }
 
-void rt_process_notes (struct note_runtime_t *rt, string_t *error_msg)
+void rt_process_notes (struct note_runtime_t *rt, string_t *error_msg_out)
 {
     struct psx_parser_ctx_t _ctx = {0};
     struct psx_parser_ctx_t *ctx = &_ctx;
-    ctx->error_msg = error_msg;
 
     {
         LINKED_LIST_FOR (struct note_t*, curr_note, rt->notes) {
@@ -92,7 +101,7 @@ void rt_process_notes (struct note_runtime_t *rt, string_t *error_msg)
             struct note_t *note = curr_note;
             char *path = str_data(&curr_note->path);
             char *markup = str_data(&curr_note->psplx);
-            error_msg = &curr_note->error_msg;
+            string_t *error_msg = &curr_note->error_msg;
 
             PROCESS_NOTE_PARSE
         }
@@ -122,6 +131,7 @@ void rt_process_notes (struct note_runtime_t *rt, string_t *error_msg)
     }
 
     {
+        bool has_output = false;
         LINKED_LIST_FOR (struct note_t*, curr_note, rt->notes) {
             struct note_t *note = curr_note;
             ctx->id = curr_note->id;
@@ -137,7 +147,14 @@ void rt_process_notes (struct note_runtime_t *rt, string_t *error_msg)
 
             mem_pool_destroy (&_html_pool);
 
-            PROCESS_NOTE_HANDLE_ERRORS
+            if (error_msg_out != NULL && str_len(&note->error_msg) > 0) {
+                if (has_output) {
+                    str_cat_c (error_msg_out, "\n");
+                }
+                has_output = true;
+
+                str_cat_printf (error_msg_out, ECMA_CYAN("%s\n") "%s", str_data(&note->title), str_data(&note->error_msg));
+            }
         }
     }
 }

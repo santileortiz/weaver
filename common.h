@@ -2311,6 +2311,14 @@ void cont_buff_destroy (cont_buff_t *buff)
     buff->used = 0;
 }
 
+// Shorthand for a common pattern I use where I want a stack allocated struct
+// but I want to use a pointer. This avoid later having to replace . with ->
+// when copying and pasting code from the place with the stack allocation into a
+// function that receives a pointer to the struct.
+#define STACK_ALLOCATE(struct_type,ptr_name) \
+    struct_type _ ## ptr_name = {0}; \
+    struct_type * ptr_name = &_ ## ptr_name
+
 // Memory pool that grows as needed, and can be freed easily.
 #define MEM_POOL_DEFAULT_MIN_BIN_SIZE 1024u
 typedef struct {
@@ -3080,6 +3088,26 @@ bool path_exists (char *path)
     return retval;
 }
 
+bool path_isdir (char *path)
+{
+    if (path == NULL) return false;
+
+    bool retval = true;
+
+    struct stat st;
+    int status;
+    if ((status = stat(path, &st)) == -1) {
+        retval = false;
+    } else {
+        if (!S_ISDIR(st.st_mode)) {
+            retval = false;
+        }
+    }
+
+    return retval;
+}
+
+
 bool dir_exists (char *path)
 {
     if (path == NULL) return false;
@@ -3104,7 +3132,8 @@ bool dir_exists (char *path)
 }
 
 // NOTE: Returns false if there was an error creating the directory.
-bool ensure_dir_exists (char *path)
+#define ensure_dir_exists(path) path_ensure_dir(path)
+bool path_ensure_dir (char *path)
 {
     bool retval = true;
 

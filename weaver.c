@@ -18,53 +18,60 @@
 //////////////////////////////////////
 // Platform functions for testing
 
+void rt_init_push_file (struct note_runtime_t *rt, char *fname)
+{
+    size_t basename_len = 0;
+    char *p = fname + strlen (fname) - 1;
+    while (p != fname && *p != '/') {
+        basename_len++;
+        p--;
+    }
+    p++; // advance '/'
+
+    struct note_t *new_note = rt_new_note (rt, p, basename_len);
+
+    str_pool (&rt->pool, &new_note->error_msg);
+    str_set_pooled (&rt->pool, &new_note->path, fname);
+
+    size_t source_len;
+    char *source = full_file_read (NULL, fname, &source_len);
+    str_pool (&rt->pool, &new_note->psplx);
+    strn_set (&new_note->psplx, source, source_len);
+    free (source);
+
+    str_pool (&rt->pool, &new_note->title);
+    if (!parse_note_title (fname, str_data(&new_note->psplx), &new_note->title, &new_note->error_msg)) {
+        new_note->error = true;
+
+    } else {
+        title_to_note_tree_insert (&rt->notes_by_title, &new_note->title, new_note);
+    }
+
+    str_pool (&rt->pool, &new_note->html);
+}
+
 ITERATE_DIR_CB(test_dir_iter)
 {
     struct note_runtime_t *rt = (struct note_runtime_t*)data;
 
     if (!is_dir) {
-        size_t basename_len = 0;
-        char *p = fname + strlen (fname) - 1;
-        while (p != fname && *p != '/') {
-            basename_len++;
-            p--;
-        }
-        p++; // advance '/'
-
-        LINKED_LIST_PUSH_NEW (&rt->pool, struct note_t, rt->notes, new_note);
-        new_note->id = pom_strndup (&rt->pool, p, basename_len);
-        id_to_note_tree_insert (&rt->notes_by_id, new_note->id, new_note);
-
-        str_pool (&rt->pool, &new_note->error_msg);
-        str_set_pooled (&rt->pool, &new_note->path, fname);
-
-        size_t source_len;
-        char *source = full_file_read (NULL, fname, &source_len);
-        str_pool (&rt->pool, &new_note->psplx);
-        strn_set (&new_note->psplx, source, source_len);
-        free (source);
-
-        str_pool (&rt->pool, &new_note->title);
-        if (!parse_note_title (fname, str_data(&new_note->psplx), &new_note->title, &new_note->error_msg)) {
-            new_note->error = true;
-
-        } else {
-            title_to_note_tree_insert (&rt->notes_by_title, &new_note->title, new_note);
-        }
-
-        str_pool (&rt->pool, &new_note->html);
+        rt_init_push_file (rt, fname);
     }
 }
 
-void rt_init_from_dir (struct note_runtime_t *rt, char *path, struct splx_data_t *config)
+void rt_init_push_dir (struct note_runtime_t *rt, char *path)
+{
+    iterate_dir (path, test_dir_iter, rt);
+}
+
+void rt_init (struct note_runtime_t *rt, struct splx_data_t *config)
 {
     rt->notes_by_id.pool = &rt->pool;
     rt->notes_by_title.pool = &rt->pool;
 
     splx_get_value_cstr_arr (config, &rt->pool, CFG_TITLE_NOTES, &rt->title_note_ids, &rt->title_note_ids_len);
-
-    iterate_dir (path, test_dir_iter, rt);
 }
+
 //
 //////////////////////////////////////
 
@@ -76,6 +83,12 @@ struct config_t {
 
 #define APP_HOME "~/.weaver"
 
+enum cli_output_type_t {
+    CLI_OUTPUT_TYPE_STATIC_SITE,
+    CLI_OUTPUT_TYPE_HTML,
+    CLI_OUTPUT_TYPE_DEFAULT
+};
+
 int main(int argc, char** argv)
 {
     int retval = 0;
@@ -84,17 +97,18 @@ int main(int argc, char** argv)
     __g_note_runtime = ZERO_INIT (struct note_runtime_t);
     struct note_runtime_t *rt = &__g_note_runtime;
 
+    STACK_ALLOCATE (struct cli_ctx_t, cli_ctx);
+
     int has_js = 1;
 #ifdef NO_JS
     has_js = 0;
 #endif
-    if (get_cli_bool_opt ("--has-js", argv, argc)) return has_js;
+    if (get_cli_bool_opt_ctx (cli_ctx, "--has-js", argv, argc)) return has_js;
 
     // TODO: If configuration file doesn't exist, copy the default one from the
     // resources. The resources should be embedded in the app's binary.
 
-    struct config_t _cfg = {0};
-    struct config_t *cfg = &_cfg;
+    STACK_ALLOCATE (struct config_t, cfg);
 
     str_set_path (&cfg->source_path, APP_HOME "/notes/");
     str_set_path (&cfg->target_path, "~/.cache/weaver/www/notes/");
@@ -102,6 +116,7 @@ int main(int argc, char** argv)
 
     struct splx_data_t config = {0};
     tsplx_parse_name (&config, str_data(&cfg->config_path), "tsplx-test");
+    rt_init (rt, &config);
 
     // TODO: Read these paths from some configuration file and from command line
     // parameters.
@@ -115,33 +130,122 @@ int main(int argc, char** argv)
         printf (ECMA_RED("error: ") "target directory could not be created\n");
     }
 
+    string_t error_msg = {0};
+
+    enum cli_output_type_t output_type = CLI_OUTPUT_TYPE_DEFAULT;
+    if (get_cli_bool_opt_ctx (cli_ctx, "--generate-static", argv, argc)) {
+        output_type = CLI_OUTPUT_TYPE_STATIC_SITE;
+    }
+    if (get_cli_bool_opt_ctx (cli_ctx, "--html", argv, argc)) {
+        output_type = CLI_OUTPUT_TYPE_HTML;
+    }
+
+    char *output_dir = get_cli_arg_opt_ctx (cli_ctx, "--output-dir", argv, argc);
+
+    char *note_path = get_cli_no_opt_arg (cli_ctx, argv, argc);
+
+    // COLLECT INPUT DATA
+    //
+    // Final CLI UI should support this:
+    //
+    //  - File paths (no_opt_args from CLI)
+    //     - Directories are expanded recursively collecting any .psplx
+    //       extension files.
+    //
+    //     - File paths are assumed to contain PSPLX data even if they don't
+    //       match the extension (or have no extension).
+    //
+    //  - Single PSPLX note data. Can come from a single filename pased in CLI
+    //    or stdin.
+    //
+    // TODO: Right now we only support passing a single CLI parameter, either a
+    // file or a directory. Implement the other methods for passing the input
+    // files to be processed.
+    bool require_target_dir = false;
+
+    if (note_path != NULL) {
+        require_target_dir = true;
+
+        string_t single_note_path = {0};
+        str_set_path (&single_note_path, note_path);
+        char *curr_note_path = str_data(&single_note_path);
+
+        if (path_isdir (curr_note_path)) {
+            rt_init_push_dir (rt, curr_note_path);
+
+        } else if (path_exists (curr_note_path)) {
+            rt_init_push_file (rt, curr_note_path);
+        }
+
+    } else {
+        rt_init_push_dir (rt, str_data(&cfg->source_path));
+    }
+
+    // PROCESS DATA
+    if (rt->notes_len > 0) {
+        rt_process_notes (rt, &error_msg);
+    }
+
+    // GENERATE OUTPUT
     if (success) {
-        string_t error_msg = {0};
-
-        rt_init_from_dir (rt, str_data(&cfg->source_path), &config);
-
-        if (get_cli_bool_opt ("--generate-static", argv, argc)) {
+        if (output_type == CLI_OUTPUT_TYPE_STATIC_SITE) {
             bool has_output = false;
             if (!has_js) {
                 printf (ECMA_YELLOW("warning: ") "generating static site without javascript engine\n");
                 has_output = true;
             }
 
-            rt_process_notes (rt, &error_msg);
-            if (str_len(&error_msg) > 0) {
-                if (has_output) {
-                    printf ("\n");
+            if (!require_target_dir || output_dir != NULL) {
+                string_t html_path = {0};
+                if (output_dir != NULL) {
+                    str_set_path (&html_path, output_dir);
+                    path_ensure_dir (str_data(&html_path));
+                } else {
+                    str_set (&html_path, str_data(&cfg->target_path));
                 }
 
-                printf ("%s", str_data(&error_msg));
-                has_output = true;
+                size_t end = str_len (&html_path);
+                LINKED_LIST_FOR (struct note_t*, curr_note, rt->notes) {
+                    str_put_printf (&html_path, end, "%s", curr_note->id);
+                    full_file_write (str_data(&curr_note->html), str_len(&curr_note->html), str_data(&html_path));
+                }
+
+
+                if (str_len(&error_msg) > 0) {
+                    if (has_output) {
+                        printf ("\n");
+                    }
+
+                    printf ("%s", str_data(&error_msg));
+                    has_output = true;
+                }
+
+                str_free (&html_path);
+
+            } else {
+                // TODO: I thought this was useful to avoid rewriting the full
+                // static site with a version that contains some single note
+                // that was used for testing. I'm not sure anymore, seems a bit
+                // pointless too because we can just regerate everything as the
+                // sources didn't change.
+                printf (ECMA_RED("error: ") "refusing to generate static site. Using command line input but output directory is missing as parameter, use --output-dir\n");
             }
 
-            string_t html_path = str_new (str_data(&cfg->target_path));
-            size_t end = str_len (&cfg->target_path);
-            LINKED_LIST_FOR (struct note_t*, curr_note, rt->notes) {
-                str_put_printf (&html_path, end, "%s", curr_note->id);
-                full_file_write (str_data(&curr_note->html), str_len(&curr_note->html), str_data(&html_path));
+        } else if (output_type == CLI_OUTPUT_TYPE_HTML && rt->notes_len == 1) {
+            // Even though multi note processing should also work in the single
+            // note case, I want to have at least one code path where we use the
+            // base signle-file PSPLX to HTML implementation. To avoid rotting
+            // of this code and increase usage of it.
+            char *html = markup_to_html (NULL, str_data(&rt->notes->path), str_data(&rt->notes->psplx), str_data(&rt->notes->path), &error_msg);
+            if (html != NULL) {
+                printf ("%s", html);
+            }
+            free (html);
+
+            // TODO: Show same output as psplx tests.
+
+            if (str_len(&error_msg) > 0) {
+                printf ("%s", str_data(&error_msg));
             }
         }
 
