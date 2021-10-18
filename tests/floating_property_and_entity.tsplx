@@ -1,0 +1,8 @@
+// Top level "floating" property. In reality there are no floating properties,
+// it will be attached to the unnamed root node.
+author john .
+
+// Floating entity
+john a person ;
+  full-name "John Doe" ;
+  age 50 .

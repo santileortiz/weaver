@@ -229,7 +229,7 @@ int main(int argc, char** argv)
                 free (expected_html);
             }
 
-            parent_test_pop(t);
+            test_pop_parent(t);
         }
 
     } else {

@@ -31,7 +31,7 @@ void print_diff_str_to_expected_file (string_t *result, char *expected_path)
         full_file_write (str_data(result), str_len(result), tmp_fname);
 
         string_t cmd = {0};
-        printf (ECMA_MAGENTA("\nDIFF TO EXPECTED") "\n");
+        printf (ECMA_S_CYAN(0, "\nDIFF TO EXPECTED") "\n");
         str_set_printf (&cmd, "git diff --no-index %s %s", expected_path, tmp_fname);
         printf ("%s\n", str_data(&cmd));
         system (str_data(&cmd));

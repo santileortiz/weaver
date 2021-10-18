@@ -119,7 +119,7 @@ void test_push_c (struct test_ctx_t *tc, char *test_name)
 #define OPT_COLOR(runtime_condition,color_macro,string) \
     ((runtime_condition) ? color_macro(string) : string)
 
-void test_pop (struct test_ctx_t *tc, bool success)
+void _test_pop (struct test_ctx_t *tc, bool success)
 {
     if (tc->last_test != NULL) {
         if (tc->show_all_children || !tc->last_test_success) {
@@ -220,7 +220,7 @@ void test_error_c (struct test_ctx_t *t, char *error_msg)
 
 bool test_bool (struct test_ctx_t *t, bool result)
 {
-    test_pop (t, result);
+    _test_pop (t, result);
     return result;
 }
 
@@ -252,7 +252,7 @@ void string_test (struct test_ctx_t *t, char *test_name, char *result, char *exp
         str_cat_printf (t->error, "Failed string comparison got '%s', expected '%s'\n", result, expected);
         success = false;
     }
-    test_pop (t, success);
+    _test_pop (t, success);
 }
 
 // TODO: Remove...
@@ -264,15 +264,19 @@ void int_test (struct test_ctx_t *t, char *test_name, int result, int expected)
         str_cat_printf (t->error, "Failed int comparison got %d, expected %d\n", result, expected);
         success = false;
     }
-    test_pop (t, success);
+    _test_pop (t, success);
 }
 
-// This is like test_pop but determines fail/success based on the return status
-// of children. If any children test failed this fails, if all of them passed
-// then this passes.
-void parent_test_pop (struct test_ctx_t *tc)
+// Frontend of _test_pop(). Pops a test but fails if any child test also failed
+// if there were no children or all child tests passed then the fail/sucess of
+// the test being popped is determined by the passed _success_ parameter.
+//
+// When popping a test whose fail/success only depends on that of its children,
+// use the shorthand macro test_pop_parent().
+#define test_pop_parent(tc) test_pop(tc,true)
+void test_pop (struct test_ctx_t *tc, bool success)
 {
-    test_pop (tc, tc->test_stack->children_success);
+    _test_pop (tc, tc->test_stack->children_success && success);
 }
 
 #define CRASH_SAFE_TEST_SHARED_VARIABLE_NAME "TEST_CRASH_SAFE_success"
@@ -286,9 +290,11 @@ bool __crash_safe_wait_and_output (mem_pool_t *pool, bool *success,
     int child_status;
     wait (&child_status);
 
-    char *output_str = full_file_read (pool, output_fname, NULL);
-    if (*output_str != '\0') {
-        str_cat_c (result, output_str);
+    if (path_exists(output_fname)) {
+        char *output_str = full_file_read (pool, output_fname, NULL);
+        if (*output_str != '\0') {
+            str_cat_c (result, output_str);
+        }
     }
 
     if (!WIFEXITED(child_status)) {

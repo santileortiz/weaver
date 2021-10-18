@@ -1,0 +1,4 @@
+// Example of an object/entity that has attributes and a type
+john a person ;
+  full-name "John Doe" ;
+  age 50 .

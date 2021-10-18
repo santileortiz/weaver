@@ -1,4 +1,4 @@
-tsplx-test  property1 "value 1" ;
+tsplx-data property1 "value 1" ;
   property2 "item1" ,
     "item2" ,
     "item3" ;

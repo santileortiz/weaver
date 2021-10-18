@@ -780,7 +780,7 @@ int cstr_replace_char_buff (char *src, char target, char replacement, char *dst)
 
 void str_cat_debugstr (string_t *str, int curr_indent, int esc_color, char *c_str)
 {
-    if (c_str == NULL || *c_str == '\n') return;
+    if (c_str == NULL || *c_str == '\0') return;
 
     string_t result = {0};
     str_set_printf (&result, ESC_COLOR_BEGIN_STR(0, "%d") "%s" ESC_COLOR_END, esc_color, c_str);

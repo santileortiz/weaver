@@ -73,6 +73,7 @@ char* get_subtype_file (mem_pool_t *pool, char *name, char *subtype, size_t *fsi
 }
 
 #define TSPLX_EXPANDED "expanded"
+#define TSPLX_CANONICAL "canonical"
 
 int main(int argc, char** argv)
 {
@@ -87,6 +88,7 @@ int main(int argc, char** argv)
 
     STACK_ALLOCATE (struct cli_ctx_t, cli_ctx);
     bool expanded_out = get_cli_bool_opt_ctx (cli_ctx, "--expanded", argv, argc);
+    bool canonical_out = get_cli_bool_opt_ctx (cli_ctx, "--canonical", argv, argc);
     bool tokens_out = get_cli_bool_opt_ctx (cli_ctx, "--tokens", argv, argc);
     bool no_output = get_cli_bool_opt_ctx (cli_ctx, "--none", argv, argc);
     t->show_all_children = get_cli_bool_opt_ctx (cli_ctx, "--full", argv, argc);
@@ -106,30 +108,51 @@ int main(int argc, char** argv)
                 expected_expanded = full_file_read (NULL, str_data(&buff), NULL);
             }
 
-            if (expected_expanded == NULL) {
-                test_push (t, "%s " ECMA_YELLOW("(No expected)"), test_name->v);
+            set_expected_subtype_path (&buff, test_name->v, TSPLX_CANONICAL);
+            char *expected_canonical = NULL;
+            if (path_exists (str_data(&buff))) {
+                expected_canonical = full_file_read (NULL, str_data(&buff), NULL);
+            }
+
+            if (expected_expanded == NULL || expected_canonical == NULL) {
+                test_push (t, "%s " ECMA_YELLOW("(Missing expected)"), test_name->v);
             } else {
                 test_push (t, "%s", test_name->v);
             }
 
             char *tsplx = get_test_file (&pool, test_name->v, TSPLX_EXTENSION, NULL);
 
+            bool no_crash = true;
+            bool success = true;
             struct splx_data_t sd = {0};
-            bool success = tsplx_parse_str_name (&sd, tsplx, "tsplx-test", &error_msg);
-            test_push (t, "Parsing");
-            if (!test_bool (t, success && str_len(&error_msg) == 0)) {
-                test_error_c (t, str_data(&error_msg));
+            CRASH_TEST_AND_RUN (no_crash, t->error,
+                 success = tsplx_parse_str_name (&sd, tsplx, &error_msg);
+            );
+
+            if (no_crash) {
+                test_push (t, "Parsing");
+                if (!test_bool (t, success && str_len(&error_msg) == 0)) {
+                    test_error_c (t, str_data(&error_msg));
+                }
+
+                if (expected_expanded != NULL) {
+                    str_set (&buff, "");
+                    test_push (t, "Matches expected expanded");
+                    str_cat_splx_expanded (&buff, &sd, sd.root);
+                    test_str (t, str_data(&buff), expected_expanded);
+                    free (expected_expanded);
+                }
+
+                if (expected_canonical != NULL) {
+                    str_set (&buff, "");
+                    test_push (t, "Matches expected canonical");
+                    str_cat_splx_canonical (&buff, &sd, sd.root);
+                    test_str (t, str_data(&buff), expected_canonical);
+                    free (expected_canonical);
+                }
             }
 
-            if (expected_expanded != NULL) {
-                str_set (&buff, "");
-                test_push (t, "Matches expected expanded");
-                str_cat_splx_expanded (&buff, &sd, sd.root);
-                test_str (t, str_data(&buff), expected_expanded);
-                free (expected_expanded);
-            }
-
-            parent_test_pop(t);
+            test_pop(t, no_crash);
         }
 
     } else {
@@ -137,10 +160,13 @@ int main(int argc, char** argv)
 
         if (tsplx != NULL) {
             struct splx_data_t sd = {0};
-            tsplx_parse_str_name (&sd, tsplx, "tsplx-test", &error_msg);
+            tsplx_parse_str_name (&sd, tsplx, &error_msg);
 
             if (expanded_out) {
                 print_splx_expanded (&sd, sd.root);
+
+            } else if (canonical_out) {
+                print_splx_canonical (&sd, sd.root);
 
             } else if (tokens_out) {
                 print_tsplx_tokens (tsplx);
@@ -149,25 +175,39 @@ int main(int argc, char** argv)
                 // do nothing
 
             } else {
-                string_t tsplx_expanded = {0};
-                str_cat_splx_expanded (&tsplx_expanded, &sd, sd.root);
-
                 printf (ECMA_MAGENTA("TSPLX") "\n");
                 prnt_debug_string (tsplx);
                 printf ("\n");
 
-                printf (ECMA_MAGENTA("EXPANDED") "\n");
-                prnt_debug_string (str_data(&tsplx_expanded));
+                {
+                    string_t tsplx_formatted = {0};
+                    str_cat_splx_canonical (&tsplx_formatted, &sd, sd.root);
+                    printf (ECMA_MAGENTA("CANONICAL") "\n");
+                    prnt_debug_string (str_data(&tsplx_formatted));
+
+                    set_expected_subtype_path (&buff, test_name, TSPLX_CANONICAL);
+                    print_diff_str_to_expected_file (&tsplx_formatted, str_data (&buff));
+                    str_free (&tsplx_formatted);
+                }
+
+                printf ("\n");
+
+                {
+                    string_t tsplx_formatted = {0};
+                    str_cat_splx_expanded (&tsplx_formatted, &sd, sd.root);
+                    printf (ECMA_MAGENTA("EXPANDED") "\n");
+                    prnt_debug_string (str_data(&tsplx_formatted));
+
+                    set_expected_subtype_path (&buff, test_name, TSPLX_EXPANDED);
+                    print_diff_str_to_expected_file (&tsplx_formatted, str_data (&buff));
+                    str_free (&tsplx_formatted);
+                }
 
                 if (str_len(&error_msg) > 0) {
                     printf (ECMA_MAGENTA("\nERRORS") "\n");
                     printf ("%s", str_data (&error_msg));
                 }
 
-                set_expected_subtype_path (&buff, test_name, TSPLX_EXPANDED);
-                print_diff_str_to_expected_file (&tsplx_expanded, str_data (&buff));
-
-                str_free (&tsplx_expanded);
             }
 
         } else {
