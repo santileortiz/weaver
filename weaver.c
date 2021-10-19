@@ -115,7 +115,7 @@ int main(int argc, char** argv)
     str_set_path (&cfg->config_path, APP_HOME "/config.tsplx");
 
     struct splx_data_t config = {0};
-    tsplx_parse_name (&config, str_data(&cfg->config_path), "tsplx-test");
+    tsplx_parse_name (&config, str_data(&cfg->config_path));
     rt_init (rt, &config);
 
     // TODO: Read these paths from some configuration file and from command line
@@ -203,6 +203,7 @@ int main(int argc, char** argv)
                 } else {
                     str_set (&html_path, str_data(&cfg->target_path));
                 }
+                str_cat_path (&html_path, ""); // Ensure path ends in '/'
 
                 size_t end = str_len (&html_path);
                 LINKED_LIST_FOR (struct note_t*, curr_note, rt->notes) {
