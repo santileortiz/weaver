@@ -389,7 +389,7 @@ void str_cat_splx_canonical_full (string_t *str, struct splx_data_t *sd, struct 
                     is_first_value = false;
 
                     if (curr_node->next != NULL) {
-                        str_cat_c (str, " ,\n");
+                        str_cat_c (str, " ;\n");
                     }
 
                     str_free (&buff);
@@ -541,6 +541,7 @@ bool tsplx_parse_str_name (struct splx_data_t *sd, char *str, string_t *error_ms
     }
 
     struct splx_node_t *curr_object = sd->root;
+    struct splx_node_t *curr_value = NULL;
     while (!tps->is_eof && !tps->error) {
         tps_next (tps);
         if (tps_match(tps, TSPLX_TOKEN_TYPE_IDENTIFIER, NULL) || tps_match(tps, TSPLX_TOKEN_TYPE_STRING, NULL) || tps_match(tps, TSPLX_TOKEN_TYPE_NUMBER, NULL)) {
@@ -571,8 +572,28 @@ bool tsplx_parse_str_name (struct splx_data_t *sd, char *str, string_t *error_ms
 
             triple_idx++;
 
-        } else if (tps_match(tps, TSPLX_TOKEN_TYPE_OPERATOR, ".") || tps_match(tps, TSPLX_TOKEN_TYPE_OPERATOR, ";")) {
-            if (triple_idx == 2) {
+        } else if (tps_match(tps, TSPLX_TOKEN_TYPE_OPERATOR, ",") || tps_match(tps, TSPLX_TOKEN_TYPE_OPERATOR, ".") || tps_match(tps, TSPLX_TOKEN_TYPE_OPERATOR, ";")) {
+            if (triple_idx == 1) {
+              if (curr_value != NULL) {
+                struct splx_node_t *subject_node = cstr_to_splx_node_map_get (&sd->nodes, str_data(&triple[0].str));
+                if (subject_node == NULL) {
+                  subject_node = splx_node_new (sd);
+                  splx_node_cpy (subject_node, &triple[0]);
+                  cstr_to_splx_node_map_tree_insert (&sd->nodes, str_data(&subject_node->str), subject_node);
+                }
+
+                curr_value->next = subject_node;
+                curr_value = subject_node;
+
+                triple_idx = 0;
+
+              } else {
+                // There is no currrent value to link to the value that was just
+                // read. Should add a floating string to the current object.
+                triple_idx = 0;
+              }
+
+            } else if (triple_idx == 2) {
                 if (triple[0].type == SPLX_NODE_TYPE_OBJECT) {
                     // Completed a triple with respect to the current object.
 
@@ -595,6 +616,8 @@ bool tsplx_parse_str_name (struct splx_data_t *sd, char *str, string_t *error_ms
                     }
 
                     cstr_to_splx_node_map_tree_insert (&curr_object->attributes, predicate_str, subject_node);
+
+                    curr_value = subject_node;
 
                     triple_idx = 0;
 
@@ -628,6 +651,7 @@ bool tsplx_parse_str_name (struct splx_data_t *sd, char *str, string_t *error_ms
                 cstr_to_splx_node_map_tree_insert (&new_node->attributes, predicate_str, subject_node);
                 LINKED_LIST_APPEND (curr_object->floating_values, new_node);
                 curr_object = new_node;
+                curr_value = subject_node;
 
                 triple_idx = 0;
             }

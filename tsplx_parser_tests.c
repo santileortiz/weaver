@@ -135,20 +135,43 @@ int main(int argc, char** argv)
                     test_error_c (t, str_data(&error_msg));
                 }
 
+                if (expected_canonical != NULL) {
+                    str_set (&buff, "");
+                    test_push (t, "Canonical output matches");
+                    str_cat_splx_canonical (&buff, &sd, sd.root);
+                    test_str (t, str_data(&buff), expected_canonical);
+
+                    string_t crash_error_msg = {0};
+                    struct splx_data_t tmp = {0};
+                    CRASH_TEST_AND_RUN (no_crash, &crash_error_msg,
+                         success = tsplx_parse_str_name (&tmp, expected_canonical, &error_msg);
+                    );
+                    test_push (t, "Canonical parsing");
+                    if (!test_bool (t, no_crash && success && str_len(&error_msg) == 0)) {
+                        if (no_crash) {
+                            test_error_c (t, str_data(&error_msg));
+                        } else {
+                            test_error_c (t, str_data(&crash_error_msg));
+                            success = false;
+                        }
+                    }
+
+                    if (success) {
+                        str_set (&buff, "");
+                        test_push (t, "Canonical idempotence");
+                        str_cat_splx_canonical (&buff, &tmp, tmp.root);
+                        test_str (t, str_data(&buff), expected_canonical);
+                    }
+
+                    free (expected_canonical);
+                }
+
                 if (expected_expanded != NULL) {
                     str_set (&buff, "");
                     test_push (t, "Matches expected expanded");
                     str_cat_splx_expanded (&buff, &sd, sd.root);
                     test_str (t, str_data(&buff), expected_expanded);
                     free (expected_expanded);
-                }
-
-                if (expected_canonical != NULL) {
-                    str_set (&buff, "");
-                    test_push (t, "Matches expected canonical");
-                    str_cat_splx_canonical (&buff, &sd, sd.root);
-                    test_str (t, str_data(&buff), expected_canonical);
-                    free (expected_canonical);
                 }
             }
 
