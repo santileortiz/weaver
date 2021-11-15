@@ -1,0 +1,19 @@
+john a person ;
+  full-name "John Doe" ;
+  age 49 ; {
+    [
+      nemo a animal ;
+        kind clown-fish ;
+        age 1 ;
+    ]
+  }
+
+jane a person ;
+  full-name "Jane Doe" ;
+  age 51 ; {
+    [
+      dori a animal ;
+        kind tang-fish ;
+        age 2 ;
+    ]
+  }

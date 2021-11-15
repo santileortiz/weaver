@@ -1,8 +1,12 @@
-// Top level "floating" property. In reality there are no floating properties,
-// it will be attached to the unnamed root node.
+// TODO: Implement this
+// Root level values
+//"item1", "item2" .
+
+// "Floating" property of the unnamed root node. Will be a triple with the root
+// node as object.
 author john .
 
-// Floating entity
+// Root level instance. Will be a floating value of the root node.
 john a person ;
   full-name "John Doe" ;
   age 50 .
