@@ -2,19 +2,15 @@ john a person ;
   age 49 ;
   full-name "John Doe" ;
   {
-    [
-      a animal ;
+    _ a animal ;
       age 1 ;
       kind clown-fish ;
-    ]
   }
 jane a person ;
   age 51 ;
   full-name "Jane Doe" ;
   {
-    [
-      a animal ;
+    _ a animal ;
       age 2 ;
       kind tang-fish ;
-    ]
   }

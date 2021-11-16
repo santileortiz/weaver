@@ -400,7 +400,7 @@ void str_cat_splx_canonical_full (string_t *str, struct splx_data_t *sd, struct 
         str_cat_indented_c (str, str_data(&node->str), curr_indent);
 
     } else if (sd->root != node) {
-        str_cat_indented_c (str, "[\n", curr_indent);
+        str_cat_indented_c (str, "_", curr_indent);
         curr_indent += SPLX_STR_INDENT;
     }
 
@@ -408,13 +408,15 @@ void str_cat_splx_canonical_full (string_t *str, struct splx_data_t *sd, struct 
         int attr_cnt = 0;
         bool is_first_predicate = true;
         BINARY_TREE_FOR (cstr_to_splx_node_map, &node->attributes, curr_attribute) {
-            if (!splx_node_has_name (node)) {
-                str_cat_indented_c (str, curr_attribute->key, curr_indent);
-            } else {
-                if (is_first_predicate) {
+            if (is_first_predicate) {
+                if (sd->root != node) {
                     str_cat_c (str, " ");
-                    str_cat_c (str, curr_attribute->key);
+                }
+                str_cat_c (str, curr_attribute->key);
 
+            } else {
+                if (!splx_node_has_name (node)) {
+                    str_cat_indented_c (str, curr_attribute->key, curr_indent);
                 } else {
                     str_cat_indented_c (str, curr_attribute->key, curr_indent+SPLX_STR_INDENT);
                 }
@@ -477,10 +479,6 @@ void str_cat_splx_canonical_full (string_t *str, struct splx_data_t *sd, struct 
 
     if (sd->root != node && node->floating_values != NULL) {
         str_cat_indented_c (str, "}\n", curr_indent + SPLX_STR_INDENT);
-    }
-
-    if (!splx_node_has_name (node) && sd->root != node) {
-        str_cat_indented_c (str, "]\n", curr_indent - SPLX_STR_INDENT);
     }
 
     if (str_last(str) != '\n'){
