@@ -780,7 +780,12 @@ int cstr_replace_char_buff (char *src, char target, char replacement, char *dst)
 
 void str_cat_debugstr (string_t *str, int curr_indent, int esc_color, char *c_str)
 {
-    if (c_str == NULL || *c_str == '\0') return;
+    if (c_str == NULL) return;
+
+    if (*c_str == '\0') {
+        str_cat_c (str, ECMA_GRAY(75, "empty") "\n");
+        return;
+    }
 
     string_t result = {0};
     str_set_printf (&result, ESC_COLOR_BEGIN_STR(0, "%d") "%s" ESC_COLOR_END, esc_color, c_str);
@@ -796,7 +801,7 @@ void str_cat_debugstr (string_t *str, int curr_indent, int esc_color, char *c_st
     str_replace (&result, "\n", str_data(&buff), NULL);
 
     if (c_str[strlen(c_str) - 1] != '\n') {
-        str_cat_c (&result,ECMA_GRAY(75, "∎") "\n");
+        str_cat_c (&result, ECMA_GRAY(75, "∎") "\n");
     }
 
     str_cat_indented_printf (str, curr_indent, "%s", str_data(&result));

@@ -89,6 +89,7 @@ int main(int argc, char** argv)
     STACK_ALLOCATE (struct cli_ctx_t, cli_ctx);
     bool expanded_out = get_cli_bool_opt_ctx (cli_ctx, "--expanded", argv, argc);
     bool canonical_out = get_cli_bool_opt_ctx (cli_ctx, "--canonical", argv, argc);
+    bool dump_out = get_cli_bool_opt_ctx (cli_ctx, "--dump", argv, argc);
     bool tokens_out = get_cli_bool_opt_ctx (cli_ctx, "--tokens", argv, argc);
     bool no_output = get_cli_bool_opt_ctx (cli_ctx, "--none", argv, argc);
     t->show_all_children = get_cli_bool_opt_ctx (cli_ctx, "--full", argv, argc);
@@ -190,6 +191,9 @@ int main(int argc, char** argv)
 
             } else if (canonical_out) {
                 print_splx_canonical (&sd, sd.root);
+
+            } else if (dump_out) {
+                print_splx_dump (&sd, sd.root);
 
             } else if (tokens_out) {
                 print_tsplx_tokens (tsplx);

@@ -2,9 +2,9 @@ john a person ;
   full-name "John Doe" ;
   age 49 ; {
     [
-      a animal ;
-      kind clown-fish ;
-      age 1 ;
+      _ a animal ;
+        kind clown-fish ;
+        age 1 ;
     ]
   }
 
