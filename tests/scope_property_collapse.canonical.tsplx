@@ -1,0 +1,11 @@
+jane a person ;
+  age 51 ;
+  full-name "Jane Doe" ;
+  {
+    _ a animal ;
+      age 1 ;
+      kind clown-fish ;
+    _ a animal ;
+      age 1 ;
+      kind clown-fish ;
+  }

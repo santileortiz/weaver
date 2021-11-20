@@ -1,0 +1,14 @@
+jane a person ;
+  full-name "Jane Doe" ; {
+    [
+      a animal ;
+      kind tang-fish ;
+      age 2 ;
+    ],
+
+    age 51 ; 
+
+    _ a animal ;
+      kind clown-fish ;
+      age 1 ;
+  }
