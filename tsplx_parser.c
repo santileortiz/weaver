@@ -48,6 +48,28 @@ void splx_destroy (struct splx_data_t *sd)
     mem_pool_destroy (&sd->pool);
 }
 
+// CAUTION: DO NOT MODIFY THE RETURNED STRING! It's used as index to the nodes
+// map.
+char* splx_get_node_id (struct splx_data_t *sd, struct splx_node_t *node)
+{
+    // Add the predicate to the nodes map, but don't allocate an
+    // actual node yet. So far it's only being used as predicate,
+    // it's possible we won't need to create a node because no one
+    // is using it as an object or subject.
+    char *node_id_str = NULL;
+    struct cstr_to_splx_node_map_tree_node_t *predicate_tree_node = NULL;
+    if (!cstr_to_splx_node_map_tree_lookup (&sd->nodes, str_data(&node->str), &predicate_tree_node)) {
+        // TODO: Should use a string pool...
+        node_id_str = pom_strdup (&sd->pool, str_data(&node->str));
+        cstr_to_splx_node_map_tree_insert (&sd->nodes, node_id_str, NULL);
+    } else {
+        node_id_str = predicate_tree_node->key;
+    }
+
+    assert (node_id_str != NULL);
+    return node_id_str;
+}
+
 #define TSPLX_TOKEN_TYPES_TABLE                  \
     TOKEN_TYPES_ROW(TSPLX_TOKEN_TYPE_UNKNOWN)    \
     TOKEN_TYPES_ROW(TSPLX_TOKEN_TYPE_COMMENT)    \
@@ -86,12 +108,30 @@ struct tsplx_parser_state_t {
     struct tsplx_token_t token;
 
     bool error;
+    string_t *error_msg;
 };
 
-void tps_init (struct tsplx_parser_state_t *tps, char *str)
+void tps_init (struct tsplx_parser_state_t *tps, char *str, string_t *error_msg)
 {
     tps->str = str;
     tps->pos = str;
+    tps->error_msg = error_msg;
+}
+
+GCC_PRINTF_FORMAT(2, 3)
+void tps_error (struct tsplx_parser_state_t *tps, char *format, ...)
+{
+    if (tps->error_msg == NULL) return;
+
+    str_cat_printf (tps->error_msg, ECMA_RED("error: "));
+
+    PRINTF_INIT (format, size, args);
+    size_t old_len = str_len(tps->error_msg);
+    str_maybe_grow (tps->error_msg, str_len(tps->error_msg) + size - 1, true);
+    PRINTF_SET (str_data(tps->error_msg) + old_len, size, format, args);
+
+    str_cat_c (tps->error_msg, "\n");
+    tps->error = true;
 }
 
 static inline
@@ -258,6 +298,8 @@ struct tsplx_token_t tps_next (struct tsplx_parser_state_t *tps)
 
 bool tps_match(struct tsplx_parser_state_t *tps, enum tsplx_token_type_t type, char *value)
 {
+    if (tps->is_eof) return false;
+
     bool match = false;
 
     if (type == tps->token.type) {
@@ -276,7 +318,7 @@ void print_tsplx_tokens (char *tsplx_str)
 {
     struct tsplx_parser_state_t _tps = {0};
     struct tsplx_parser_state_t *tps = &_tps;
-    tps_init (tps, tsplx_str);
+    tps_init (tps, tsplx_str, NULL);
 
     while (!tps->is_eof && !tps->error) {
         tps_next (tps);
@@ -607,44 +649,58 @@ struct splx_node_t* tps_subject_node_from_tmp_node (struct splx_data_t *sd, stru
 }
 
 bool tps_parse_node (struct tsplx_parser_state_t *tps, struct splx_node_t *root_object,
-                     struct splx_data_t *sd, string_t *error_msg)
+                     struct splx_data_t *sd)
 {
-    bool success = true;
     struct splx_node_t *curr_object = root_object;
     struct splx_node_t *curr_value = NULL;
 
     int triple_idx = 0;
     struct splx_node_t triple[3];
-    for (int i=0; i<3; i++) {
+    for (int i=0; i<ARRAY_SIZE(triple); i++) {
         triple[i] = ZERO_INIT (struct splx_node_t);
     }
 
     while (!tps->is_eof && !tps->error) {
         tps_next (tps);
         if (tps_match(tps, TSPLX_TOKEN_TYPE_IDENTIFIER, NULL)) {
-            struct splx_node_t *node = triple + triple_idx;
-            splx_node_clear (node);
-            if (tps->token.value.len == 1 && *tps->token.value.s == '_') {
-                strn_set (&node->str, "", 0);
+            if (triple_idx < ARRAY_SIZE(triple)) {
+                struct splx_node_t *node = triple + triple_idx;
+                splx_node_clear (node);
+                if (tps->token.value.len == 1 && *tps->token.value.s == '_') {
+                    strn_set (&node->str, "", 0);
+                } else {
+                    strn_set (&node->str, tps->token.value.s, tps->token.value.len);
+                }
+                node->type = SPLX_NODE_TYPE_OBJECT;
+                triple_idx++;
+
             } else {
-                strn_set (&node->str, tps->token.value.s, tps->token.value.len);
+                tps_error (tps, "triple buffer overflowed");
             }
-            node->type = SPLX_NODE_TYPE_OBJECT;
-            triple_idx++;
 
         } else if (tps_match(tps, TSPLX_TOKEN_TYPE_STRING, NULL)) {
-            struct splx_node_t *node = triple + triple_idx;
-            splx_node_clear (node);
-            strn_set (&node->str, tps->token.value.s, tps->token.value.len);
-            node->type = SPLX_NODE_TYPE_STRING;
-            triple_idx++;
+            if (triple_idx < ARRAY_SIZE(triple)) {
+                struct splx_node_t *node = triple + triple_idx;
+                splx_node_clear (node);
+                strn_set (&node->str, tps->token.value.s, tps->token.value.len);
+                node->type = SPLX_NODE_TYPE_STRING;
+                triple_idx++;
+
+            } else {
+                tps_error (tps, "triple buffer overflowed");
+            }
 
         } else if (tps_match(tps, TSPLX_TOKEN_TYPE_NUMBER, NULL)) {
-            struct splx_node_t *node = triple + triple_idx;
-            splx_node_clear (node);
-            strn_set (&node->str, tps->token.value.s, tps->token.value.len);
-            node->type = SPLX_NODE_TYPE_INTEGER;
-            triple_idx++;
+            if (triple_idx < ARRAY_SIZE(triple)) {
+                struct splx_node_t *node = triple + triple_idx;
+                splx_node_clear (node);
+                strn_set (&node->str, tps->token.value.s, tps->token.value.len);
+                node->type = SPLX_NODE_TYPE_INTEGER;
+                triple_idx++;
+
+            } else {
+                tps_error (tps, "triple buffer overflowed");
+            }
 
         } else if (tps_match(tps, TSPLX_TOKEN_TYPE_OPERATOR, "[")) {
             struct splx_node_t *list_item = triple + triple_idx;
@@ -652,17 +708,17 @@ bool tps_parse_node (struct tsplx_parser_state_t *tps, struct splx_node_t *root_
             list_item->type = SPLX_NODE_TYPE_OBJECT;
             triple_idx++;
 
-            tps_parse_node (tps, list_item, sd, error_msg);
+            tps_parse_node (tps, list_item, sd);
 
             if (!tps_match (tps, TSPLX_TOKEN_TYPE_OPERATOR, "]")) {
-                // error: unexpected end of nested object
+                tps_error (tps, "unexpected end of nested object");
             }
 
         } else if (tps_match(tps, TSPLX_TOKEN_TYPE_OPERATOR, "{")) {
-            tps_parse_node (tps, curr_object, sd, error_msg);
+            tps_parse_node (tps, curr_object, sd);
 
             if (!tps_match (tps, TSPLX_TOKEN_TYPE_OPERATOR, "}")) {
-                // error: unexpected end of nested object
+                tps_error (tps, "unexpected end of scope");
             }
 
         } else if (tps_match(tps, TSPLX_TOKEN_TYPE_OPERATOR, "}") || tps_match(tps, TSPLX_TOKEN_TYPE_OPERATOR, "]") || tps_match(tps, TSPLX_TOKEN_TYPE_OPERATOR, ",") || tps_match(tps, TSPLX_TOKEN_TYPE_OPERATOR, ".") || tps_match(tps, TSPLX_TOKEN_TYPE_OPERATOR, ";")) {
@@ -686,17 +742,7 @@ bool tps_parse_node (struct tsplx_parser_state_t *tps, struct splx_node_t *root_
                 if (triple[0].type == SPLX_NODE_TYPE_OBJECT) {
                     // Completed a triple with respect to the current object.
 
-                    // Add the predicate to the nodes map, but don't allocate an
-                    // actual node yet. So far it's only being used as predicate,
-                    // it's possible we won't need to create a node because no one
-                    // is using it as an object or subject.
-                    char *predicate_str = NULL;
-                    if (cstr_to_splx_node_map_get (&sd->nodes, str_data(&triple[0].str)) == NULL) {
-                        // TODO: Should use a string pool...
-                        predicate_str = pom_strdup (&sd->pool, str_data(&triple[0].str));
-                        cstr_to_splx_node_map_tree_insert (&sd->nodes, predicate_str, NULL);
-                    }
-
+                    char *predicate_str = splx_get_node_id (sd, &triple[0]);
                     struct splx_node_t *subject_node = tps_subject_node_from_tmp_node (sd, &triple[1]);
 
                     cstr_to_splx_node_map_tree_insert (&curr_object->attributes, predicate_str, subject_node);
@@ -706,7 +752,7 @@ bool tps_parse_node (struct tsplx_parser_state_t *tps, struct splx_node_t *root_
                     triple_idx = 0;
 
                 } else {
-                    // error: unexpected predicate type
+                    tps_error (tps, "unexpected predicate type");
                 }
 
             } else if (triple_idx == 3) {
@@ -716,17 +762,7 @@ bool tps_parse_node (struct tsplx_parser_state_t *tps, struct splx_node_t *root_
                     cstr_to_splx_node_map_tree_insert (&sd->nodes, str_data(&new_node->str), new_node);
                 }
 
-                // Add the predicate to the nodes map, but don't allocate an
-                // actual node yet. So far it's only being used as predicate,
-                // it's possible we won't need to create a node because no one
-                // is using it as an object or subject.
-                char *predicate_str = NULL;
-                if (cstr_to_splx_node_map_get (&sd->nodes, str_data(&triple[1].str)) == NULL) {
-                    // TODO: Should use a string pool...
-                    predicate_str = pom_strdup (&sd->pool, str_data(&triple[1].str));
-                    cstr_to_splx_node_map_tree_insert (&sd->nodes, predicate_str, NULL);
-                }
-
+                char *predicate_str = splx_get_node_id (sd, &triple[1]);
                 struct splx_node_t *subject_node = tps_subject_node_from_tmp_node (sd, &triple[2]);
 
                 cstr_to_splx_node_map_tree_insert (&new_node->attributes, predicate_str, subject_node);
@@ -743,23 +779,30 @@ bool tps_parse_node (struct tsplx_parser_state_t *tps, struct splx_node_t *root_
         }
     }
 
-    for (int i=0; i<3; i++) {
+    for (int i=0; i<ARRAY_SIZE(triple); i++) {
         str_free (&triple[i].str);
     }
 
-    return success;
+    return !tps->error;
 }
 
 bool tsplx_parse_str_name (struct splx_data_t *sd, char *str, string_t *error_msg)
 {
     struct tsplx_parser_state_t _tps = {0};
     struct tsplx_parser_state_t *tps = &_tps;
-    tps_init (tps, str);
+    tps_init (tps, str, error_msg);
 
     assert (sd->root == NULL);
     sd->root = splx_node_new (sd);
 
-    return tps_parse_node (tps, sd->root, sd, error_msg);
+    bool success = tps_parse_node (tps, sd->root, sd);
+
+    if (tps->error) {
+        splx_destroy (sd);
+        *sd = ZERO_INIT (struct splx_data_t);
+    }
+
+    return success;
 }
 
 void tsplx_parse_name (struct splx_data_t *sd, char *path)

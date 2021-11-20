@@ -134,6 +134,7 @@ int main(int argc, char** argv)
                 test_push (t, "Parsing");
                 if (!test_bool (t, success && str_len(&error_msg) == 0)) {
                     test_error_c (t, str_data(&error_msg));
+                    str_set (&error_msg, "");
                 }
 
                 if (expected_canonical != NULL) {
@@ -155,6 +156,8 @@ int main(int argc, char** argv)
                             test_error_c (t, str_data(&crash_error_msg));
                             success = false;
                         }
+
+                        str_set (&error_msg, "");
                     }
 
                     if (success) {
