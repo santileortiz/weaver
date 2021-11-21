@@ -6,6 +6,7 @@ john a person ;
       age 1 ;
       kind clown-fish ;
   }
+
 jane a person ;
   age 51 ;
   full-name "Jane Doe" ;

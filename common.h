@@ -536,6 +536,16 @@ void strn_cat_c (string_t *dest, const char *src, size_t len)
     dest_data[total_len] = '\0';
 }
 
+// TODO: This most likely doesn't have good performance. We are potentially
+// allocating a string on each iteration.
+// @performance
+void str_cat_char (string_t *str, char c, int times)
+{
+    for (int i=0; i<times; i++) {
+        strn_cat_c (str, &c, 1);
+    }
+}
+
 void str_cat_indented (string_t *str1, string_t *str2, int num_spaces)
 {
     if (str_len(str2) == 0) {
@@ -550,9 +560,7 @@ void str_cat_indented (string_t *str1, string_t *str2, int num_spaces)
     while (c && *c) {
         if (*c == '\n' && *(c+1) != '\n' && *(c+1) != '\0') {
             strn_cat_c (str1, "\n", 1);
-            for (int i=0; i<num_spaces; i++) {
-                strn_cat_c (str1, " ", 1);
-            }
+            str_cat_char (str1, ' ', num_spaces);
 
         } else {
             strn_cat_c (str1, c, 1);
@@ -563,6 +571,10 @@ void str_cat_indented (string_t *str1, string_t *str2, int num_spaces)
 
 void str_cat_indented_c (string_t *str1, char *c_str, int num_spaces)
 {
+    // Avoid creating "empty" lines that just contain indentation, or adding
+    // spaces where an empty string (nothing) is supposed to be concatenated. If
+    // it's necessary to just concatenate the indentation spaces, better use
+    // str_cat_char() directly.
     if (*c_str == '\0') return;
 
     for (int i=0; i<num_spaces; i++) {
@@ -572,9 +584,7 @@ void str_cat_indented_c (string_t *str1, char *c_str, int num_spaces)
     while (c_str && *c_str) {
         if (*c_str == '\n' && *(c_str+1) != '\n' && *(c_str+1) != '\0') {
             strn_cat_c (str1, "\n", 1);
-            for (int i=0; i<num_spaces; i++) {
-                strn_cat_c (str1, " ", 1);
-            }
+            str_cat_char (str1, ' ', num_spaces);
 
         } else {
             strn_cat_c (str1, c_str, 1);

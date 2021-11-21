@@ -358,17 +358,25 @@ void splx_node_clear (struct splx_node_t *node)
 void splx_node_cpy (struct splx_node_t *tgt, struct splx_node_t *src)
 {
     // Backup the string so we don't lose the allocated pointer if there's one
-    string_t tmp = tgt->str;
+    string_t tmp_str = tgt->str;
+
+    // Backup the attributes tree
+    struct cstr_to_splx_node_map_tree_t tmp_tree = tgt->attributes;
 
     *tgt = *src;
 
     // Restore the original string and do a string copy
-    tgt->str = tmp;
+    tgt->str = tmp_str;
     str_set (&tgt->str, str_data(&src->str));
 
-    // TODO: I think string parameters are the only ones that would cause memory
-    // leaks when copying by using an assignment. Still, I'm not 100% sure about
-    // the tree.
+    // Restore the original attributes tree, clear it and add all elements of
+    // source
+    tgt->attributes = tmp_tree;
+    cstr_to_splx_node_map_tree_destroy (&tgt->attributes);
+    tgt->attributes = ZERO_INIT (struct cstr_to_splx_node_map_tree_t);
+    BINARY_TREE_FOR (cstr_to_splx_node_map, &src->attributes, curr_attribute) {
+        cstr_to_splx_node_map_tree_insert (&tgt->attributes, curr_attribute->key, curr_attribute->value);
+    }
 }
 
 #define SPLX_STR_INDENT 2
@@ -435,6 +443,26 @@ void str_cat_splx_dump_full (string_t *str, struct splx_data_t *sd, struct splx_
     }
 }
 
+void str_cat_literal_node (string_t *str, struct splx_node_t *node)
+{
+    if (node->type == SPLX_NODE_TYPE_STRING) {
+        string_t buff = {0};
+
+        str_cpy (&buff, &node->str);
+        str_replace (&buff, "\"", "\\\"", NULL);
+        str_cat_printf (str, "\"%s\"", str_data(&buff));
+
+        str_free (&buff);
+
+    } else if (node->type == SPLX_NODE_TYPE_INTEGER) {
+        str_cat_printf (str, "%s", str_data(&node->str));
+
+    } else {
+        str_cat_c (str, " ?");
+    }
+
+}
+
 #define str_cat_splx_canonical(str,sd,node) str_cat_splx_canonical_full(str,sd,node,0)
 void str_cat_splx_canonical_full (string_t *str, struct splx_data_t *sd, struct splx_node_t *node, int curr_indent)
 {
@@ -467,33 +495,25 @@ void str_cat_splx_canonical_full (string_t *str, struct splx_data_t *sd, struct 
 
             bool is_first_value = true;
             LINKED_LIST_FOR (struct splx_node_t *, curr_node, curr_attribute->value) {
-                if (curr_node->type == SPLX_NODE_TYPE_STRING) {
-                    string_t buff = {0};
+                if (curr_node->type == SPLX_NODE_TYPE_OBJECT) {
+                    str_cat_printf (str, " %s", str_data(&curr_node->str));
 
-                    str_cpy (&buff, &curr_node->str);
-                    str_replace (&buff, "\"", "\\\"", NULL);
-
+                } else {
                     if (is_first_value) {
-                        str_cat_printf (str, " \"%s\"", str_data(&buff));
+                        str_cat_c (str, " ");
+
                     } else {
                         int indent_levels = 1;
                         if (splx_node_has_name(node)) indent_levels = 2;
-
-                        str_cat_indented_printf (str, curr_indent + indent_levels*SPLX_STR_INDENT, "\"%s\"", str_data(&buff));
+                        str_cat_char (str, ' ', curr_indent + indent_levels*SPLX_STR_INDENT);
                     }
+
+                    str_cat_literal_node (str, curr_node);
 
                     if (curr_node->next != NULL) {
                         str_cat_c (str, " ;\n");
                     }
 
-                    str_free (&buff);
-
-                } else if (curr_node->type == SPLX_NODE_TYPE_OBJECT ||
-                           curr_node->type == SPLX_NODE_TYPE_INTEGER) {
-                    str_cat_printf (str, " %s", str_data(&curr_node->str));
-
-                } else {
-                    str_cat_c (str, " ?");
                 }
 
                 is_first_value = false;
@@ -515,8 +535,31 @@ void str_cat_splx_canonical_full (string_t *str, struct splx_data_t *sd, struct 
     int floating_indent = 0;
     if (splx_node_has_name(node)) floating_indent = 2*SPLX_STR_INDENT;
 
+    bool is_first_floating = true;
+    enum splx_node_type_t prev_type = SPLX_NODE_TYPE_UNKNOWN;
     LINKED_LIST_FOR (struct splx_node_t*, curr_node, node->floating_values) {
-        str_cat_splx_canonical_full(str,sd,curr_node,curr_indent + floating_indent);
+        if (curr_node->type == SPLX_NODE_TYPE_OBJECT) {
+            if (!is_first_floating) {
+                str_cat_c (str, "\n");
+            }
+            str_cat_splx_canonical_full(str,sd,curr_node,curr_indent + floating_indent);
+
+        } else {
+            if (is_first_floating || curr_node->type != prev_type) {
+                if (!is_first_floating) {
+                    str_cat_c (str, "\n");
+                }
+                str_cat_char (str, ' ', curr_indent + floating_indent);
+            } else {
+                str_cat_c (str, " ");
+            }
+
+            str_cat_literal_node (str, curr_node);
+            str_cat_c (str, ";");
+        }
+
+        prev_type = curr_node->type;
+        is_first_floating = false;
     }
 
     if (sd->root != node && node->floating_values != NULL) {
@@ -648,6 +691,19 @@ struct splx_node_t* tps_subject_node_from_tmp_node (struct splx_data_t *sd, stru
     return subject_node;
 }
 
+#define tps_get_triple_node(tps,buffer,pos) _tps_get_buffered_node(tps,buffer,ARRAY_SIZE(buffer),pos)
+struct splx_node_t* _tps_get_buffered_node(struct tsplx_parser_state_t *tps, struct splx_node_t *buffer, int buffer_len, int pos)
+{
+    struct splx_node_t *node = NULL;
+    if (pos < buffer_len) {
+        node = buffer + pos;
+    } else {
+        tps_error (tps, "triple buffer overflowed");
+    }
+
+    return node;
+}
+
 bool tps_parse_node (struct tsplx_parser_state_t *tps, struct splx_node_t *root_object,
                      struct splx_data_t *sd)
 {
@@ -663,8 +719,8 @@ bool tps_parse_node (struct tsplx_parser_state_t *tps, struct splx_node_t *root_
     while (!tps->is_eof && !tps->error) {
         tps_next (tps);
         if (tps_match(tps, TSPLX_TOKEN_TYPE_IDENTIFIER, NULL)) {
-            if (triple_idx < ARRAY_SIZE(triple)) {
-                struct splx_node_t *node = triple + triple_idx;
+            struct splx_node_t *node = tps_get_triple_node (tps, triple, triple_idx);
+            if (node != NULL) {
                 splx_node_clear (node);
                 if (tps->token.value.len == 1 && *tps->token.value.s == '_') {
                     strn_set (&node->str, "", 0);
@@ -673,45 +729,38 @@ bool tps_parse_node (struct tsplx_parser_state_t *tps, struct splx_node_t *root_
                 }
                 node->type = SPLX_NODE_TYPE_OBJECT;
                 triple_idx++;
-
-            } else {
-                tps_error (tps, "triple buffer overflowed");
             }
 
         } else if (tps_match(tps, TSPLX_TOKEN_TYPE_STRING, NULL)) {
-            if (triple_idx < ARRAY_SIZE(triple)) {
-                struct splx_node_t *node = triple + triple_idx;
+            struct splx_node_t *node = tps_get_triple_node (tps, triple, triple_idx);
+            if (node != NULL) {
                 splx_node_clear (node);
                 strn_set (&node->str, tps->token.value.s, tps->token.value.len);
                 node->type = SPLX_NODE_TYPE_STRING;
                 triple_idx++;
-
-            } else {
-                tps_error (tps, "triple buffer overflowed");
             }
 
         } else if (tps_match(tps, TSPLX_TOKEN_TYPE_NUMBER, NULL)) {
-            if (triple_idx < ARRAY_SIZE(triple)) {
-                struct splx_node_t *node = triple + triple_idx;
+            struct splx_node_t *node = tps_get_triple_node (tps, triple, triple_idx);
+            if (node != NULL) {
                 splx_node_clear (node);
                 strn_set (&node->str, tps->token.value.s, tps->token.value.len);
                 node->type = SPLX_NODE_TYPE_INTEGER;
                 triple_idx++;
-
-            } else {
-                tps_error (tps, "triple buffer overflowed");
             }
 
         } else if (tps_match(tps, TSPLX_TOKEN_TYPE_OPERATOR, "[")) {
-            struct splx_node_t *list_item = triple + triple_idx;
-            splx_node_clear (list_item);
-            list_item->type = SPLX_NODE_TYPE_OBJECT;
-            triple_idx++;
+            struct splx_node_t *list_item = tps_get_triple_node (tps, triple, triple_idx);
+            if (list_item != NULL) {
+                splx_node_clear (list_item);
+                list_item->type = SPLX_NODE_TYPE_OBJECT;
+                triple_idx++;
 
-            tps_parse_node (tps, list_item, sd);
+                tps_parse_node (tps, list_item, sd);
 
-            if (!tps_match (tps, TSPLX_TOKEN_TYPE_OPERATOR, "]")) {
-                tps_error (tps, "unexpected end of nested object");
+                if (!tps_match (tps, TSPLX_TOKEN_TYPE_OPERATOR, "]")) {
+                    tps_error (tps, "unexpected end of nested object");
+                }
             }
 
         } else if (tps_match(tps, TSPLX_TOKEN_TYPE_OPERATOR, "{")) {
@@ -725,11 +774,11 @@ bool tps_parse_node (struct tsplx_parser_state_t *tps, struct splx_node_t *root_
             if (triple_idx == 1) {
                 struct splx_node_t *subject_node = tps_subject_node_from_tmp_node (sd, &triple[0]);
 
-                if (curr_value != NULL) {
+                if (curr_value != curr_object->floating_values_end) {
                     curr_value->next = subject_node;
 
                 } else {
-                    // There is no currrent value to link to the value that was
+                    // There is no current value to link to the value that was
                     // just read. Add new subject node to the current object as
                     // floating.
                     LINKED_LIST_APPEND (curr_object->floating_values, subject_node);

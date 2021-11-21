@@ -1,0 +1,8 @@
+jane a person ;
+  full-name "Jane Doe" ; {
+    "tag1", "tag2",
+
+    _ a animal ;
+      kind clown-fish ;
+      age 1 ;
+  }
