@@ -546,6 +546,12 @@ void str_cat_char (string_t *str, char c, int times)
     }
 }
 
+char str_last (string_t *str)
+{
+    assert (str_len(str) > 0);
+    return str_data(str)[str_len(str)-1];
+}
+
 void str_cat_indented (string_t *str1, string_t *str2, int num_spaces)
 {
     if (str_len(str2) == 0) {
@@ -577,8 +583,10 @@ void str_cat_indented_c (string_t *str1, char *c_str, int num_spaces)
     // str_cat_char() directly.
     if (*c_str == '\0') return;
 
-    for (int i=0; i<num_spaces; i++) {
-        strn_cat_c (str1, " ", 1);
+    if (str_len(str1) > 0 && str_last(str1) == '\n') {
+        for (int i=0; i<num_spaces; i++) {
+            strn_cat_c (str1, " ", 1);
+        }
     }
 
     while (c_str && *c_str) {
@@ -633,12 +641,6 @@ void printf_indented (char *str, int num_spaces)
         }
         c++;
     }
-}
-
-char str_last (string_t *str)
-{
-    assert (str_len(str) > 0);
-    return str_data(str)[str_len(str)-1];
 }
 
 GCC_PRINTF_FORMAT(3, 4)

@@ -1,6 +1,5 @@
-// TODO: Implement this
 // Root level values
-//"item1", "item2" .
+"item1", "item2", 42 .
 
 // "Floating" property of the unnamed root node. Will be a triple with the root
 // node as object.
