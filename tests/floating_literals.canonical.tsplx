@@ -1,0 +1,27 @@
+5; 6; 7;
+[
+  obj1 a my-type1 ;
+    prop1 "obj1 value 1" ;
+      "obj1 value 2" ;
+    prop2 11 ;
+];
+"tag2";
+[
+  _ a my-type2 ;
+    prop2 "root _ value1" ;
+];
+42;
+"tag3"; "tag4";
+
+prop1 "root value" ;
+
+_ a my-type1 ;
+  prop1 obj3 ;
+  prop2 99 ;
+
+obj2 a my-type2 ;
+  prop2 33 ;
+  prop3 obj3 ;
+
+obj3 a my-type1 ;
+  prop1 "obj3 value 1" ;
