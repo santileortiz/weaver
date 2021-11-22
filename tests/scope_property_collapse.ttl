@@ -1,0 +1,15 @@
+<tsplx-data> <has-entity> <jane> .
+
+<jane> a <person> ;
+  <age> 51 ;
+  <full-name> "Jane Doe" ;
+  <has-entity> [
+      a <animal> ;
+      <age> 2 ;
+      <kind> <tang-fish> ;
+    ] ,
+    [
+      a <animal> ;
+      <age> 1 ;
+      <kind> <clown-fish> ;
+    ] .

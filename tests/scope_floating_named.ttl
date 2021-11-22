@@ -1,0 +1,20 @@
+<tsplx-data> <has-entity> <john> ,
+    <jane> .
+
+<dori> a <animal> ;
+  <age> 2 ;
+  <kind> <tang-fish> .
+
+<jane> a <person> ;
+  <age> 51 ;
+  <full-name> "Jane Doe" ;
+  <has-entity> <dori> .
+
+<john> a <person> ;
+  <age> 49 ;
+  <full-name> "John Doe" ;
+  <has-entity> <nemo> .
+
+<nemo> a <animal> ;
+  <age> 1 ;
+  <kind> <clown-fish> .

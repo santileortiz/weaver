@@ -52,28 +52,13 @@ ITERATE_DIR_CB(get_test_names)
     str_free (&buff);
 }
 
-void set_expected_subtype_path (string_t *str, char *name, char *subtype)
+void set_expected_subtype_path (string_t *str, char *name, char *extension)
 {
-    str_set_printf (str, TESTS_DIR "/%s.%s.tsplx", name, subtype);
+    str_set_printf (str, TESTS_DIR "/%s.%s", name, extension);
 }
 
-char* get_subtype_file (mem_pool_t *pool, char *name, char *subtype, size_t *fsize)
-{
-    char *f = NULL;
-
-    string_t path = {0};
-    str_set_printf (&path, TESTS_DIR "/%s.%s.tsplx", name, subtype);
-
-    if (path_exists (str_data(&path))) {
-        f = full_file_read (pool, str_data(&path), fsize);
-    }
-
-    str_free (&path);
-    return f;
-}
-
-#define TSPLX_EXPANDED "expanded"
-#define TSPLX_CANONICAL "canonical"
+#define TEST_EXTENSION_TTL "ttl"
+#define TEST_EXTENSION_CANONICAL "canonical.tsplx"
 
 int main(int argc, char** argv)
 {
@@ -87,7 +72,7 @@ int main(int argc, char** argv)
     STACK_ALLOCATE (struct test_ctx_t , t);
 
     STACK_ALLOCATE (struct cli_ctx_t, cli_ctx);
-    bool expanded_out = get_cli_bool_opt_ctx (cli_ctx, "--expanded", argv, argc);
+    bool ttl_out = get_cli_bool_opt_ctx (cli_ctx, "--ttl", argv, argc);
     bool canonical_out = get_cli_bool_opt_ctx (cli_ctx, "--canonical", argv, argc);
     bool dump_out = get_cli_bool_opt_ctx (cli_ctx, "--dump", argv, argc);
     bool tokens_out = get_cli_bool_opt_ctx (cli_ctx, "--tokens", argv, argc);
@@ -103,20 +88,36 @@ int main(int argc, char** argv)
         LINKED_LIST_FOR (struct char_ll_t*, test_name, clsr.test_names) {
             // Don't allocate these files into pool so we free them on each test
             // execution. This avoids keeping all in memory until the end.
-            set_expected_subtype_path (&buff, test_name->v, TSPLX_EXPANDED);
-            char *expected_expanded = NULL;
+            set_expected_subtype_path (&buff, test_name->v, TEST_EXTENSION_TTL);
+            char *expected_ttl = NULL;
             if (path_exists (str_data(&buff))) {
-                expected_expanded = full_file_read (NULL, str_data(&buff), NULL);
+                expected_ttl = full_file_read (NULL, str_data(&buff), NULL);
             }
 
-            set_expected_subtype_path (&buff, test_name->v, TSPLX_CANONICAL);
+            set_expected_subtype_path (&buff, test_name->v, TEST_EXTENSION_CANONICAL);
             char *expected_canonical = NULL;
             if (path_exists (str_data(&buff))) {
                 expected_canonical = full_file_read (NULL, str_data(&buff), NULL);
             }
 
-            if (expected_expanded == NULL || expected_canonical == NULL) {
-                test_push (t, "%s " ECMA_YELLOW("(Missing expected)"), test_name->v);
+            if (expected_ttl == NULL || expected_canonical == NULL) {
+                string_t missing_info = {0};
+
+                if (expected_canonical == NULL) {
+                    str_cat_c (&missing_info, "!canonical");
+                }
+
+                if (expected_ttl == NULL) {
+                    if (str_len (&missing_info) && str_last (&missing_info) != ' ') {
+                        str_cat_c (&missing_info, " ");
+                    }
+
+                    str_cat_c (&missing_info, "!ttl");
+                }
+
+                test_push (t, "%s " ECMA_YELLOW("(%s)"), test_name->v, str_data(&missing_info));
+
+                str_free (&missing_info);
             } else {
                 test_push (t, "%s", test_name->v);
             }
@@ -170,12 +171,12 @@ int main(int argc, char** argv)
                     free (expected_canonical);
                 }
 
-                if (expected_expanded != NULL) {
+                if (expected_ttl != NULL) {
                     str_set (&buff, "");
-                    test_push (t, "Matches expected expanded");
-                    str_cat_splx_expanded (&buff, &sd, sd.root);
-                    test_str (t, str_data(&buff), expected_expanded);
-                    free (expected_expanded);
+                    test_push (t, "Matches expected turtle");
+                    str_cat_splx_ttl (&buff, &sd, sd.root);
+                    test_str (t, str_data(&buff), expected_ttl);
+                    free (expected_ttl);
                 }
             }
 
@@ -189,8 +190,8 @@ int main(int argc, char** argv)
             struct splx_data_t sd = {0};
             tsplx_parse_str_name (&sd, tsplx, &error_msg);
 
-            if (expanded_out) {
-                print_splx_expanded (&sd, sd.root);
+            if (ttl_out) {
+                print_splx_ttl (&sd, sd.root);
 
             } else if (canonical_out) {
                 print_splx_canonical (&sd, sd.root);
@@ -215,7 +216,7 @@ int main(int argc, char** argv)
                     printf (ECMA_MAGENTA("CANONICAL") "\n");
                     prnt_debug_string (str_data(&tsplx_formatted));
 
-                    set_expected_subtype_path (&buff, test_name, TSPLX_CANONICAL);
+                    set_expected_subtype_path (&buff, test_name, TEST_EXTENSION_CANONICAL);
                     print_diff_str_to_expected_file (&tsplx_formatted, str_data (&buff));
                     str_free (&tsplx_formatted);
                 }
@@ -224,11 +225,11 @@ int main(int argc, char** argv)
 
                 {
                     string_t tsplx_formatted = {0};
-                    str_cat_splx_expanded (&tsplx_formatted, &sd, sd.root);
-                    printf (ECMA_MAGENTA("EXPANDED") "\n");
+                    str_cat_splx_ttl (&tsplx_formatted, &sd, sd.root);
+                    printf (ECMA_MAGENTA("TTL") "\n");
                     prnt_debug_string (str_data(&tsplx_formatted));
 
-                    set_expected_subtype_path (&buff, test_name, TSPLX_EXPANDED);
+                    set_expected_subtype_path (&buff, test_name, TEST_EXTENSION_TTL);
                     print_diff_str_to_expected_file (&tsplx_formatted, str_data (&buff));
                     str_free (&tsplx_formatted);
                 }

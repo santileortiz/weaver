@@ -1,6 +1,0 @@
-tsplx-data
-  has-entity [
-    john a person ;
-      age 50 ;
-      full-name "John Doe" .
-  ]
