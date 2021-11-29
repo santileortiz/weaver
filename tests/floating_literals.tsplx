@@ -15,12 +15,20 @@
 [
   a my-type1 ;
   prop2 99 ;
-  prop1 obj3 ;
+  prop1 obj3 ; {
+    [
+      a my-type5 ;
+    ],
+    "tag8",
+    obj3 ;
+  }
 ],
 [
   obj2 a my-type2 ;
-    prop2 33 ;
-    prop3 obj3 ;
+    prop3 33 ;
+    prop2 obj3 ; {
+      "tag5", "tag6" ;
+    }
 ].
 
 prop1 "root value" ;

@@ -284,7 +284,10 @@ struct tsplx_token_t tps_next (struct tsplx_parser_state_t *tps)
 
     } else {
         char *start = tps->pos;
-        while (!tps_is_eof(tps) && !tps_is_operator(tps) && !tps_is_space(tps)) {
+        // TODO: Maybe better define a set of valid identifier characters?.
+        // Reserve : for prefixes, don't allow identifiers starting with
+        // numbers.
+        while (!tps_is_eof(tps) && !tps_is_operator(tps) && !tps_is_space(tps) && tps_curr_char(tps) != '\n') {
             tps_advance_char (tps);
         }
 
@@ -469,20 +472,61 @@ void str_cat_literal_node (string_t *str, struct splx_node_t *node)
     }
 }
 
+void str_cat_splx_canonical_full (string_t *str, struct splx_data_t *sd, struct splx_node_t *node, int curr_indent);
+
+void tps_cat_floating_literals (string_t *str, struct splx_data_t *sd, struct splx_node_t *node, struct splx_node_t *floating_objects, int curr_indent)
+{
+    bool is_first_floating = true;
+    enum splx_node_type_t prev_type = SPLX_NODE_TYPE_UNKNOWN;
+    LINKED_LIST_FOR (struct splx_node_t*, curr_node, node->floating_values) {
+        if (curr_node == floating_objects) break;
+
+        if (curr_node->type != prev_type && !is_first_floating && str_last(str) != '\n') {
+            str_cat_c (str, "\n");
+        }
+
+        if (curr_node->type == SPLX_NODE_TYPE_OBJECT) {
+            str_cat_indented_c (str, "[\n", curr_indent);
+            str_cat_splx_canonical_full(str,sd,curr_node, curr_indent + SPLX_STR_INDENT);
+            str_cat_indented_c (str, "]", curr_indent);
+
+        } else {
+            if (curr_node->type != prev_type) {
+                str_cat_char (str, ' ', curr_indent);
+            } else {
+                str_cat_c (str, " ");
+            }
+
+            str_cat_literal_node (str, curr_node);
+        }
+
+        str_cat_c (str, ";");
+
+        prev_type = curr_node->type;
+        is_first_floating = false;
+    }
+}
+
 #define str_cat_splx_canonical(str,sd,node) str_cat_splx_canonical_full(str,sd,node,0)
 void str_cat_splx_canonical_full (string_t *str, struct splx_data_t *sd, struct splx_node_t *node, int curr_indent)
 {
+    bool is_triple = false;
     if (splx_node_has_name (node)) {
         str_cat_indented_c (str, str_data(&node->str), curr_indent);
+        is_triple = true;
 
     } else if (sd->root != node) {
         str_cat_indented_c (str, "_", curr_indent);
-        curr_indent += SPLX_STR_INDENT;
+        is_triple = true;
+    }
+
+    if (node->attributes.num_nodes == 0 && node->floating_values == NULL) {
+        str_cat_c (str, " ;");
     }
 
     struct splx_node_t *floating_objects = NULL;
     enum splx_node_type_t prev_type = SPLX_NODE_TYPE_UNKNOWN;
-    if (node->attributes.num_nodes == 0 || !splx_node_has_name (node)) {
+    if ((node->attributes.num_nodes == 0 || !splx_node_has_name (node))) {
         LINKED_LIST_FOR (struct splx_node_t*, curr_node, node->floating_values) {
             if (curr_node->type == SPLX_NODE_TYPE_OBJECT && prev_type != SPLX_NODE_TYPE_OBJECT) {
                 floating_objects = curr_node;
@@ -490,40 +534,14 @@ void str_cat_splx_canonical_full (string_t *str, struct splx_data_t *sd, struct 
             prev_type = curr_node->type;
         }
 
-        bool is_first_floating = true;
-        prev_type = SPLX_NODE_TYPE_UNKNOWN;
-        if (node->floating_values != floating_objects) {
-            LINKED_LIST_FOR (struct splx_node_t*, curr_node, node->floating_values) {
-                if (curr_node == floating_objects) break;
-
-                if (curr_node->type != prev_type && !is_first_floating) {
-                    str_cat_c (str, "\n");
-                }
-
-                if (curr_node->type == SPLX_NODE_TYPE_OBJECT) {
-                    str_cat_c (str, "[\n");
-                    str_cat_splx_canonical_full(str,sd,curr_node, curr_indent + SPLX_STR_INDENT);
-                    str_cat_c (str, "]");
-
-                } else {
-                    if (curr_node->type != prev_type) {
-                        str_cat_char (str, ' ', curr_indent);
-                    } else {
-                        str_cat_c (str, " ");
-                    }
-
-                    str_cat_literal_node (str, curr_node);
-                }
-
-                str_cat_c (str, ";");
-
-                prev_type = curr_node->type;
-                is_first_floating = false;
+        if (!is_triple) {
+            if (node->floating_values != floating_objects) {
+                tps_cat_floating_literals (str, sd, node, floating_objects, curr_indent);
             }
-        }
 
-        if (node->floating_values != NULL && node->floating_values->type != SPLX_NODE_TYPE_OBJECT) {
-            str_cat_c (str, "\n\n");
+            if (node->floating_values != NULL && node->floating_values->type != SPLX_NODE_TYPE_OBJECT) {
+                str_cat_c (str, "\n\n");
+            }
         }
 
     } else {
@@ -541,7 +559,7 @@ void str_cat_splx_canonical_full (string_t *str, struct splx_data_t *sd, struct 
                 str_cat_c (str, curr_attribute->key);
 
             } else {
-                if (!splx_node_has_name (node)) {
+                if (!is_triple) {
                     str_cat_indented_c (str, curr_attribute->key, curr_indent);
                 } else {
                     str_cat_indented_c (str, curr_attribute->key, curr_indent+SPLX_STR_INDENT);
@@ -560,7 +578,7 @@ void str_cat_splx_canonical_full (string_t *str, struct splx_data_t *sd, struct 
 
                     } else {
                         int indent_levels = 1;
-                        if (splx_node_has_name(node)) indent_levels = 2;
+                        if (is_triple) indent_levels = 2;
                         str_cat_char (str, ' ', curr_indent + indent_levels*SPLX_STR_INDENT);
                     }
 
@@ -582,23 +600,27 @@ void str_cat_splx_canonical_full (string_t *str, struct splx_data_t *sd, struct 
     }
 
     if (sd->root != node && node->floating_values != NULL) {
-        str_cat_indented_c (str, "{\n", curr_indent + SPLX_STR_INDENT);
-    }
-
-    if (splx_node_has_name(node) && node->attributes.num_nodes == 0) {
+        str_cat_indented_c (str, "{\n", curr_indent + (is_triple ? 1 : 0)*SPLX_STR_INDENT);
+    } else if (splx_node_has_name(node) && node->attributes.num_nodes == 0) {
         str_cat_c (str, "\n");
-    }
-
-    if (node->attributes.num_nodes > 0 && floating_objects != NULL && node->floating_values != floating_objects) {
+    } else if (node->attributes.num_nodes > 0 && floating_objects != NULL && node->floating_values != floating_objects) {
         str_cat_c (str, "\n");
     }
 
     int floating_indent = 0;
-    if (splx_node_has_name(node)) floating_indent = 2*SPLX_STR_INDENT;
+    if (is_triple) floating_indent = 2*SPLX_STR_INDENT;
 
     bool is_first_floating_object = true;
     prev_type = SPLX_NODE_TYPE_UNKNOWN;
     {
+        if (is_triple) {
+            tps_cat_floating_literals (str, sd, node, floating_objects, curr_indent + 2*SPLX_STR_INDENT);
+
+            if (str_last(str) != '\n') {
+                str_cat_c (str, "\n");
+            }
+        }
+
         LINKED_LIST_FOR (struct splx_node_t*, curr_node, floating_objects) {
             if (curr_node->type == SPLX_NODE_TYPE_OBJECT) {
                 if (!is_first_floating_object) {
@@ -625,8 +647,12 @@ void str_cat_splx_canonical_full (string_t *str, struct splx_data_t *sd, struct 
         }
     }
 
+    if (str_last(str) != '\n'){
+        str_cat_c (str, "\n");
+    }
+
     if (sd->root != node && node->floating_values != NULL) {
-        str_cat_indented_c (str, "}\n", curr_indent + SPLX_STR_INDENT);
+        str_cat_indented_c (str, "}\n", curr_indent + (is_triple ? 1 : 0)*SPLX_STR_INDENT);
     }
 
     if (str_last(str) != '\n'){
@@ -727,8 +753,11 @@ void str_cat_splx_ttl_full (string_t *str, struct splx_data_t *sd, struct splx_n
     }
 
     if (node->attributes.num_nodes != 0 && node->floating_values != NULL) {
+        int indent_levels = 0;
+        if (splx_node_has_name(node) || splx_node_is_root(sd, node)) indent_levels = 1;
+
         str_cat_c (str, " ;\n");
-        str_cat_char (str, ' ', curr_indent+SPLX_STR_INDENT);
+        str_cat_char (str, ' ', curr_indent + indent_levels*SPLX_STR_INDENT);
     } else {
         str_cat_c (str, " ");
     }
@@ -738,8 +767,11 @@ void str_cat_splx_ttl_full (string_t *str, struct splx_data_t *sd, struct splx_n
 
         bool is_first_floating_object = true;
         LINKED_LIST_FOR (struct splx_node_t*, curr_node, node->floating_values) {
+            int indent_levels = 1;
+            if (splx_node_has_name(node) || splx_node_is_root(sd, node)) indent_levels = 2;
+
             if (!is_first_floating_object) {
-                str_cat_char (str, ' ', curr_indent + 2*SPLX_STR_INDENT);
+                str_cat_char (str, ' ', curr_indent + indent_levels*SPLX_STR_INDENT);
 
             } else {
                 str_cat_c (str, " ");
@@ -747,8 +779,8 @@ void str_cat_splx_ttl_full (string_t *str, struct splx_data_t *sd, struct splx_n
 
             if (curr_node->type == SPLX_NODE_TYPE_OBJECT && !splx_node_has_name(curr_node)) {
                 str_cat_c (str, "[\n");
-                str_cat_splx_ttl_full (str, sd, curr_node, NULL, curr_indent + 3*SPLX_STR_INDENT);
-                str_cat_indented_c (str, "]", curr_indent + 2*SPLX_STR_INDENT);
+                str_cat_splx_ttl_full (str, sd, curr_node, NULL, curr_indent + (indent_levels+1)*SPLX_STR_INDENT);
+                str_cat_indented_c (str, "]", curr_indent + indent_levels*SPLX_STR_INDENT);
 
             } else {
                 str_cat_literal_node_ttl (str, curr_node);
