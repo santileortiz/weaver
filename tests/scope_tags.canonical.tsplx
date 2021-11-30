@@ -2,6 +2,7 @@ jane a person ;
   full-name "Jane Doe" ;
   {
     "tag1"; "tag2";
+
     _ a animal ;
       age 1 ;
       kind clown-fish ;

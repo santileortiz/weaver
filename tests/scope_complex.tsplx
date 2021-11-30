@@ -1,0 +1,64 @@
+5, 6, 7,
+[
+  obj1 a my-type1 ;
+    prop1 "obj1 value 1" ,
+      "obj1 value 2" ;
+    prop2 11 ;
+],
+"tag2",
+[
+  a my-type2 ;
+  prop2 "root _ value1" ;
+],
+42,
+"tag3", "tag4" ;
+[
+  obj2 a my-type2 ;
+    prop2 33 ;
+    prop3 [
+      obj3 a my-type1 ;
+        prop1 "obj3 value 1" ;
+    ] ;
+].
+
+prop3 [
+    a my-type3 ;
+    prop1 "_ value1" ;
+  ] ,
+  "root value1", "root value2",
+  11, [
+    obj4 a my-type2 ;
+      prop2 77 ,
+        [
+          a my-type4 ;
+        ] ;
+  ],
+  12, 13 ;
+prop2 "root value3" ;
+
+obj5 a my-type2 ;
+  prop2 33 ;
+  prop3 [
+    obj6 a my-type1 ;
+  ] ; {
+    1, 2, "3", "4", 5, [
+        a my-type2 ;
+        prop2 "obj5>_ value1" ;
+      ], 6, [
+      obj6 a my-type1 ;
+        prop4 "obj6 value1" ;
+    ],
+    7, 8, 9, [
+      obj7 a my-type1 ;
+        prop4 "obj7 floating value1" ;
+    ],
+
+    prop1 "obj5 value1",
+      53 ;
+    prop2 61 ;
+    prop3 "obj5 value1" ;
+
+    obj8 a my-type3 ;
+      prop1 "obj8 value1" ;
+  }
+

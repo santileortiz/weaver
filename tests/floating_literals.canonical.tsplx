@@ -23,7 +23,7 @@ _ a my-type1 ;
       _ a my-type5 ;
     ];
     "tag8";
-    obj3 ;
+    obj3;
   }
 
 obj2 a my-type2 ;
