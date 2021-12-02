@@ -190,7 +190,7 @@ int main(int argc, char** argv)
 
         if (tsplx != NULL) {
             struct splx_data_t sd = {0};
-            tsplx_parse_str_name (&sd, tsplx, &error_msg);
+            bool success = tsplx_parse_str_name (&sd, tsplx, &error_msg);
 
             if (ttl_out) {
                 print_splx_ttl (&sd, sd.root);
@@ -212,7 +212,7 @@ int main(int argc, char** argv)
                 prnt_debug_string (tsplx);
                 printf ("\n");
 
-                {
+                if (success) {
                     string_t tsplx_formatted = {0};
                     str_cat_splx_canonical (&tsplx_formatted, &sd, sd.root);
                     printf (ECMA_MAGENTA("CANONICAL") "\n");
@@ -225,7 +225,7 @@ int main(int argc, char** argv)
 
                 printf ("\n");
 
-                {
+                if (success) {
                     string_t tsplx_formatted = {0};
                     str_cat_splx_ttl (&tsplx_formatted, &sd, sd.root);
                     printf (ECMA_MAGENTA("TTL") "\n");

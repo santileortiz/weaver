@@ -1,0 +1,17 @@
+instance = {}
+
+typed-instance = my-type1{}
+
+//shorthand(prop1) = my-type2{}
+
+//person(?s) = {
+//  full-name ?s ;
+//}
+//
+//jane = person("Jane Doe")
+//
+//employee(?name, ?r, I ?salary) = person(?name) {
+//  role ?r ;
+//}
+//
+//john = employee("John Doe", "Engineer")
