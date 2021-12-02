@@ -132,13 +132,15 @@ int main(int argc, char** argv)
             );
 
             if (no_crash) {
+                bool parsing_failed = false;
                 test_push (t, "Parsing");
                 if (!test_bool (t, success && str_len(&error_msg) == 0)) {
                     test_error_c (t, str_data(&error_msg));
                     str_set (&error_msg, "");
+                    parsing_failed = true;
                 }
 
-                if (expected_canonical != NULL) {
+                if (!parsing_failed && expected_canonical != NULL) {
                     str_set (&buff, "");
                     test_push (t, "Canonical output matches");
                     str_cat_splx_canonical (&buff, &sd, sd.root);
@@ -171,7 +173,7 @@ int main(int argc, char** argv)
                     free (expected_canonical);
                 }
 
-                if (expected_ttl != NULL) {
+                if (!parsing_failed && expected_ttl != NULL) {
                     str_set (&buff, "");
                     test_push (t, "Matches expected turtle");
                     str_cat_splx_ttl (&buff, &sd, sd.root);
