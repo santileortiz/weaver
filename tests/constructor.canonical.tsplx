@@ -1,49 +1,28 @@
-instance;
+instance0;
 
-typed-instance a my-type1 ;
+instance1 prop1 "value 1" ;
 
-//shorthand a my-type2 ;
-//  has-parameter [
-//      p1 name "prop1" ;
-//        position 0 ;
-//    ] ;
-//  pattern [
-//      _ prop1 p1 ;
-//    ] ;
+typed-instance0 a my-type1 ;
 
-//employee a type ;
-//  has-parameter [
-//      p1 name "name" ;
-//    ] ;
-//    [
-//      p2 name "r" ;
-//    ] ;
-//    [
-//      p3 name "salary" ;
-//      type I ;
-//    ] ;
-//  pattern [
-//      _ a employee ;
-//        a person ;
-//        full-name p1 ;
-//        role p2 ;
-//        salary p3 ;
-//    ] ;
-//
-//jane a person ;
-//  full-name "Jane Doe" ;
-//
-//john a employee ;
-//  a person ;
-//  full-name "John Doe" ;
-//  role "Engineer" ;
-//
-//person a type ;
-//  has-parameter [
-//      p1 name "s" ;
-//        position 0 ;
-//    ] ;
-//  pattern [
-//      _ full-name p1 ;
-//    ] ;
-//
+typed-instance1 a my-type1 ;
+  prop1 "value 1" ;
+
+full a my-type3 ;
+  has-parameter [
+      __full_p1 a parameter ;
+        name "s" ;
+    ] ;
+  prop1 __full_p1 ;
+
+shorthand a my-type2 ;
+  has-parameter [
+      __shorthand_p1 a parameter ;
+        name "prop1" ;
+    ] ;
+  prop1 __shorthand_p1 ;
+
+person full-name [
+      __person_p1 a parameter ;
+        name "full-name" ;
+    ] ;
+  has-parameter __person_p1 ;

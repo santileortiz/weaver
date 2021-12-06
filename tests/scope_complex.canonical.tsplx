@@ -57,8 +57,8 @@ obj5 a my-type2 ;
     ];
     6;
     [
-      obj6 a my-type1 ;
-        prop4 "obj6 value1" ;
+      obj9 a my-type1 ;
+        prop4 "obj9 value1" ;
     ];
     7; 8; 9;
 

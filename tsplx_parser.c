@@ -135,7 +135,7 @@ void tps_error (struct tsplx_parser_state_t *tps, char *format, ...)
 {
     if (tps->error_msg == NULL) return;
 
-    str_cat_printf (tps->error_msg, ECMA_RED("error: "));
+    str_cat_printf (tps->error_msg, "%i:%i " ECMA_RED("error: "), tps->line_number, tps->column_number);
 
     PRINTF_INIT (format, size, args);
     size_t old_len = str_len(tps->error_msg);
@@ -235,9 +235,7 @@ sstring_t tps_advance_line(struct tsplx_parser_state_t *tps)
         tps_advance_char (tps);
     }
 
-    // Advance over the \n character. We leave \n characters because they are
-    // handled by the inline parser. Sometimes they are ignored (between URLs),
-    // and sometimes they are replaced to space (multiline paragraphs).
+    // Advance over the \n character.
     tps_advance_char (tps);
 
     return SSTRING(start, tps->pos - start);
@@ -358,6 +356,15 @@ void print_tsplx_tokens (char *tsplx_str)
     }
 }
 
+struct splx_node_list_t* tps_wrap_in_list_node (struct splx_data_t *sd, struct splx_node_t *node)
+{
+    struct splx_node_list_t *new_node_list_element = mem_pool_push_struct (&sd->pool, struct splx_node_list_t);
+    *new_node_list_element = ZERO_INIT(struct splx_node_list_t);
+    new_node_list_element->node = node;
+
+    return new_node_list_element;
+}
+
 static inline
 bool splx_node_has_name (struct splx_node_t *node)
 {
@@ -365,11 +372,12 @@ bool splx_node_has_name (struct splx_node_t *node)
 }
 
 static inline
-bool splx_node_render_as_reference (struct splx_node_t *node)
+bool splx_node_render_as_reference (struct splx_node_t *node, struct cstr_to_splx_node_map_tree_t *printed_nodes)
 {
-    return splx_node_has_name (node) &&
+    return (splx_node_has_name (node) &&
         node->attributes.num_nodes == 0 &&
-        node->floating_values == NULL;
+        node->floating_values == NULL) ||
+        cstr_to_splx_node_map_tree_lookup (printed_nodes, str_data(&node->str), NULL);
 }
 
 static inline
@@ -403,6 +411,61 @@ void splx_node_clear (struct splx_node_t *node)
 
     node->floating_values = NULL;
     node->floating_values_end = NULL;
+}
+
+struct splx_node_t* splx_node_get_or_create (struct splx_data_t *sd,
+                                             char *id, enum splx_node_type_t type)
+{
+    struct splx_node_t *subject_node = NULL;
+    if (id != NULL) {
+        subject_node = cstr_to_splx_node_map_get (&sd->nodes, id);
+        if (subject_node == NULL) {
+            subject_node = splx_node_new (sd);
+            str_set (&subject_node->str, id);
+            subject_node->type = type;
+            splx_node_add (sd, subject_node);
+        }
+
+    } else {
+        subject_node = splx_node_new (sd);
+        subject_node->type = type;
+        splx_node_add (sd, subject_node);
+    }
+
+    return subject_node;
+}
+
+void splx_node_attribute_add (struct splx_data_t *sd, struct splx_node_t *node,
+                              char *predicate,
+                              char *value, enum splx_node_type_t value_type)
+{
+    char *predicate_str = splx_get_node_id_str (sd, predicate);
+
+    struct splx_node_t *subject_node = splx_node_get_or_create (sd, value, value_type);
+    struct splx_node_list_t *subject_node_list = tps_wrap_in_list_node (sd, subject_node);
+
+    cstr_to_splx_node_list_map_tree_insert (&node->attributes, predicate_str, subject_node_list);
+}
+
+void splx_node_attribute_append (struct splx_data_t *sd, struct splx_node_t *node,
+                                 char *predicate,
+                                 struct splx_node_t *object)
+{
+    char *predicate_str = splx_get_node_id_str (sd, predicate);
+
+    struct splx_node_list_t *subject_node_list = cstr_to_splx_node_list_map_get (&node->attributes, predicate_str);
+    if (subject_node_list == NULL) {
+        subject_node_list = tps_wrap_in_list_node (sd, object);
+        cstr_to_splx_node_list_map_tree_insert (&node->attributes, predicate_str, subject_node_list);
+
+    } else {
+        while (subject_node_list->next != NULL) {
+            subject_node_list = subject_node_list->next;
+        }
+
+        struct splx_node_list_t *new_node_list_element = tps_wrap_in_list_node (sd, object);
+        subject_node_list->next = new_node_list_element;
+    }
 }
 
 // CAUTION: This isn't a fully deep copy, the values pointed to by the attribute
@@ -461,6 +524,11 @@ void print_splx_node (struct splx_data_t *sd, struct splx_node_t *node)
 #define str_cat_splx_dump(str,sd,node) str_cat_splx_dump_full(str,sd,node,0)
 void str_cat_splx_dump_full (string_t *str, struct splx_data_t *sd, struct splx_node_t *node, int curr_indent)
 {
+    if (node == NULL) {
+        str_cat_indented_c (str, ECMA_S_RED(0, "0x0") "\n", curr_indent);
+        return;
+    }
+
     // TODO: Avoid infinite loops if there is a cycle. Keep a map of printed
     // nodes and don't recurse down to the same node more than once.
 
@@ -535,9 +603,16 @@ void str_cat_literal_node (string_t *str, struct splx_node_t *node)
     }
 }
 
-void str_cat_splx_canonical_full (string_t *str, struct splx_data_t *sd, struct splx_node_t *node, int curr_indent);
+void str_cat_splx_canonical_full (string_t *str, struct splx_data_t *sd,
+                                  struct splx_node_t *node,
+                                  int curr_indent,
+                                  struct cstr_to_splx_node_map_tree_t *printed_nodes);
 
-void tps_cat_floating_literals (string_t *str, struct splx_data_t *sd, struct splx_node_t *node, struct splx_node_list_t *floating_objects, int curr_indent)
+void tps_cat_floating_literals (string_t *str, struct splx_data_t *sd,
+                                struct splx_node_t *node,
+                                struct splx_node_list_t *floating_objects,
+                                int curr_indent,
+                                struct cstr_to_splx_node_map_tree_t *printed_nodes)
 {
     bool is_first_floating = true;
     enum splx_node_type_t prev_type = SPLX_NODE_TYPE_UNKNOWN;
@@ -551,11 +626,13 @@ void tps_cat_floating_literals (string_t *str, struct splx_data_t *sd, struct sp
         }
 
         if (curr_node->type == SPLX_NODE_TYPE_OBJECT) {
-            if (splx_node_render_as_reference(curr_node)) {
+            if (splx_node_render_as_reference(curr_node, printed_nodes))
+            {
                 str_cat_indented_printf (str, curr_indent, "%s", str_data(&curr_node->str));
+
             } else {
                 str_cat_indented_c (str, "[\n", curr_indent);
-                str_cat_splx_canonical_full(str,sd,curr_node, curr_indent + SPLX_STR_INDENT);
+                str_cat_splx_canonical_full(str,sd,curr_node, curr_indent + SPLX_STR_INDENT,printed_nodes);
                 str_cat_indented_c (str, "]", curr_indent);
             }
 
@@ -576,11 +653,15 @@ void tps_cat_floating_literals (string_t *str, struct splx_data_t *sd, struct sp
     }
 }
 
-#define str_cat_splx_canonical(str,sd,node) str_cat_splx_canonical_full(str,sd,node,0)
-void str_cat_splx_canonical_full (string_t *str, struct splx_data_t *sd, struct splx_node_t *node, int curr_indent)
+void str_cat_splx_canonical_full (string_t *str, struct splx_data_t *sd,
+                                  struct splx_node_t *node,
+                                  int curr_indent,
+                                  struct cstr_to_splx_node_map_tree_t *printed_nodes)
 {
     bool is_triple = false;
     if (splx_node_has_name (node)) {
+        cstr_to_splx_node_map_tree_insert (printed_nodes, str_data(&node->str), node);
+
         str_cat_indented_c (str, str_data(&node->str), curr_indent);
         is_triple = true;
 
@@ -606,14 +687,14 @@ void str_cat_splx_canonical_full (string_t *str, struct splx_data_t *sd, struct 
         prev_type = curr_node->type;
     }
 
-    while (floating_objects != NULL && splx_node_render_as_reference (floating_objects->node)) {
+    while (floating_objects != NULL && splx_node_render_as_reference (floating_objects->node, printed_nodes)) {
         floating_objects = floating_objects->next;
     }
 
     if ((node->attributes.num_nodes == 0 || !splx_node_has_name (node))) {
         if (!is_triple) {
             if (node->floating_values != floating_objects) {
-                tps_cat_floating_literals (str, sd, node, floating_objects, curr_indent);
+                tps_cat_floating_literals (str, sd, node, floating_objects, curr_indent, printed_nodes);
 
                 if (node->floating_values != NULL) {
                     str_cat_c (str, "\n\n");
@@ -656,7 +737,7 @@ void str_cat_splx_canonical_full (string_t *str, struct splx_data_t *sd, struct 
                 }
 
                 if (curr_node->type == SPLX_NODE_TYPE_OBJECT) {
-                    if (splx_node_render_as_reference(curr_node)) {
+                    if (splx_node_render_as_reference(curr_node, printed_nodes)) {
                         str_cat_printf (str, "%s", str_data(&curr_node->str));
 
                     } else {
@@ -664,7 +745,7 @@ void str_cat_splx_canonical_full (string_t *str, struct splx_data_t *sd, struct 
 
                         indent_levels = 1;
                         if (is_triple) indent_levels = 2;
-                        str_cat_splx_canonical_full(str,sd,curr_node, curr_indent + (indent_levels+1)*SPLX_STR_INDENT);
+                        str_cat_splx_canonical_full(str,sd,curr_node, curr_indent + (indent_levels+1)*SPLX_STR_INDENT, printed_nodes);
                         str_cat_indented_c (str, "]", curr_indent + indent_levels*SPLX_STR_INDENT);
                     }
 
@@ -700,7 +781,7 @@ void str_cat_splx_canonical_full (string_t *str, struct splx_data_t *sd, struct 
     prev_type = SPLX_NODE_TYPE_UNKNOWN;
     {
         if (is_triple) {
-            tps_cat_floating_literals (str, sd, node, floating_objects, curr_indent + 2*SPLX_STR_INDENT);
+            tps_cat_floating_literals (str, sd, node, floating_objects, curr_indent + 2*SPLX_STR_INDENT, printed_nodes);
 
             if (str_last(str) != '\n') {
                 str_cat_c (str, "\n");
@@ -718,7 +799,7 @@ void str_cat_splx_canonical_full (string_t *str, struct splx_data_t *sd, struct 
                 if (!is_first_floating_object) {
                     str_cat_c (str, "\n");
                 }
-                str_cat_splx_canonical_full(str, sd, curr_node, curr_indent + floating_indent);
+                str_cat_splx_canonical_full(str, sd, curr_node, curr_indent + floating_indent, printed_nodes);
 
             } else {
                 if (is_first_floating_object || curr_node->type != prev_type) {
@@ -750,6 +831,14 @@ void str_cat_splx_canonical_full (string_t *str, struct splx_data_t *sd, struct 
     if (str_last(str) != '\n'){
         str_cat_c (str, "\n");
     }
+}
+
+static inline
+void str_cat_splx_canonical(string_t *str, struct splx_data_t *sd, struct splx_node_t *node) 
+{
+    struct cstr_to_splx_node_map_tree_t printed_nodes = {0};
+    str_cat_splx_canonical_full (str, sd, node, 0, &printed_nodes);
+    cstr_to_splx_node_map_tree_destroy (&printed_nodes);
 }
 
 void str_cat_literal_node_ttl (string_t *str, struct splx_node_t *node)
@@ -994,15 +1083,6 @@ void print_splx_dump (struct splx_data_t *sd, struct splx_node_t *node)
     str_free (&buff);
 }
 
-struct splx_node_list_t* tps_wrap_in_list_node (struct splx_data_t *sd, struct splx_node_t *node)
-{
-    struct splx_node_list_t *new_node_list_element = mem_pool_push_struct (&sd->pool, struct splx_node_list_t);
-    *new_node_list_element = ZERO_INIT(struct splx_node_list_t);
-    new_node_list_element->node = node;
-
-    return new_node_list_element;
-}
-
 struct splx_node_list_t* tps_subject_node_list_from_tmp_node (struct splx_data_t *sd, struct splx_node_t *node)
 {
     struct splx_node_list_t *subject_node_list;
@@ -1052,9 +1132,17 @@ struct splx_node_list_t* tps_insert_subject (struct splx_data_t *sd,
     return new_node_list_element;
 }
 
+struct tsplx_scope_t {
+    struct cstr_to_splx_node_map_tree_t variables;
+    struct cstr_to_splx_node_map_tree_t used_variables;
+};
+
 bool tps_parse_node (struct tsplx_parser_state_t *tps, struct splx_node_t *root_object,
-                     struct splx_data_t *sd)
+                     struct splx_data_t *sd,
+                     struct tsplx_scope_t *scope)
 {
+    assert (scope != NULL);
+
     struct splx_node_t *curr_object = root_object;
     struct splx_node_list_t *curr_value = NULL;
 
@@ -1070,6 +1158,7 @@ bool tps_parse_node (struct tsplx_parser_state_t *tps, struct splx_node_t *root_
             struct splx_node_t *node = tps_get_triple_node (tps, triple, triple_idx);
             if (node != NULL) {
                 splx_node_clear (node);
+
                 if (tps->token.value.len == 1 && *tps->token.value.s == '_') {
                     strn_set (&node->str, "", 0);
                 } else {
@@ -1078,6 +1167,34 @@ bool tps_parse_node (struct tsplx_parser_state_t *tps, struct splx_node_t *root_
                 node->type = SPLX_NODE_TYPE_OBJECT;
                 triple_idx++;
             }
+
+        } else if (tps_match(tps, TSPLX_TOKEN_TYPE_VARIABLE, NULL)) {
+            struct splx_node_t *node = tps_get_triple_node (tps, triple, triple_idx);
+
+            string_t variable_name = {0};
+            strn_set (&variable_name, tps->token.value.s, tps->token.value.len);
+
+            struct splx_node_t *target_node = NULL;
+            struct cstr_to_splx_node_map_tree_node_t *tree_node = NULL;
+            if (cstr_to_splx_node_map_tree_lookup (&scope->variables, str_data(&variable_name), &tree_node)) {
+                target_node = tree_node->value;
+
+                // :string_pool
+                char *variable_name_str = pom_strdup (&sd->pool, str_data(&variable_name));
+                cstr_to_splx_node_map_tree_insert (&scope->used_variables, variable_name_str, tree_node->value);
+
+            } else {
+                tps_error (tps, "use of undefined variable: %s", str_data(&variable_name));
+            }
+
+            if (!tps->error && node != NULL) {
+                splx_node_clear (node);
+                strn_set (&node->str, str_data(&target_node->str), str_len(&target_node->str));
+                target_node->type = target_node->type;
+                triple_idx++;
+            }
+
+            str_free (&variable_name);
 
         } else if (tps_match(tps, TSPLX_TOKEN_TYPE_STRING, NULL)) {
             struct splx_node_t *node = tps_get_triple_node (tps, triple, triple_idx);
@@ -1104,7 +1221,7 @@ bool tps_parse_node (struct tsplx_parser_state_t *tps, struct splx_node_t *root_
                 list_item->type = SPLX_NODE_TYPE_OBJECT;
                 triple_idx++;
 
-                tps_parse_node (tps, list_item, sd);
+                tps_parse_node (tps, list_item, sd, scope);
 
                 if (!tps_match (tps, TSPLX_TOKEN_TYPE_OPERATOR, "]")) {
                     tps_error (tps, "unexpected end of nested object");
@@ -1112,46 +1229,108 @@ bool tps_parse_node (struct tsplx_parser_state_t *tps, struct splx_node_t *root_
             }
 
         } else if (tps_match(tps, TSPLX_TOKEN_TYPE_OPERATOR, "{")) {
-            tps_parse_node (tps, curr_object, sd);
+            tps_parse_node (tps, curr_object, sd, scope);
 
             if (!tps_match (tps, TSPLX_TOKEN_TYPE_OPERATOR, "}")) {
                 tps_error (tps, "unexpected end of scope");
             }
 
+        } else if (tps_match(tps, TSPLX_TOKEN_TYPE_OPERATOR, "(")) {
+            if (triple_idx == 1) {
+                // Constructor signature
+                struct splx_node_t *constructor_lhs = &triple[0];
+
+
+                int parameter_idx = 0;
+                tps_next (tps);
+                while (!tps->error && !tps_match(tps, TSPLX_TOKEN_TYPE_OPERATOR, ")")) {
+                    char *parameter_name_str = NULL;
+                    struct splx_node_t *parameter = NULL;
+
+                    if (tps_match(tps, TSPLX_TOKEN_TYPE_VARIABLE, NULL)) {
+                        string_t parameter_name = {0};
+                        strn_set (&parameter_name, tps->token.value.s, tps->token.value.len);
+
+                        // :string_pool
+                        parameter_name_str = pom_strdup (&sd->pool, str_data(&parameter_name));
+
+                        string_t parameter_id = {0};
+                        str_set_printf (&parameter_id, "__%s_p%i", str_data(&constructor_lhs->str), parameter_idx+1);
+                        parameter = splx_node_get_or_create (sd, str_data(&parameter_id), SPLX_NODE_TYPE_OBJECT);
+                        splx_node_attribute_add (sd,
+                                                 parameter,
+                                                 "a", "parameter", SPLX_NODE_TYPE_OBJECT);
+                        splx_node_attribute_add (sd,
+                                                 parameter,
+                                                 "name", str_data (&parameter_name), SPLX_NODE_TYPE_STRING);
+
+                        splx_node_attribute_append (sd,
+                                                    constructor_lhs,
+                                                    "has-parameter", parameter);
+
+                    } else if (tps_match(tps, TSPLX_TOKEN_TYPE_OPERATOR, ",") || tps_match(tps, TSPLX_TOKEN_TYPE_OPERATOR, ")")) {
+                        // Do nothing, move to next token.
+
+                    } else {
+                        tps_error (tps, "unexpected token in constructor signature parameters: '%.*s' (%s)", tps->token.value.len, tps->token.value.s, tsplx_token_type_names[tps->token.type]);
+                    }
+
+                    if (!tps->error) {
+                        assert (parameter != NULL && parameter_name_str != NULL);
+                        cstr_to_splx_node_map_tree_insert (&scope->variables, parameter_name_str, parameter);
+                    }
+
+                    tps_next (tps);
+                }
+
+                if (!tps_match(tps, TSPLX_TOKEN_TYPE_OPERATOR, ")")) {
+                    tps_error (tps, "unexpected end of parameter list in constructor signature");
+                }
+
+            } else {
+                tps_error (tps, "constructor signature at unexpected position");
+            }
+
         } else if (tps_match(tps, TSPLX_TOKEN_TYPE_OPERATOR, "=")) {
             if (triple_idx == 1) {
+                // Constructor invocation
                 struct splx_node_t *target_node = &triple[0];
                 if (cstr_to_splx_node_map_get (&sd->nodes, str_data(&target_node->str)) == NULL) {
                     struct splx_node_t *instance = splx_node_dup (sd, target_node);
                     splx_node_add (sd, instance);
 
 
+                    // Optionally parse a constructor invocation
                     tps_next (tps);
                     if (tps_match(tps, TSPLX_TOKEN_TYPE_IDENTIFIER, NULL)) {
-                        char *predicate_str = splx_get_node_id_str (sd, "a");
-
                         string_t invoked_constructor = {0};
                         strn_set (&invoked_constructor, tps->token.value.s, tps->token.value.len);
 
-                        struct splx_node_list_t *subject_node_list;
-                        struct splx_node_t *subject_node = cstr_to_splx_node_map_get (&sd->nodes, str_data(&invoked_constructor));
-                        if (subject_node != NULL) {
-                            subject_node_list = tps_wrap_in_list_node (sd, subject_node);
-
-                        } else {
-                            subject_node = splx_node_new (sd);
-                            strn_set (&subject_node->str, tps->token.value.s, tps->token.value.len);
-                            subject_node->type = SPLX_NODE_TYPE_OBJECT;
-                            splx_node_add (sd, subject_node);
-                            subject_node_list = tps_wrap_in_list_node (sd, subject_node);
-                        }
-                        cstr_to_splx_node_list_map_tree_insert (&instance->attributes, predicate_str, subject_node_list);
+                        splx_node_attribute_add (sd,
+                                                 instance,
+                                                 "a", str_data (&invoked_constructor), SPLX_NODE_TYPE_OBJECT);
 
                         str_free (&invoked_constructor);
+
+                        tps_next (tps);
                     }
 
                     if (tps_match(tps, TSPLX_TOKEN_TYPE_OPERATOR, "{")) {
-                        tps_parse_node (tps, instance, sd);
+                        tps_parse_node (tps, instance, sd, scope);
+
+                        BINARY_TREE_FOR (cstr_to_splx_node_map, &scope->variables, curr_variable) {
+                            if (!cstr_to_splx_node_map_tree_lookup (&scope->used_variables, curr_variable->key, NULL)) {
+                                splx_node_attribute_append (sd,
+                                                            instance,
+                                                            curr_variable->key,
+                                                            curr_variable->value);
+
+                            }
+                        }
+
+                        cstr_to_splx_node_map_tree_destroy (&scope->variables);
+                        cstr_to_splx_node_map_tree_destroy (&scope->used_variables);
+                        *scope = ZERO_INIT (struct tsplx_scope_t);
 
                         if (!tps_match (tps, TSPLX_TOKEN_TYPE_OPERATOR, "}")) {
                             tps_error (tps, "unexpected end of scope");
@@ -1172,7 +1351,7 @@ bool tps_parse_node (struct tsplx_parser_state_t *tps, struct splx_node_t *root_
                 }
 
             } else {
-                tps_error (tps, "constructor found at unexpected position");
+                tps_error (tps, "constructor body at unexpected position");
             }
 
         } else if (tps_match(tps, TSPLX_TOKEN_TYPE_OPERATOR, "}") || tps_match(tps, TSPLX_TOKEN_TYPE_OPERATOR, "]") || tps_match(tps, TSPLX_TOKEN_TYPE_OPERATOR, ",") || tps_match(tps, TSPLX_TOKEN_TYPE_OPERATOR, ".") || tps_match(tps, TSPLX_TOKEN_TYPE_OPERATOR, ";")) {
@@ -1263,7 +1442,10 @@ bool tsplx_parse_str_name (struct splx_data_t *sd, char *str, string_t *error_ms
     assert (sd->root == NULL);
     sd->root = splx_node_new (sd);
 
-    bool success = tps_parse_node (tps, sd->root, sd);
+    struct tsplx_scope_t scope = {0};
+    bool success = tps_parse_node (tps, sd->root, sd, &scope);
+    cstr_to_splx_node_map_tree_destroy (&scope.variables);
+    cstr_to_splx_node_map_tree_destroy (&scope.used_variables);
 
     if (tps->error) {
         splx_destroy (sd);

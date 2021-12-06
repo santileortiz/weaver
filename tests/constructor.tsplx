@@ -1,13 +1,23 @@
-instance = {}
+instance0 = {}
 
-typed-instance = my-type1{}
+instance1 = {
+  prop1 "value 1" ;
+}
 
-//shorthand(prop1) = my-type2{}
+typed-instance0 = my-type1 {}
 
-//person(?s) = {
-//  full-name ?s ;
-//}
-//
+typed-instance1 = my-type1 {
+  prop1 "value 1" ;
+}
+
+full(?s) = my-type3{
+  prop1 ?s ;
+}
+
+shorthand(?prop1) = my-type2{}
+
+person(?full-name) = {}
+
 //jane = person("Jane Doe")
 //
 //employee(?name, ?r, I ?salary) = person(?name) {

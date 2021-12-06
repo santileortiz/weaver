@@ -45,8 +45,8 @@ obj5 a my-type2 ;
         a my-type2 ;
         prop2 "obj5>_ value1" ;
       ], 6, [
-      obj6 a my-type1 ;
-        prop4 "obj6 value1" ;
+      obj9 a my-type1 ;
+        prop4 "obj9 value1" ;
     ],
     7, 8, 9, [
       obj7 a my-type1 ;
