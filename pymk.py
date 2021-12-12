@@ -2,6 +2,8 @@
 from mkpy.utility import *
 import common_note_graph as gn
 
+from natsort import natsorted
+import random
 import psutil
 import uuid
 import json
@@ -231,6 +233,54 @@ def cloc():
 
 def install_dependencies ():
     ex ("sudo apt-get install python3-jinja2 build-essential python3-psutil")
+
+def new_file_id(length = 10):
+    characters = ['2','3','4','5','6','7','8','9','C','F','G','H','J','M','P','Q','R','V','W','X']
+    new_id = ""
+    for i in range(length):
+        new_id += random.choice(characters)
+
+    return new_id
+
+def rename_files ():
+    path = os.path.abspath (get_cli_arg_opt ("--directory"))
+    extension = get_cli_arg_opt ("--extension")
+    prefix = get_cli_arg_opt ("--prefix")
+    preserve_order = get_cli_bool_opt ("--preserve-order")
+
+    execute = get_cli_bool_opt ("--execute")
+
+    if path == None:
+        print (f"usage: ./pymk.py {get_function_name()} --directory DIRECTORY")
+        return
+
+    for dirpath, dirnames, filenames in os.walk(path):
+        print (f"{filenames}")
+        if preserve_order:
+            filenames = natsorted (filenames)
+            i = 1
+
+        for fname in filenames:
+            f_base, f_extension = path_split (fname)
+            if extension == None or f_extension == f".{extension}":
+                file_id = new_file_id ()
+                if preserve_order:
+                    new_fname = f"{prefix if prefix != None else ''}{i}_{file_id}{f_extension}"
+                    i += 1
+                else:
+                    new_fname = f"{prefix if prefix != None else ''}{file_id}{f_extension}"
+
+                print (f'{path_cat(dirpath, fname)} -> {new_fname}')
+
+                if execute:
+                    tgt_path = f'{path_cat(dirpath, new_fname)}'
+                    if not path_exists (tgt_path):
+                        os.rename (f'{path_cat(dirpath, fname)}', tgt_path)
+                    else:
+                        print (ecma_red('error:') + f' target already exists: {tgt_path}')
+
+    if not execute:
+        print ('Dry run by default, to perform changes use --execute')
 
 builtin_completions = ['--get_build_deps']
 if __name__ == "__main__":
