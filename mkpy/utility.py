@@ -1,4 +1,4 @@
-import sys, subprocess, os, ast, shutil, platform, re, json, pickle
+import sys, subprocess, os, ast, shutil, platform, re, json, pickle, zipfile, shlex
 
 import importlib.util, inspect, pathlib, filecmp
 
@@ -61,6 +61,9 @@ def get_user_functions():
     """
     keys = globals().copy().keys()
     return [(m,v) for m,v in get_functions() if m not in keys]
+
+def get_function_name():
+    return inspect.getouterframes(inspect.currentframe())[1].frame.f_code.co_name
 
 def user_function_exists(name):
     fun = None
@@ -332,17 +335,6 @@ def err (string, **kwargs):
 def ok (string, **kwargs):
     print ('\033[1m\033[92m{}\033[0m'.format(string), **kwargs)
 
-def get_user_str_vars ():
-    """
-    Returns a dictionary with global strings in module __main__.
-    """
-    var_list = inspect.getmembers(sys.modules['__main__'])
-    var_dict = {}
-    for v_name, v in var_list:
-        if type(v) == type(""):
-            var_dict[v_name] = v
-    return var_dict
-
 def pkg_config_libs (packages):
     return ex ('pkg-config --libs ' + ' '.join(packages), ret_stdout=True)
 
@@ -394,7 +386,32 @@ def set_echo_mode():
 def ex_escape (s):
     return s.replace ('\n', '').replace ('{', '{{').replace ('}','}}')
 
-def ex_bg (cmd, echo=True, cwd=None):
+def ex_bg (cmd, echo=True, cwd=None, log=None):
+    """
+    This does not invoke a full wrapping shell, this means shell syntax doesn't
+    work here. IO redirection using >, >>, <, << or | will not work. Chaining
+    multiple commands using ; or using & to run a command in the background
+    will fail too.
+
+    Rationale:
+    ---------
+    When running some command from a script in the background, we most likely
+    want the PID of the executed process so we can interact with it (kill it,
+    query if it's running, or if it terminated, detect if startup failed etc.).
+    For this, we can't wrap the process in a shell, if we did, it would be
+    impossible to detect any of these failure states and we would end with a
+    zombie shell process.
+
+    Even though this adds some limitations in the types of commands that can be
+    passed, it forces users to shape the commands in such a way that will be
+    more convenient for automation in the long term. Avoiding hard to debug
+    issues caused by the hidden layer of the wrapper shell.
+
+    I don't think it makes sense to have a function that runs a command in the
+    background and does use a wrapping shell. This would be equivalent to using
+    ex() and appending & to the command string. The process is run in the
+    background and we lose most of the ability to monitor and control it.
+    """
     global g_dry_run
     global g_echo_mode
 
@@ -407,40 +424,40 @@ def ex_bg (cmd, echo=True, cwd=None):
     if g_echo_mode:
         return
 
-    redirect = open(os.devnull, 'wb')
+    if log == None:
+        redirect = open(os.devnull, 'wb')
+    else:
+        redirect = open(log, 'wb')
 
     # NOTE: Passing cmd as a string does not work when shell=False, and we want
-    # shell=False so that we return the real PID, so that later we can send
-    # signals to the process, for example to kill it or check it's running.
-    process = subprocess.Popen(cmd.split(), shell=False, stdout=redirect, stderr=redirect, cwd=cwd)
+    # shell=False to disable the wrapping shell. We use shlex's split to
+    # correctly compute the parameters, even when there are spaces inside
+    # quoted strings or escaped space characters.
+    process = subprocess.Popen(shlex.split(cmd), shell=False, stdout=redirect, stderr=redirect, cwd=cwd)
 
+    redirect.close()
     return process.pid
 
-def ex (cmd, no_stdout=False, ret_stdout=False, echo=True):
-    # NOTE: This fails if there are braces {} in cmd but the content is not a
-    # variable. If this is the case, escape the content that has braces using
-    # the ex_escape() function. This is required for things like awk scripts.
+def ex (cmd, no_stdout=False, ret_stdout=False, echo=True, cwd=None):
     global g_dry_run
     global g_echo_mode
 
-    resolved_cmd = cmd.format(**get_user_str_vars())
-
-    ex_cmds.append(resolved_cmd)
+    ex_cmds.append(cmd)
     if g_dry_run:
         return
 
-    if echo or g_echo_mode: print (resolved_cmd)
+    if echo or g_echo_mode: print (cmd)
 
     if g_echo_mode:
         return
 
     if not ret_stdout:
         redirect = open(os.devnull, 'wb') if no_stdout else None
-        return subprocess.call(resolved_cmd, shell=True, stdout=redirect)
+        return subprocess.call(cmd, shell=True, stdout=redirect, cwd=cwd)
     else:
         result = ""
         try:
-            result = subprocess.check_output(resolved_cmd, shell=True, stderr=open(os.devnull, 'wb')).decode().strip ()
+            result = subprocess.check_output(cmd, shell=True, stderr=open(os.devnull, 'wb'), cwd=cwd).decode().strip ()
         except subprocess.CalledProcessError as e:
             pass
         return result
@@ -570,7 +587,7 @@ def store (name, value, default=None):
             if default != None:
                 cache_dict[name] = default
             else:
-                print ('Key \''+name+'\' is not in pymk/cache.')
+                print ('Key \''+name+'\' is not in mkpy/cache.')
                 return
     else:
         cache_dict[name] = value
@@ -735,16 +752,19 @@ def pers_func (name, func, arg):
     # wrap arg into a list.
     return pers_func_f (name, func, [arg])
 
+def path_isfile(path):
+    return os.path.isfile(path)
+
 def path_isdir (path_s):
-    return os.path.isdir(path_s.format(**get_user_str_vars()))
+    return os.path.isdir(path_s)
 
 def path_resolve (path_s):
-    return os.path.expanduser(path_s.format(**get_user_str_vars()))
+    return os.path.expanduser(path_s)
 
 def path_exists (path_s):
     """
-    Convenience function that checks the existance of a file or directory. It
-    supports context variable substitutions.
+    Convenience function that checks the existance of a path, either as a file
+    or a directory.
     """
     return pathlib.Path(path_resolve(path_s)).exists()
 
@@ -753,6 +773,9 @@ def path_dirname (path_s):
 
 def path_basename (path_s):
     return os.path.basename(path_s)
+
+def path_split (path):
+    return os.path.splitext(path)
 
 def path_cat (path, *paths):
     # I don't like how os.path.join() resets to root if it finds os.sep as the
@@ -778,6 +801,34 @@ def ensure_dir (path_s):
     resolved_path = path_resolve(path_s)
     if not path_exists(resolved_path):
         os.makedirs (resolved_path)
+
+def unpack_zip(fname, curr_path='', extensions=['.zip']):
+    """
+    Extract nested zip files recursively. Compressed files are left untouched,
+    the extracted result will be available in a directory with the same name
+    (and extension) but with the .dir suffix.
+
+    Useful for exploring the content of JAR or WAR files. Just pass
+    ['.jar','.war'] to the extensions parameter.
+    """
+    filepath = curr_path + fname
+    print (f'{filepath}')
+
+    target_path = filepath +'.dir/'
+    zf = zipfile.ZipFile(filepath)
+    zf.extractall(target_path)
+    extracted_list = zf.namelist()
+    zf.close()
+
+    # TODO: How does this handle a zip with the same file multiple times inside?
+    for p in extracted_list:
+        try:
+            _, ext = path_split(p)
+            if ext in extensions:
+                unpack_zip(p, curr_path=target_path)
+        except:
+            print(ecma_red('error:') + f' could not extract {p}')
+            pass
 
 def needs_target (recipe):
     """
@@ -848,34 +899,38 @@ def file_time(fname):
     return res
 
 
-def install_files (info_dict, prefix=None):
+def install_files (info_dict, prefix=None, only_new=True):
     global g_dry_run
 
+    # TODO: I've come to realize this is a HORRIBLE default...
     if prefix == None:
         prefix = '/'
 
     prnt = []
     for f in info_dict.keys():
-        dst = prefix + info_dict[f]
-        resolved_dst = dst.format(**get_user_str_vars())
-        resolved_f = f.format(**get_user_str_vars())
+        tgt = info_dict[f]
+        if tgt == None:
+            tgt = f
+
+        dst = path_cat(prefix, tgt)
 
         # Compute the absolute dest path including the file, even if just a
         # dest directory was specified
-        dst_dir, fname = os.path.split (resolved_dst)
+        dst_dir, fname = os.path.split (dst)
         if fname == '':
-            _, fname = os.path.split (resolved_f)
-        dest_file = dst_dir + '/' + fname
+            _, fname = os.path.split (f)
+        dest_file = path_cat(dst_dir, fname)
 
-        # If the file already exists check we have a newer version. If we
-        # don't, skip it.
         install_file = True
-        dest_file_path = pathlib.Path(dest_file)
-        if dest_file_path.exists():
-            src_time = file_time (resolved_f)
-            dst_time = file_time (dest_file)
-            if (src_time < dst_time):
-                install_file = False
+        if only_new:
+            # If the file already exists check we have a newer version. If we
+            # don't, skip it.
+            dest_file_path = pathlib.Path(dest_file)
+            if dest_file_path.exists():
+                src_time = file_time (f)
+                dst_time = file_time (dest_file)
+                if (src_time < dst_time):
+                    install_file = False
 
         if install_file:
             if not g_dry_run:
@@ -883,17 +938,17 @@ def install_files (info_dict, prefix=None):
                 if not dst_path.exists():
                     os.makedirs (dst_dir)
 
-                shutil.copy (resolved_f, dest_file)
+                shutil.copy (f, dest_file)
                 prnt.append (dest_file)
             else:
-                prnt.append ('Install: ' + resolved_f + ' -> ' + dest_file)
+                prnt.append ('Install: ' + f + ' -> ' + dest_file)
 
     prnt.sort()
     [print (s) for s in prnt]
 
     return prnt
 
-# TODO: dnf is written in python, meybe we can call dnf's module instead of
+# TODO: dnf is written in python, maybe we can call dnf's module instead of
 # using ex().
 # @use_dnf_python
 def rpm_find_providers (file_list):
