@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 from mkpy.utility import *
 import common_note_graph as gn
+import file_utility as fu
 
 from natsort import natsorted
 import random
@@ -255,7 +256,6 @@ def rename_files ():
         return
 
     for dirpath, dirnames, filenames in os.walk(path):
-        print (f"{filenames}")
         if preserve_order:
             filenames = natsorted (filenames)
             i = 1
@@ -265,7 +265,7 @@ def rename_files ():
             if extension == None or f_extension == f".{extension}":
                 file_id = new_file_id ()
                 if preserve_order:
-                    new_fname = f"{prefix if prefix != None else ''}{i}_{file_id}{f_extension}"
+                    new_fname = f"{prefix if prefix != None else ''}{i}_{file_id}{f_extension.lower()}"
                     i += 1
                 else:
                     new_fname = f"{prefix if prefix != None else ''}{file_id}{f_extension}"
@@ -281,6 +281,14 @@ def rename_files ():
 
     if not execute:
         print ('Dry run by default, to perform changes use --execute')
+
+def move_files ():
+    # TODO: Implement this...
+    pass
+
+def test_file_utility():
+    fu.tests()
+
 
 builtin_completions = ['--get_build_deps']
 if __name__ == "__main__":
