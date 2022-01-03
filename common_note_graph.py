@@ -91,4 +91,4 @@ def copy_changed(src, dst):
     for fname in file_paths:
         file_dict[fname] = replace_subpath(fname, src, dst)
 
-    install_files(file_dict, '')
+    install_files(file_dict, '/')
