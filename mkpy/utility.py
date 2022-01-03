@@ -1,6 +1,9 @@
 import sys, subprocess, os, ast, shutil, platform, re, json, pickle, zipfile, shlex
 
+import textwrap
 import importlib.util, inspect, pathlib, filecmp
+from itertools import permutations
+from collections import namedtuple
 
 from enum import Enum
 
@@ -62,8 +65,8 @@ def get_user_functions():
     keys = globals().copy().keys()
     return [(m,v) for m,v in get_functions() if m not in keys]
 
-def get_function_name():
-    return inspect.getouterframes(inspect.currentframe())[1].frame.f_code.co_name
+def get_function_name(nested_frames=1):
+    return inspect.getouterframes(inspect.currentframe())[nested_frames].frame.f_code.co_name
 
 def user_function_exists(name):
     fun = None
@@ -92,14 +95,23 @@ def call_user_function(name, dry_run=False):
         g_dry_run = False
     return
 
+def is_macos():
+    return platform.system() == 'Darwin'
+
+def is_windows():
+    return platform.system() == 'Windows'
+
+def is_linux():
+    return platform.system() == 'Linux'
+
 def get_completions_path():
     completions_path = ''
 
-    if platform.system() == 'Darwin':
+    if is_macos():
         if ex('which brew', echo=False, no_stdout=True) == 0:
             prefix = ex('brew --prefix', ret_stdout=True, echo=False)
             completions_path = path_cat(prefix, '/etc/bash_completion.d/pymk.py')
-    elif platform.system() == 'Linux':
+    elif is_linux():
         completions_path = '/usr/share/bash-completion/completions/pymk.py'
 
     return completions_path
@@ -146,12 +158,12 @@ def handle_tab_complete ():
             exit ()
 
         else:
-            if platform.system() == 'Darwin':
+            if is_macos():
                 warn('Tab completions not installed:')
                 print(' 1) Install brew (https://brew.sh/)')
                 print(' 2) Install bash-completion with "brew install bash-completion")')
                 print(' 3) Run "sudo ./pymk.py --install_completions" to install Pymk completions.\n')
-            elif platform.system() == 'Linux':
+            elif is_linux():
                 warn('Tab completions not installed:')
                 print(' Use "sudo ./pymk.py --install_completions" to install them\n')
 
@@ -314,6 +326,9 @@ def get_cli_no_opt ():
     The returned array will contain REST as a list. Don't use this if there is
     any chance the calling command can be different (for example a missing snip
     name). I have yet to come accross a use case where this could be an issue.
+
+    CAUTION: Always make the call to this function be the last one in a
+    sequence of calls to get_cli_* functions.
     """
     global cli_arg_options
     global cli_bool_options
@@ -322,9 +337,11 @@ def get_cli_no_opt ():
     while i<len(sys.argv):
         if sys.argv[i].startswith ('-'):
             if sys.argv[i] in cli_arg_options and len(sys.argv) > i+1:
-                i = i+2
-            elif sys.argv[i] in cli_bool_options and len(sys.argv) > i:
-                i = i+1
+                i += 2
+            else:
+                i += 1
+                if not(sys.argv[i] in cli_bool_options and len(sys.argv) > i):
+                    print (f'Unknown CLI parameter: {sys.argv[i]}')
         else:
             return sys.argv[i:]
     return None
@@ -437,6 +454,13 @@ def ex_bg (cmd, echo=True, cwd=None, log=None):
 
     redirect.close()
     return process.pid
+
+# TODO: Is there a way to do this in python without calling a shell?
+def ex_bg_kill (pid):
+    if is_windows():
+        ex(f'taskkill /F /PID {pid}')
+    else:
+        ex(f'kill {pid}')
 
 def ex (cmd, no_stdout=False, ret_stdout=False, echo=True, cwd=None):
     global g_dry_run
@@ -1297,6 +1321,205 @@ def log_clsr(level_value):
 for level_name, level_value in _level_enum.items():
     _g[f'log_{level_name.lower()}'] = log_clsr(level_value)
 
+###########
+# Testing
+#
+def get_outer_frame(nested_frames=3):
+    return inspect.getouterframes(inspect.currentframe())[nested_frames]
+
+def get_calling_test_source(nested_frames=3):
+    frame = get_outer_frame(nested_frames)
+
+    calling_source = None
+    with open(frame.filename) as f:
+        for i, line in enumerate(f, 1):
+            if i == frame.lineno:
+                calling_source = line.strip()
+                break
+
+    name = None
+
+    # Parse the line of code where this function was called from, use the
+    # source code that evaluated to the result argument as the name.
+    try:
+        source_ast = ast.parse(calling_source, mode='eval')
+        for node in ast.walk (source_ast):
+            if type(node) == ast.Call and node.func.id == get_function_name(2):
+                result_code = node.args[0]
+
+                if result_code.lineno == result_code.end_lineno:
+                    name = calling_source[result_code.col_offset:result_code.end_col_offset]
+                else:
+                    name = calling_source[result_code.col_offset:] + '...'
+
+            elif type(node) == ast.Call and node.func.id.endswith('_test'):
+                if node.lineno == node.end_lineno:
+                    name = calling_source[node.col_offset:node.end_col_offset]
+                else:
+                    name = calling_source[node.col_offset:] + '...'
+    except:
+        pass
+
+    return name
+
+def automatic_test_function(*args, **kwargs):
+    if len(args) == 1 and callable(args[0]) and len(kwargs) == 0:
+        func = args[0]
+        def test_function(*args, **kwargs):
+            function_args = args[:-1]
+            expected_result = args[-1]
+
+            source = get_calling_test_source()
+            result = func(*function_args, **kwargs)
+
+            test (result, expected_result, name=f'{source} -> {result}')
+
+        func.__globals__[f'{func.__name__}_test'] = test_function
+
+        return func
+
+    else:
+        def __wrapper(func):
+            permute_args_l = kwargs.get('permute_args')
+            def test_function(*args, **kwargs):
+                function_args = args[:-1]
+                expected_result = args[-1]
+
+                source = get_calling_test_source()
+
+                if type(permute_args_l) == type(True):
+                    # TODO: If there are repeated parameters, the number of
+                    # permutations can be reduced.
+                    for i, args_perm in enumerate(permutations(function_args)):
+                        result = func(*args_perm, **kwargs)
+                        # TODO: Show the actual permutation in the source code
+                        # name, instead of just the index in the arrow.
+                        test (result, expected_result, name=f'{source} -({i})-> {result}')
+                elif type(permute_args_l) == type(1):
+                    function_args_list = list(function_args)
+                    to_be_permuted = function_args[permute_args_l][:]
+                    for i, args_perm in enumerate(permutations(to_be_permuted)):
+                        function_args_list[permute_args_l] = args_perm
+                        result = func(*function_args_list, **kwargs)
+                        test (result, expected_result, name=f'{source} -({i})-> {result}')
+                else:
+                    result = func(*function_args, **kwargs)
+                    test (result, expected_result, name=f'{source} -> {result}')
+
+            func.__globals__[f'{func.__name__}_test'] = test_function
+            return func
+
+        return __wrapper
+
+class Test():
+    def __init__(self, name):
+        self.children_status = None
+        self.name = name
+        self.output = ''
+
+class TestContext():
+    def __init__(self):
+        self.width = 40
+        self.indent = 4
+
+        self.tests = []
+        self.force_output = False
+
+    def set_status(self, status):
+        if len(self.tests) > 0 and status != None:
+            if self.tests[-1].children_status == None:
+                self.tests[-1].children_status = status
+            else:
+                self.tests[-1].children_status &= status
+
+    def out(self, s):
+        if len(self.tests) == 0:
+            print (s)
+        else:
+            self.tests[-1].output += s + '\n'
+
+__g_test_context = TestContext()
+
+def test_force_output(value=True, test_context=None):
+    global __g_test_context
+    if test_context == None:
+        test_context = __g_test_context
+    test_context.force_output = value
+
+def test_push(name, test_context=None):
+    global __g_test_context
+    if test_context == None:
+        test_context = __g_test_context
+
+    test_context.tests.append(Test(name))
+
+def test_result_string(s, result, test_context=None):
+    global __g_test_context
+    if test_context == None:
+        test_context = __g_test_context
+
+    unescaped = re.sub(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])', '', s)
+
+    return s + '.'*max(3, test_context.width-len(unescaped)) + ' ' + result
+
+def test_result_string_default(name, result, test_context=None):
+    global __g_test_context
+    if test_context == None:
+        test_context = __g_test_context
+
+    if result:
+        return test_result_string (f'{name}', ecma_green("OK"), test_context=test_context)
+    else:
+        return test_result_string (f'{name}', ecma_red("FAIL"), test_context=test_context)
+
+def test_pop(result=None, test_context=None):
+    global __g_test_context
+    if test_context == None:
+        test_context = __g_test_context
+
+    t = test_context.tests.pop()
+
+    if result == None:
+        result = t.children_status
+
+    print (test_result_string_default (t.name, result))
+
+    if result == False or t.children_status == False or test_context.force_output:
+        indented = textwrap.indent (t.output, ' '*(test_context.indent)*(len(test_context.tests)+1))
+        print (indented, end='')
+
+def test_error(message, test_context=None):
+    global __g_test_context
+    if test_context == None:
+        test_context = __g_test_context
+
+    indented = textwrap.indent (message, ' '*(test_context.indent)*(len(test_context.tests)))
+    test_context.out(indented)
+
+def test(result, expected_result=None, name=None, test_context=None):
+    global __g_test_context
+    if test_context == None:
+        test_context = __g_test_context
+
+    if name == None:
+        source = get_calling_test_source()
+        name = f'{source} -> {result}'
+
+    success = None
+    if expected_result != None:
+        if result == expected_result:
+            success = True
+        else:
+            success = False
+
+    if expected_result != None:
+        test_context.out(test_result_string_default(name, result == expected_result))
+    else:
+        test_context.out(f'{name} -> {result} ... {ecma_yellow("?")} ')
+
+    test_context.set_status(success)
+
+    return success
 
 ##############
 # Regex tester
@@ -1318,7 +1541,7 @@ def get_color_by_idx(idx):
         return ecma_code_f(183)
 
 def regex_match_print (string, match_object):
-    res = string
+    res = ''
     if match_object != None:
         markers = {}
         for i in range(len(match_object.groups())+1):
@@ -1346,36 +1569,47 @@ def regex_match_print (string, match_object):
         last_pos = 0
         sorted_markers = [(key, markers[key]) for key in sorted(markers.keys())]
         for pos, markers_at_pos in sorted_markers:
-            print (string[last_pos:pos], end='')
+            res += string[last_pos:pos]
             for marker in markers_at_pos:
-                print (marker[1](marker[0]), end='')
+                res += marker[1](marker[0])
             last_pos = pos
-        print (string[last_pos:])
+        res += string[last_pos:]
 
     else:
-        print (string)
+        return string
 
-def regex_test(regex, test_str, should_match):
+    return res
+
+def regex_test(regex, test_str, should_match, test_context=None):
+    global __g_test_context
+    if test_context == None:
+        test_context = __g_test_context
+
+    out_str = ''
+
     result = re.search(regex, test_str)
 
     if (should_match and result != None) or (not should_match and result == None):
         if result != None:
-            print (ecma_green('OK MATCH'), end=' ')
+            out_str += ecma_green('OK MATCH')
         else:
-            print (ecma_green('OK NO MATCH'), end=' ')
+            out_str += ecma_green('OK NO MATCH')
 
-        regex_match_print (test_str, result)
+        out_str += ' ' + regex_match_print (test_str, result)
+
+        test_context.set_status(True)
 
     else:
         if result != None:
-            print (ecma_red('FAIL MATCH'), end=' ')
-            regex_match_print (test_str, result)
-            print (result)
-            print()
+            out_str += f"{ecma_red('FAIL MATCH')} {regex_match_print(test_str, result)}\n"
+            out_str += result + '\n'
 
         else:
-            print (ecma_red('FAIL NO MATCH'), end=' ')
-            regex_match_print (test_str, result)
+            out_str += ecma_red('FAIL NO MATCH') + ' ' + regex_match_print (test_str, result)
+
+        test_context.set_status(False)
+
+    test_context.out(out_str)
 
 
 ############################################
