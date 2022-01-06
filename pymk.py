@@ -244,47 +244,48 @@ def new_file_id(length = 10):
     return new_id
 
 def rename_files ():
-    path = os.path.abspath (get_cli_arg_opt ("--directory"))
-    extension = get_cli_arg_opt ("--extension")
     prefix = get_cli_arg_opt ("--prefix")
-    preserve_order = get_cli_bool_opt ("--preserve-order")
+    ordered = get_cli_bool_opt ("--ordered")
+    dry_run = not get_cli_bool_opt ("--execute")
 
-    execute = get_cli_bool_opt ("--execute")
+    rest_args = get_cli_no_opt ()
 
-    if path == None:
-        print (f"usage: ./pymk.py {get_function_name()} --directory DIRECTORY")
+    if rest_args == None:
+        print (f"usage: ./pymk.py {get_function_name()} [OPTIONS] DIRECTORY")
         return
 
-    for dirpath, dirnames, filenames in os.walk(path):
-        if preserve_order:
-            filenames = natsorted (filenames)
-            i = 1
+    path = os.path.abspath(rest_args[0])
 
-        for fname in filenames:
-            f_base, f_extension = path_split (fname)
-            if extension == None or f_extension == f".{extension}":
-                file_id = new_file_id ()
-                if preserve_order:
-                    new_fname = f"{prefix if prefix != None else ''}{i}_{file_id}{f_extension.lower()}"
-                    i += 1
-                else:
-                    new_fname = f"{prefix if prefix != None else ''}{file_id}{f_extension}"
-
-                print (f'{path_cat(dirpath, fname)} -> {new_fname}')
-
-                if execute:
-                    tgt_path = f'{path_cat(dirpath, new_fname)}'
-                    if not path_exists (tgt_path):
-                        os.rename (f'{path_cat(dirpath, fname)}', tgt_path)
-                    else:
-                        print (ecma_red('error:') + f' target already exists: {tgt_path}')
+    fu.canonical_rename (path, prefix, ordered=ordered,
+            dry_run=dry_run, verbose=True)
 
     if not execute:
         print ('Dry run by default, to perform changes use --execute')
 
 def move_files ():
-    # TODO: Implement this...
-    pass
+    prefix = get_cli_arg_opt ("--prefix")
+    ordered = get_cli_bool_opt ("--ordered")
+    dry_run = not get_cli_bool_opt ("--execute")
+    target = get_cli_arg_opt ("--target")
+    position = int(get_cli_arg_opt ("--position"))
+
+    rest_args = get_cli_no_opt()
+
+    if rest_args == None:
+        print (f"usage: ./pymk.py {get_function_name()} [OPTIONS] [--target TARGET_DIRECTORY] SOURCE_DIRECTORY")
+        return
+
+    source = os.path.abspath (rest_args[0])
+
+    fu.canonical_move (source,
+            target,
+            prefix=prefix,
+            ordered=ordered,
+            position=position,
+            dry_run=dry_run, verbose=True)
+
+    if not execute:
+        print ('Dry run by default, to perform changes use --execute')
 
 def test_file_utility():
     fu.tests()
