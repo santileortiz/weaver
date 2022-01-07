@@ -259,7 +259,7 @@ def rename_files ():
     fu.canonical_rename (path, prefix, ordered=ordered,
             dry_run=dry_run, verbose=True)
 
-    if not execute:
+    if dry_run:
         print ('Dry run by default, to perform changes use --execute')
 
 def move_files ():
@@ -284,7 +284,7 @@ def move_files ():
             position=position,
             dry_run=dry_run, verbose=True)
 
-    if not execute:
+    if dry_run:
         print ('Dry run by default, to perform changes use --execute')
 
 def test_file_utility():

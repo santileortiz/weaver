@@ -59,7 +59,7 @@ def file_canonical_rename (path, target,
 
     prefix_str = ''
     if prefix != None:
-        prefix_str = f'{prefix} _'
+        prefix_str = f'{prefix}_'
 
     idx_str = ''
     if idx != None:
