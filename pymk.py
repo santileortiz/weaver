@@ -267,7 +267,10 @@ def move_files ():
     ordered = get_cli_bool_opt ("--ordered")
     dry_run = not get_cli_bool_opt ("--execute")
     target = get_cli_arg_opt ("--target")
-    position = int(get_cli_arg_opt ("--position"))
+
+    position = get_cli_arg_opt ("--position")
+    if position != None:
+        position = int(position)
 
     rest_args = get_cli_no_opt()
 
