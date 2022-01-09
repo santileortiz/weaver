@@ -339,9 +339,15 @@ def get_cli_no_opt ():
             if sys.argv[i] in cli_arg_options and len(sys.argv) > i+1:
                 i += 2
             else:
-                i += 1
-                if not(sys.argv[i] in cli_bool_options and len(sys.argv) > i):
+                if sys.argv[i] in cli_arg_options and len(sys.argv) <= i+1:
+                    # TODO: This doesn't detect all the cases where someone may
+                    # forget to pass the argument.
+                    print (f'Missing argument for CLI parameter: {sys.argv[i]}')
+
+                elif sys.argv[i] not in cli_bool_options:
                     print (f'Unknown CLI parameter: {sys.argv[i]}')
+
+                i += 1
         else:
             return sys.argv[i:]
     return None
