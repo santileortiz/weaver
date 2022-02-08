@@ -2,7 +2,9 @@
 from mkpy.utility import *
 import common_note_graph as gn
 import file_utility as fu
+import file_utility_tests
 
+import curses, time
 from natsort import natsorted
 import random
 import psutil
@@ -46,6 +48,7 @@ def server_start ():
     else:
         pid = ex_bg (f'./nocache_server.py', cwd=out_dir)
         print (f'Started server, PID: {pid}')
+        print ('Open at: http://localhost:8000/')
         store (server_pid_pname, pid)
 
 def server_stop ():
@@ -290,9 +293,105 @@ def move_files ():
     if dry_run:
         print ('Dry run by default, to perform changes use --execute')
 
-def test_file_utility():
-    fu.tests()
 
+def input_char(win):
+    while True:
+        ch = win.getch()
+        if ch in range(32, 127):
+            break
+        time.sleep(0.05)
+    return chr(ch)
+
+def new_scan(path):
+    error = None
+    cmd = f"scanimage --resolution 300 --format jpeg --output-file '{path}'"
+
+    status = ex(cmd, echo=False, quiet=True)
+    if status != 0:
+        error = True
+
+    return error, cmd
+
+def interactive_scan():
+    rest_args = get_cli_no_opt()
+
+    if rest_args == None:
+        print (f"usage: ./pymk.py {get_function_name()} TARGET_DIRECTORY")
+        return
+
+    target = os.path.abspath (rest_args[0])
+
+    help_str = textwrap.dedent("""
+        Commands:
+          n new scan
+          p scan next page
+          e end section
+
+          h help
+          q quit
+        """).strip() + '\n'
+
+    mfd = fu.MultiFileDocument(target)
+
+    win = curses.initscr()
+    curses.start_color()
+    win.scrollok(1)
+    win.addstr(help_str)
+
+    curses.use_default_colors()
+    curses.init_pair(1, curses.COLOR_RED, -1)
+
+    while True:
+        win.addstr('> ')
+        c = input_char(win)
+        win.addstr('\n')
+
+        if c.lower() == 'n':
+            path_to_scan = fu.mfd_new(mfd)
+            error, output = new_scan (path_to_scan)
+
+            win.addstr(f'{output}\n')
+            win.refresh()
+
+            if error == None:
+                win.addstr(f'New: {path_basename(path_to_scan)}\n')
+            else:
+                win.addstr('error:', curses.color_pair(1))
+                win.addstr(' could not scan page\n')
+
+        elif c.lower() == 'p':
+            path_to_scan = fu.mfd_new_page (mfd)
+            error, output = new_scan (path_to_scan)
+
+            win.addstr(f'{output}\n')
+            win.refresh()
+
+            if error == None:
+                win.addstr(f'New: {path_basename(path_to_scan)}\n')
+            else:
+                win.addstr('error:', curses.color_pair(1))
+                win.addstr(' could not scan page\n')
+
+            win.addstr (f'Document files:\n')
+            for p in mfd.document_files:
+                win.addstr (f'  {p}\n')
+
+        elif c.lower() == 'e':
+            fu.mfd_end_section (mfd)
+            win.addstr (f'Document files:\n')
+            for p in mfd.document_files:
+                win.addstr (f'  {p}\n')
+
+        elif c.lower() == 'h':
+            win.addstr(help_str)
+
+        elif c.lower() == 'q':
+            break
+
+    curses.endwin()
+
+def test_file_utility():
+    file_utility_tests.tests()
 
 builtin_completions = ['--get_build_deps']
 if __name__ == "__main__":
@@ -301,4 +400,3 @@ if __name__ == "__main__":
     handle_tab_complete ()
 
     pymk_default()
-

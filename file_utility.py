@@ -2,8 +2,30 @@ from mkpy.utility import *
 
 from natsort import natsorted
 import random
+import errno
 
-canonical_fname_r = '^(?:(.*?)_)??(?:([0-9]*)_)?([23456789CFGHJMPQRVWX]{8,})\.(.*)$'
+canonical_fname_r = '^(?:(.*?)_)??(?:([0-9]*)_)?([23456789CFGHJMPQRVWX]{8,})((?:\.[0-9]+)+)?\.(.*)$'
+
+# TODO: Implement something like an improved C struct but in Python.
+#  - Mutable, unlike namedtuple.
+#  - Only allows accessing members by name (forbids access by index like namedtuple).
+#  - Simple attribute definition. Support for default values and no repetition of attribute names like the usual __init__ implementation (this can be similar to namedtuple, but maybe we can do better?)
+#  - Automatic __eq__ implementation that compares by value.
+#  - Automatic __repr__ implementation.
+class CanonicalName():
+    def __init__(self, is_canonical=False, prefix=None, idx=None, identifier=None, location=[], extension=None):
+        self.is_canonical = is_canonical
+        self.prefix = prefix
+        self.idx = idx
+        self.identifier = identifier
+        self.location = location
+        self.extension = extension
+
+    def __eq__(self, other):
+        return other != None and isinstance(other, CanonicalName) and self.is_canonical == other.is_canonical and self.prefix == other.prefix and self.idx == other.idx and self.identifier == other.identifier and self.location == other.location and self.extension == other.extension
+
+    def __repr__(self):
+        return f'({repr(self.is_canonical)}, {repr(self.prefix)}, {repr(self.idx)}, {repr(self.identifier)}, {repr(self.location)}, {repr(self.extension)})'
 
 @automatic_test_function
 def canonical_parse (path):
@@ -16,6 +38,8 @@ def canonical_parse (path):
     prefix = None
     idx = None
     identifier = None
+    location_str = None
+    extension = None
 
     if result != None:
         is_canonical = True
@@ -24,11 +48,17 @@ def canonical_parse (path):
         idx_str = result.group(2)
         idx = int(idx_str) if idx_str != None else None
         identifier = result.group(3)
+        location_str = result.group(4)
+        extension = result.group(5)
 
-    return (is_canonical, prefix, idx, identifier)
+    location = []
+    if location_str != None:
+        location = [int(i) for i in location_str.split('.')[1:]]
+
+    return CanonicalName(is_canonical, prefix, idx, identifier, location, extension)
 
 def is_canonical (path):
-    return canonical_parse[0]
+    return canonical_parse.is_canonical
 
 def collect_canonical_fnames (path):
     has_non_canonical = False
@@ -38,12 +68,12 @@ def collect_canonical_fnames (path):
     for dirpath, dirnames, filenames in os.walk(path):
         for fname in filenames:
             canonical_fname = canonical_parse(fname)
-            if not canonical_fname[0]:
+            if not canonical_fname.is_canonical:
                 has_non_canonical = True
                 non_canonical.append(fname)
             else:
                 canonical_files.append (canonical_fname)
-    result = sorted (canonical_files, key = lambda f: f[2])
+    result = sorted (canonical_files, key = lambda f: f.idx)
 
     if has_non_canonical:
         print (f"Some file names are not in canonical form, they will be ignored:")
@@ -52,9 +82,12 @@ def collect_canonical_fnames (path):
 
     return result
 
-def file_canonical_rename (path, target,
-        prefix, idx, identifier, extension,
-        verbose, dry_run, error_if_target_exists=False):
+def new_canonical_name (prefix=None,
+        idx=None,
+        identifier=None,
+        location=[],
+        extension=None,
+        path=None):
     error = None
 
     prefix_str = ''
@@ -65,29 +98,84 @@ def file_canonical_rename (path, target,
     if idx != None:
         idx_str = f'{idx}_'
 
+    if identifier == None:
+        identifier = new_file_id()
+
+    location_str = ''
+    if len(location) > 0:
+        location_str = '.' + '.'.join([str(i) for i in location])
+
+    extension_str = ''
+    if extension != None:
+        if not extension.startswith('.'):
+            extension_str = f'.{extension}'
+        else:
+            extension_str = extension
+
+    new_fname = f"{prefix_str}{idx_str}{identifier}{location_str}{extension_str}"
+
+    if path != None:
+        tgt_path = f'{path_cat(path, new_fname)}'
+        if path_exists (tgt_path):
+            error = errno.EEXIST
+
+        # TODO: Implement a flag parameter that executes a "soft duplicate"
+        # test, meaning, it checks if a file with the same identifier exists in
+        # the target directory, but not exactly the same file name (diiferent
+        # index, prefix etc.). Note that files with different extension should
+        # not be considered soft duplicates, these are "related files".
+
+    return (error, new_fname)
+
+def new_unique_canonical_name (path, idx=None, prefix=None, location=[], extension=None, id_length=10):
+    while True:
+        new_fname_error, new_fname = new_canonical_name(prefix=prefix,
+                idx=idx,
+                identifier=new_file_id(length=id_length),
+                location=location,
+                extension=extension,
+                path=path)
+
+        if new_fname_error == None:
+            break
+
+    return new_fname
+
+def file_canonical_rename (path, target,
+        prefix, idx, identifier, location, extension,
+        verbose, dry_run, error_if_target_exists=False):
+    error = None
+
     if extension == None:
         _, extension = path_split(path)
     extension_str = extension
     if extension in ['.JPG', '.JPEG', '.MOV']:
         extension_str = extension.lower()
 
-    new_fname = f"{prefix_str}{idx_str}{identifier}{extension_str}"
-
     if target == None:
         target = path_dirname(path)
+
+    new_fname_error, new_fname = new_canonical_name(prefix=prefix,
+            idx=idx,
+            identifier=identifier,
+            location=location,
+            extension=extension_str,
+            path=target)
 
     tgt_path = f'{path_cat(target, new_fname)}'
 
     if not dry_run:
-        if not path_exists (tgt_path):
+        if new_fname_error == errno.EEXIST and error_if_target_exists:
+            error = ecma_red('error:') + f' target already exists: {tgt_path}'
+
+        else:
             try:
-                # TODO: This fails if run from a memory to the HDD with the following error:
+                # TODO: This fails if run from an SD memory to the HDD with the
+                # following error:
                 #   OSError: [Errno 18] Invalid cross-device link: ...
                 os.rename (f'{path}', tgt_path)
             except:
                 error = ecma_red('error:') +  f'exception while moving: {path} -> {tgt_path}'
-        elif error_if_target_exists:
-            error = ecma_red('error:') + f' target already exists: {tgt_path}'
 
     return (error, tgt_path)
 
@@ -111,23 +199,18 @@ def canonical_renumber (path_or_file_list, new_id_order, verbose=False, dry_run=
     for path in file_list:
         basename = path_basename (path)
         canonical_fname = canonical_parse(basename)
-        if not canonical_fname[0]:
+        if not canonical_fname.is_canonical:
             non_canonical.append(path)
         else:
-            canonical_files[canonical_fname[3]] = canonical_fname
-            canonical_idx[canonical_fname[3]] = 0
-            canonical_full_path[canonical_fname[3]] = path
+            canonical_files[canonical_fname.identifier] = canonical_fname
+            canonical_idx[canonical_fname.identifier] = 0
+            canonical_full_path[canonical_fname.identifier] = path
 
     for i, identifier in enumerate(new_id_order, 1):
         path = canonical_full_path[identifier]
-        rename_error, new_path = file_canonical_rename (path,
-                None,
-                canonical_fname[1],
-                i,
-                identifier,
-                None,
-                verbose,
-                dry_run)
+        rename_error, new_path = file_canonical_rename (path, None,
+                canonical_fname.prefix, i, identifier, canonical_fname.location, None,
+                verbose, dry_run)
 
         if rename_error != None:
             error = '' if error == None else error
@@ -159,7 +242,7 @@ def canonical_move (source, target, prefix=None, ordered=False, position=None,
 
     source_ids = []
     if position != None:
-        target_ids = [canonical_fname[3] for canonical_fname in collect_canonical_fnames(target)]
+        target_ids = [canonical_fname.identifier for canonical_fname in collect_canonical_fnames(target)]
 
     is_ordered = True if ordered or position != None else False
 
@@ -178,7 +261,7 @@ def canonical_move (source, target, prefix=None, ordered=False, position=None,
             path = path_cat(dirpath, fname)
             rename_error, new_path = file_canonical_rename (path,
                     target,
-                    prefix, i, file_id, f_extension,
+                    prefix, i, file_id, [], f_extension,
                     verbose, dry_run, True)
 
             if rename_error != None:
@@ -234,406 +317,101 @@ def new_file_id(length = 10):
 
     return new_id
 
-def path_to_dict (path):
-    result = {}
-    for dirpath, dirnames, filenames in os.walk(path):
-        for fname in filenames:
-            path = path_cat(dirpath, fname)
-            if path_exists (path):
-                f = open(path)
-                result[path] = f.read()
-                f.close()
 
-    return result
+#########################
+# Multi File Document API
+#########################
 
-test_base = 'bin/test_tree/'
+class MfdActions(Enum):
+    NEW = 1
+    NEW_PAGE = 2
+    END_SECTION = 3
 
-def reset_id_generator():
-    """
-    Reset the RNG to a fixed seed so that generated IDs are always the same.
-    """
-    random.seed (0)
+class MultiFileDocument():
+    def __init__(self, target_path, idx=None, prefix='scn', extension='jpg'):
+        self.target_path = target_path
+        self.idx = idx
+        self.prefix = prefix
+        self.extension = extension
 
-def canonical_move_test(file_map, name, ordered=False):
-    for k in file_map:
-        test_file_path = path_cat(test_base, k)
+        self.identifier = ''
 
-        ensure_dir (path_dirname(test_file_path))
-        test_file = open (test_file_path, 'w+')
-        test_file.write (test_file_path + '\n')
-        test_file.close()
-    
-    result_dict = {}
-    for k in file_map:
-        tgt = path_cat(test_base, file_map[k])
-        result_dict[tgt] = path_cat(test_base, k)
+        self.document_files = []
+        self.curr_location = []
+        self.curr_section_idx = -1
 
-    # Ensure file content always ends in newline
-    for k in result_dict:
-        if result_dict[k][-1] != '\n':
-            result_dict[k] += '\n'
+        self.error = False
+        self.last_action = None
 
-    src_path = path_cat(test_base, 'source')
-    tgt_path = path_cat(test_base, 'target')
+def mfd_new(self):
+    if self.error:
+        return
 
-    test_push(name)
+    self.document_files = []
+    new_fname = new_unique_canonical_name(self.target_path,
+            prefix=self.prefix,
+            extension=self.extension)
+    self.identifier = canonical_parse(new_fname).identifier
 
-    original_file_tree = path_to_dict(src_path)
+    self.document_files.append(new_fname)
 
-    reset_id_generator()
-    canonical_move (src_path, tgt_path, ordered=ordered, dry_run=True)
+    self.last_action = MfdActions.NEW
+    return path_cat(self.target_path, new_fname)
 
-    test_push('Dry run mode')
-    success = test (path_to_dict(src_path), original_file_tree, 'Source directory remains the same')
-    success = test (path_to_dict(tgt_path), {}, 'Target directory is empty')
-    test_pop()
+def mfd_add_section(self):
+    self.curr_location.insert(0, 1)
 
-    reset_id_generator()
-    canonical_move (src_path, tgt_path, ordered=ordered)
+    new_document_files = []
+    for fname in self.document_files:
+        new_location = [1] + canonical_parse(fname).location
 
-    success = test (path_to_dict(src_path), {}, 'Source tree is empty')
-    success = test (path_to_dict(tgt_path), result_dict, 'Target tree is correct')
+        error, new_path = file_canonical_rename (path_cat(self.target_path, fname), None,
+                self.prefix, self.idx, self.identifier, new_location, self.extension,
+                False, False)
+        new_document_files.append (path_basename (new_path))
 
-    if success == False:
-        # TODO: Get better debugging output for errors
-        test_error (str(result_dict))
-        test_error (str(path_to_dict(tgt_path)))
+    self.document_files = new_document_files
+    self.curr_section_idx += 1
 
-    test_pop()
-    shutil.rmtree (test_base)
+def mfd_new_page(self):
+    if self.error:
+        return
 
-def canonical_rename_test(file_map, name, ordered=False):
-    for k in file_map:
-        test_file_path = path_cat(test_base, k)
+    if self.curr_section_idx == -1:
+        mfd_add_section(self)
 
-        ensure_dir (path_dirname(test_file_path))
-        test_file = open (test_file_path, 'w+')
-        test_file.write (test_file_path + '\n')
-        test_file.close()
+    if self.last_action == MfdActions.END_SECTION:
+        location = self.curr_location
+        self.curr_location[self.curr_section_idx] += 1
+        for i in range(self.curr_section_idx+1, len(self.curr_location)):
+            self.curr_location[i] = 1
+        self.curr_section_idx = len(self.curr_location) - 1
 
-    result_dict = {}
-    for k in file_map:
-        tgt = path_cat(test_base, file_map[k])
-        result_dict[tgt] = path_cat(test_base, k)
+    else:
+        canonical_fname = canonical_parse(self.document_files[-1])
+        location = location=canonical_fname.location
+        location[-1] += 1
 
-    # Ensure file content always ends in newline
-    for k in result_dict:
-        if result_dict[k][-1] != '\n':
-            result_dict[k] += '\n'
+    error, new_fname = new_canonical_name(path=self.target_path,
+            prefix=self.prefix,
+            identifier=self.identifier,
+            location=location,
+            extension=self.extension)
+    self.document_files.append(new_fname)
 
-    path = path_cat(test_base, 'dir')
+    self.last_action = MfdActions.NEW_PAGE
+    return path_cat(self.target_path, new_fname)
 
-    test_push(name)
+def mfd_end_section(self):
+    if self.error:
+        return
 
-    original_file_tree = path_to_dict(path)
+    if self.curr_section_idx == -1:
+        self.error = True
 
-    reset_id_generator()
-    canonical_rename (path, ordered=ordered, dry_run=True)
-    success = test (path_to_dict(path), original_file_tree, 'Dry run mode')
+    elif self.curr_section_idx == 0:
+        mfd_add_section(self)
 
-    reset_id_generator()
-    canonical_rename (path, ordered=ordered)
-    success = test (path_to_dict(path), result_dict, 'Resulting file tree is correct')
-    if success == False:
-        # TODO: Get better debugging output for errors
-        test_error (str(result_dict))
-        test_error (str(path_to_dict(path)))
+    self.curr_section_idx -= 1
 
-    test_pop()
-
-    shutil.rmtree (test_base)
-
-def create_files_from_map (base_path, file_map):
-    for k in file_map:
-        test_file_path = path_cat(base_path, k)
-
-        ensure_dir (path_dirname(test_file_path))
-        test_file = open (test_file_path, 'w+')
-        test_file.write (test_file_path + '\n')
-        test_file.close()
-
-def create_result_map(base_path, file_map):
-    result_dict = {}
-    for k in file_map:
-        tgt = path_cat(base_path, file_map[k])
-        result_dict[tgt] = path_cat(base_path, k)
-
-    # Ensure file content always ends in newline
-    for k in result_dict:
-        if result_dict[k][-1] != '\n':
-            result_dict[k] += '\n'
-
-    return result_dict
-
-def canonical_move_at_position_test(file_map, initial_copy_amount, position):
-    sorted_files = natsorted(file_map.keys())
-    initial_files = sorted_files[:initial_copy_amount]
-    other_files = sorted_files[initial_copy_amount:]
-
-    initial_files_map = {}
-    for k in initial_files:
-        initial_files_map[k] = file_map[k]
-
-    other_files_map = {}
-    for k in other_files:
-        other_files_map[k] = file_map[k]
-
-    create_files_from_map(test_base, initial_files_map)
-    result_dict = create_result_map(test_base, file_map)
-
-    src_path = path_cat(test_base, 'source')
-    tgt_path = path_cat(test_base, 'target')
-
-    test_push(f'move at position {position} canonical_move()')
-
-    reset_id_generator()
-    canonical_move (src_path, tgt_path, ordered=True)
-
-    create_files_from_map(test_base, other_files_map)
-
-    canonical_move (src_path, tgt_path, position=position)
-
-    success = test (path_to_dict(src_path), {}, 'Source tree is empty')
-    success = test (path_to_dict(tgt_path), result_dict, 'Resulting file tree is correct')
-    if success == False:
-        # TODO: Get better debugging output for errors
-        test_error (str(result_dict))
-        test_error (str(path_to_dict(tgt_path)))
-
-    test_pop()
-
-    shutil.rmtree (test_base)
-
-def tests():
-    test_push ('canonical filename regex')
-    regex_test (canonical_fname_r, "fscn_10_8JRPV4P32J.jpg", True)
-    regex_test (canonical_fname_r, "nsdklfjlsdjflnjndsk_10_8JRPV4P32J.jpg", True)
-    regex_test (canonical_fname_r, "nsdklfjlsdjflnjndsk_8JRPV4P32J.jpg", True)
-    regex_test (canonical_fname_r, "8JRPV4P32J.jpg", True)
-    regex_test (canonical_fname_r, "8JRPV4P32J_8JRPV4P32J.jpg", True)
-    regex_test (canonical_fname_r, "24_9F663P3R7W.mov", True)
-
-    regex_test (canonical_fname_r, "lkndsfkf.jpg", False)
-    regex_test (canonical_fname_r, "IMG00003.JPG", False)
-    regex_test (canonical_fname_r, "IMG55555.JPG", False)
-    regex_test (canonical_fname_r, "IMG_20150325_144057.jpg", False)
-    regex_test (canonical_fname_r, "DSC00076.JPG", False)
-    regex_test (canonical_fname_r, "Fotos 004.jpg", False)
-    regex_test (canonical_fname_r, "Fotos 54234.jpg", False)
-    regex_test (canonical_fname_r, "Picture 5453.jpg", False)
-    regex_test (canonical_fname_r, "SAM_2485.JPG", False)
-    regex_test (canonical_fname_r, "IMG_4970.HEIC", False)
-    regex_test (canonical_fname_r, "VID_20210922_133707.mp4", False)
-    regex_test (canonical_fname_r, "IMG_20210926_131750_1.jpg", False)
-    regex_test (canonical_fname_r, "1E13D662-8108-4B43-8C66-2E06A8AD4C4B.MOV", False)
-    regex_test (canonical_fname_r, "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX.MOV", False)
-    test_pop()
-
-    test_push ('canonical_parse()')
-    canonical_parse_test ("SAM_2345.JPG", (False, None, None, None))
-    canonical_parse_test ("XC9RJ594PR.jpg", (True, None, None, "XC9RJ594PR"))
-    canonical_parse_test ("picture_5PPMQ734QQ.jpg", (True, "picture", None, "5PPMQ734QQ"))
-    canonical_parse_test ("page_10_8JRPV4P32J.jpg", (True, "page", 10, "8JRPV4P32J"))
-    canonical_parse_test ("24_9F663P3R7W.mov", (True, None, 24, "9F663P3R7W"))
-    test_pop()
-
-    rename_test = {
-        'dir/DSC00004.JPG': 'dir/JM3CRQJFQH.jpg',
-        'dir/DSC00005.JPG': 'dir/W8R6F65XCV.jpg',
-        'dir/DSC00006.JPG': 'dir/X6F54GQV5H.jpg',
-        'dir/DSC00076.JPG': 'dir/MGX8VQPRC3.jpg',
-        'dir/DSC00106.JPG': 'dir/V24J2XQG9G.jpg',
-        'dir/DSC00334.JPG': 'dir/48W996VP44.jpg',
-        'dir/IMG00001.JPG': 'dir/GRQ5FVF5VG.jpg',
-        'dir/IMG00002.JPG': 'dir/V8XVWFP4XJ.jpg',
-        'dir/IMG00003.JPG': 'dir/GW9F7873XC.jpg',
-        'dir/IMG00004.JPG': 'dir/Q446634VJR.jpg',
-        'dir/IMG00005.JPG': 'dir/CR98WMWCPQ.jpg',
-        'dir/IMG00006.JPG': 'dir/H4GX5QWG89.jpg',
-        'dir/IMG00013.JPG': 'dir/2C59H7GM35.jpg',
-        'dir/IMG00023.JPG': 'dir/693WVX4258.jpg',
-        'dir/IMG00043.JPG': 'dir/XW5J4H53X2.jpg',
-        'dir/IMG00073.JPG': 'dir/875Q832VMX.jpg',
-        'dir/IMG00103.JPG': 'dir/5C494FHM73.jpg'
-    }
-    canonical_rename_test (rename_test, 'canonical_rename()')
-
-    rename_test = {
-        'dir/DSC00004.JPG':  'dir/1_JM3CRQJFQH.jpg',
-        'dir/DSC00005.JPG':  'dir/2_W8R6F65XCV.jpg',
-        'dir/DSC00006.JPG':  'dir/3_X6F54GQV5H.jpg',
-        'dir/DSC00076.JPG':  'dir/4_MGX8VQPRC3.jpg',
-        'dir/DSC00106.JPG':  'dir/5_V24J2XQG9G.jpg',
-        'dir/DSC00334.JPG':  'dir/6_48W996VP44.jpg',
-        'dir/IMG00001.JPG':  'dir/7_GRQ5FVF5VG.jpg',
-        'dir/IMG00002.JPG':  'dir/8_V8XVWFP4XJ.jpg',
-        'dir/IMG00003.JPG':  'dir/9_GW9F7873XC.jpg',
-        'dir/IMG00004.JPG': 'dir/10_Q446634VJR.jpg',
-        'dir/IMG00005.JPG': 'dir/11_CR98WMWCPQ.jpg',
-        'dir/IMG00006.JPG': 'dir/12_H4GX5QWG89.jpg',
-        'dir/IMG00013.JPG': 'dir/13_2C59H7GM35.jpg',
-        'dir/IMG00023.JPG': 'dir/14_693WVX4258.jpg',
-        'dir/IMG00043.JPG': 'dir/15_XW5J4H53X2.jpg',
-        'dir/IMG00073.JPG': 'dir/16_875Q832VMX.jpg',
-        'dir/IMG00103.JPG': 'dir/17_5C494FHM73.jpg'
-    }
-    canonical_rename_test (rename_test, 'ordered canonical_rename()', ordered=True)
-
-    move_test = {
-        'source/DSC00004.JPG': 'target/JM3CRQJFQH.jpg',
-        'source/DSC00005.JPG': 'target/W8R6F65XCV.jpg',
-        'source/DSC00006.JPG': 'target/X6F54GQV5H.jpg',
-        'source/DSC00076.JPG': 'target/MGX8VQPRC3.jpg',
-        'source/DSC00106.JPG': 'target/V24J2XQG9G.jpg',
-        'source/DSC00334.JPG': 'target/48W996VP44.jpg',
-        'source/IMG00001.JPG': 'target/GRQ5FVF5VG.jpg',
-        'source/IMG00002.JPG': 'target/V8XVWFP4XJ.jpg',
-        'source/IMG00003.JPG': 'target/GW9F7873XC.jpg',
-        'source/IMG00004.JPG': 'target/Q446634VJR.jpg',
-        'source/IMG00005.JPG': 'target/CR98WMWCPQ.jpg',
-        'source/IMG00006.JPG': 'target/H4GX5QWG89.jpg',
-        'source/IMG00013.JPG': 'target/2C59H7GM35.jpg',
-        'source/IMG00023.JPG': 'target/693WVX4258.jpg',
-        'source/IMG00043.JPG': 'target/XW5J4H53X2.jpg',
-        'source/IMG00073.JPG': 'target/875Q832VMX.jpg',
-        'source/IMG00103.JPG': 'target/5C494FHM73.jpg'
-    }
-    canonical_move_test (move_test, 'canonical_move()')
-
-    move_test = {
-        'source/DSC00004.JPG':  'target/1_JM3CRQJFQH.jpg',
-        'source/DSC00005.JPG':  'target/2_W8R6F65XCV.jpg',
-        'source/DSC00006.JPG':  'target/3_X6F54GQV5H.jpg',
-        'source/DSC00076.JPG':  'target/4_MGX8VQPRC3.jpg',
-        'source/DSC00106.JPG':  'target/5_V24J2XQG9G.jpg',
-        'source/DSC00334.JPG':  'target/6_48W996VP44.jpg',
-        'source/IMG00001.JPG':  'target/7_GRQ5FVF5VG.jpg',
-        'source/IMG00002.JPG':  'target/8_V8XVWFP4XJ.jpg',
-        'source/IMG00003.JPG':  'target/9_GW9F7873XC.jpg',
-        'source/IMG00004.JPG': 'target/10_Q446634VJR.jpg',
-        'source/IMG00005.JPG': 'target/11_CR98WMWCPQ.jpg',
-        'source/IMG00006.JPG': 'target/12_H4GX5QWG89.jpg',
-        'source/IMG00013.JPG': 'target/13_2C59H7GM35.jpg',
-        'source/IMG00023.JPG': 'target/14_693WVX4258.jpg',
-        'source/IMG00043.JPG': 'target/15_XW5J4H53X2.jpg',
-        'source/IMG00073.JPG': 'target/16_875Q832VMX.jpg',
-        'source/IMG00103.JPG': 'target/17_5C494FHM73.jpg'
-    }
-    canonical_move_test (move_test, 'ordered canonical_move()', ordered=True)
-
-    move_test = {
-        'source/IMG00002.JPG':  'target/1_V8XVWFP4XJ.jpg',
-        'source/IMG00003.JPG':  'target/2_GW9F7873XC.jpg',
-        'source/IMG00004.JPG':  'target/3_Q446634VJR.jpg',
-        'source/IMG00005.JPG':  'target/4_CR98WMWCPQ.jpg',
-        'source/IMG00006.JPG':  'target/5_H4GX5QWG89.jpg',
-        'source/IMG00013.JPG':  'target/6_2C59H7GM35.jpg',
-        'source/IMG00023.JPG':  'target/7_693WVX4258.jpg',
-        'source/IMG00043.JPG':  'target/8_XW5J4H53X2.jpg',
-        'source/IMG00073.JPG':  'target/9_875Q832VMX.jpg',
-        'source/IMG00103.JPG': 'target/10_5C494FHM73.jpg',
-
-        'source/DSC00004.JPG': 'target/11_JM3CRQJFQH.jpg',
-        'source/DSC00005.JPG': 'target/12_W8R6F65XCV.jpg',
-        'source/DSC00006.JPG': 'target/13_X6F54GQV5H.jpg',
-        'source/DSC00076.JPG': 'target/14_MGX8VQPRC3.jpg',
-        'source/DSC00106.JPG': 'target/15_V24J2XQG9G.jpg',
-        'source/DSC00334.JPG': 'target/16_48W996VP44.jpg',
-        'source/IMG00001.JPG': 'target/17_GRQ5FVF5VG.jpg'
-    }
-    canonical_move_at_position_test (move_test, 7, 1)
-
-    move_test = {
-        'source/DSC00004.JPG':  'target/1_JM3CRQJFQH.jpg',
-
-        'source/IMG00002.JPG':  'target/2_V8XVWFP4XJ.jpg',
-        'source/IMG00003.JPG':  'target/3_GW9F7873XC.jpg',
-        'source/IMG00004.JPG':  'target/4_Q446634VJR.jpg',
-        'source/IMG00005.JPG':  'target/5_CR98WMWCPQ.jpg',
-        'source/IMG00006.JPG':  'target/6_H4GX5QWG89.jpg',
-        'source/IMG00013.JPG':  'target/7_2C59H7GM35.jpg',
-        'source/IMG00023.JPG':  'target/8_693WVX4258.jpg',
-        'source/IMG00043.JPG':  'target/9_XW5J4H53X2.jpg',
-        'source/IMG00073.JPG': 'target/10_875Q832VMX.jpg',
-        'source/IMG00103.JPG': 'target/11_5C494FHM73.jpg',
-
-        'source/DSC00005.JPG': 'target/12_W8R6F65XCV.jpg',
-        'source/DSC00006.JPG': 'target/13_X6F54GQV5H.jpg',
-        'source/DSC00076.JPG': 'target/14_MGX8VQPRC3.jpg',
-        'source/DSC00106.JPG': 'target/15_V24J2XQG9G.jpg',
-        'source/DSC00334.JPG': 'target/16_48W996VP44.jpg',
-        'source/IMG00001.JPG': 'target/17_GRQ5FVF5VG.jpg'
-    }
-    canonical_move_at_position_test (move_test, 7, 2)
-
-    move_test = {
-        'source/DSC00004.JPG':  'target/1_JM3CRQJFQH.jpg',
-        'source/DSC00005.JPG':  'target/2_W8R6F65XCV.jpg',
-        'source/DSC00006.JPG':  'target/3_X6F54GQV5H.jpg',
-        'source/DSC00076.JPG':  'target/4_MGX8VQPRC3.jpg',
-        'source/DSC00106.JPG':  'target/5_V24J2XQG9G.jpg',
-        'source/DSC00334.JPG':  'target/6_48W996VP44.jpg',
-        'source/IMG00001.JPG':  'target/7_GRQ5FVF5VG.jpg',
-
-        'source/IMG00002.JPG':  'target/8_V8XVWFP4XJ.jpg',
-        'source/IMG00003.JPG':  'target/9_GW9F7873XC.jpg',
-        'source/IMG00004.JPG': 'target/10_Q446634VJR.jpg',
-        'source/IMG00005.JPG': 'target/11_CR98WMWCPQ.jpg',
-        'source/IMG00006.JPG': 'target/12_H4GX5QWG89.jpg',
-        'source/IMG00013.JPG': 'target/13_2C59H7GM35.jpg',
-        'source/IMG00023.JPG': 'target/14_693WVX4258.jpg',
-        'source/IMG00043.JPG': 'target/15_XW5J4H53X2.jpg',
-        'source/IMG00073.JPG': 'target/16_875Q832VMX.jpg',
-        'source/IMG00103.JPG': 'target/17_5C494FHM73.jpg',
-    }
-    canonical_move_at_position_test (move_test, 7, 8)
-
-    move_test = {
-        'source/DSC00004.JPG':  'target/1_JM3CRQJFQH.jpg',
-        'source/DSC00005.JPG':  'target/2_W8R6F65XCV.jpg',
-        'source/DSC00006.JPG':  'target/3_X6F54GQV5H.jpg',
-        'source/DSC00076.JPG':  'target/4_MGX8VQPRC3.jpg',
-        'source/DSC00106.JPG':  'target/5_V24J2XQG9G.jpg',
-        'source/DSC00334.JPG':  'target/6_48W996VP44.jpg',
-        'source/IMG00001.JPG':  'target/7_GRQ5FVF5VG.jpg',
-
-        'source/IMG00002.JPG':  'target/8_V8XVWFP4XJ.jpg',
-        'source/IMG00003.JPG':  'target/9_GW9F7873XC.jpg',
-        'source/IMG00004.JPG': 'target/10_Q446634VJR.jpg',
-        'source/IMG00005.JPG': 'target/11_CR98WMWCPQ.jpg',
-        'source/IMG00006.JPG': 'target/12_H4GX5QWG89.jpg',
-        'source/IMG00013.JPG': 'target/13_2C59H7GM35.jpg',
-        'source/IMG00023.JPG': 'target/14_693WVX4258.jpg',
-        'source/IMG00043.JPG': 'target/15_XW5J4H53X2.jpg',
-        'source/IMG00073.JPG': 'target/16_875Q832VMX.jpg',
-        'source/IMG00103.JPG': 'target/17_5C494FHM73.jpg',
-    }
-    canonical_move_at_position_test (move_test, 7, -1)
-
-    move_test = {
-        'source/DSC00004.JPG':  'target/1_JM3CRQJFQH.jpg',
-        'source/DSC00005.JPG':  'target/2_W8R6F65XCV.jpg',
-        'source/DSC00006.JPG':  'target/3_X6F54GQV5H.jpg',
-        'source/DSC00076.JPG':  'target/4_MGX8VQPRC3.jpg',
-        'source/DSC00106.JPG':  'target/5_V24J2XQG9G.jpg',
-        'source/DSC00334.JPG':  'target/6_48W996VP44.jpg',
-
-        'source/IMG00002.JPG':  'target/7_V8XVWFP4XJ.jpg',
-        'source/IMG00003.JPG':  'target/8_GW9F7873XC.jpg',
-        'source/IMG00004.JPG':  'target/9_Q446634VJR.jpg',
-        'source/IMG00005.JPG': 'target/10_CR98WMWCPQ.jpg',
-        'source/IMG00006.JPG': 'target/11_H4GX5QWG89.jpg',
-        'source/IMG00013.JPG': 'target/12_2C59H7GM35.jpg',
-        'source/IMG00023.JPG': 'target/13_693WVX4258.jpg',
-        'source/IMG00043.JPG': 'target/14_XW5J4H53X2.jpg',
-        'source/IMG00073.JPG': 'target/15_875Q832VMX.jpg',
-        'source/IMG00103.JPG': 'target/16_5C494FHM73.jpg',
-
-        'source/IMG00001.JPG': 'target/17_GRQ5FVF5VG.jpg',
-    }
-    canonical_move_at_position_test (move_test, 7, -2)
-
-    # TODO: Add followind tests:
-    #  - Test case where prefix is not passed but target directory is prefixed.
-    #  - Test dry_run mode when moving and renumbering, check that the verbose
-    #    output is correct.
+    self.last_action = MfdActions.END_SECTION
