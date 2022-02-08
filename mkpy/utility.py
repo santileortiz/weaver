@@ -5,6 +5,12 @@ import importlib.util, inspect, pathlib, filecmp
 from itertools import permutations
 from collections import namedtuple
 
+try:
+    # Used by pretty_dict()
+    from natsort import natsorted
+except:
+    natsorted = sorted
+
 from enum import Enum
 
 """
@@ -468,7 +474,7 @@ def ex_bg_kill (pid):
     else:
         ex(f'kill {pid}')
 
-def ex (cmd, no_stdout=False, ret_stdout=False, echo=True, cwd=None):
+def ex (cmd, no_stdout=False, no_stderr=False, quiet=False, ret_stdout=False, echo=True, cwd=None):
     global g_dry_run
     global g_echo_mode
 
@@ -481,13 +487,28 @@ def ex (cmd, no_stdout=False, ret_stdout=False, echo=True, cwd=None):
     if g_echo_mode:
         return
 
+    # Somewhere I needed to also silence stderr when returning stdout so I was
+    # passing stderr=open(os.devnull, 'wb') to subprocess.check_output. The
+    # following is done just to be backward compatible with that, but really I
+    # should pass no_stderr=True wherever this was necessary, and not assume we
+    # want to silence stderr when returning stdout.
+    # TODO: Check all usages of ex() where I pass ret_stdout=True. What I said
+    # above, does it really make sense?, is it really a better API?. Maybe a
+    # better idea is to remove the ret_stdout parameter and instead create a
+    # new function that can be called like this:
+    #   return_code, stdout_str, stderr_str = ex_quiet(...)
+    if ret_stdout:
+        quiet = True
+
+    stdout_redirect = open(os.devnull, 'wb') if no_stdout or quiet else None
+    stderr_redirect = open(os.devnull, 'wb') if no_stderr or quiet else None
+
     if not ret_stdout:
-        redirect = open(os.devnull, 'wb') if no_stdout else None
-        return subprocess.call(cmd, shell=True, stdout=redirect, cwd=cwd)
+        return subprocess.call(cmd, shell=True, stdout=stdout_redirect, stderr=stderr_redirect, cwd=cwd)
     else:
         result = ""
         try:
-            result = subprocess.check_output(cmd, shell=True, stderr=open(os.devnull, 'wb'), cwd=cwd).decode().strip ()
+            result = subprocess.check_output(cmd, shell=True, stderr=stderr_redirect, cwd=cwd).decode().strip ()
         except subprocess.CalledProcessError as e:
             pass
         return result
@@ -570,6 +591,31 @@ def json_load(fname):
 def json_dump(obj, fname):
     with open (fname, 'w') as f:
         return json.dump(obj, f)
+
+def pretty_dict(d, title=None):
+    s = ''
+
+    if title != None:
+        s += title + '\n'
+
+    s += '{\n'
+    for key, value in natsorted(d.items(), key=lambda x: x[0]):
+        s += f"  {repr(key)} : {repr(value)}\n"
+    s += '}\n'
+    return s
+
+def pretty_list(lst, title=None):
+    s = ''
+
+    if title != None:
+        s += title + '\n'
+
+    for i in lst:
+        if title != None:
+            s += '  '
+        s += repr(i) + '\n'
+    return s
+
 
 def get_snip ():
     if len(sys.argv) == 1:
