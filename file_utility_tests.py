@@ -681,9 +681,54 @@ def mfd_test1():
     test_pop()
     shutil.rmtree (test_base)
 
+def mfd_test2():
+    reset_id_generator()
+
+    #test_force_output()
+    test_push(f'{get_function_name()}')
+    ensure_dir(test_base)
+
+    scnr = MultiFileDocument(test_base)
+    mfd_test_create_page_file.cnt = 0
+
+    mfd_new_test(scnr)
+    expected = [
+        'scn_JM3CRQJFQH.jpg',
+    ]
+    mfd_test(scnr, expected)
+
+    mfd_new_page_test(scnr)
+    expected = [
+        'scn_JM3CRQJFQH.1.jpg',
+        'scn_JM3CRQJFQH.2.jpg',
+    ]
+    mfd_test(scnr, expected)
+
+    mfd_new_test(scnr)
+    expected.append('scn_W8R6F65XCV.jpg')
+    mfd_test(scnr, expected)
+
+    mfd_new_test(scnr)
+    expected.append('scn_X6F54GQV5H.jpg')
+    mfd_test(scnr, expected)
+
+    mfd_new_page_test(scnr)
+    expected = [
+        'scn_JM3CRQJFQH.1.jpg',
+        'scn_JM3CRQJFQH.2.jpg',
+        'scn_W8R6F65XCV.jpg',
+        'scn_X6F54GQV5H.1.jpg',
+        'scn_X6F54GQV5H.2.jpg',
+    ]
+    mfd_test(scnr, expected)
+
+    test_pop()
+    shutil.rmtree (test_base)
+
 def mfd_tests():
     mfd_multiple_new_test()
     mfd_test1()
+    mfd_test2()
 
 def tests():
     #test_force_output()

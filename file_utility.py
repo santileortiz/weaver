@@ -348,6 +348,9 @@ def mfd_new(self):
         return
 
     self.document_files = []
+    self.curr_location = []
+    self.curr_section_idx = -1
+
     new_fname = new_unique_canonical_name(self.target_path,
             prefix=self.prefix,
             extension=self.extension)
