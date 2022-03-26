@@ -1654,7 +1654,7 @@ def regex_test(regex, test_str, should_match, test_context=None):
     else:
         if result != None:
             out_str += f"{ecma_red('FAIL MATCH')} {regex_match_print(test_str, result)}\n"
-            out_str += result + '\n'
+            out_str += str(result) + '\n'
 
         else:
             out_str += ecma_red('FAIL NO MATCH') + ' ' + regex_match_print (test_str, result)
