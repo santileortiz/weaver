@@ -52,13 +52,7 @@ def reset_id_generator():
 ###############
 
 def canonical_move_test(file_map, name, ordered=False):
-    for k in file_map:
-        test_file_path = path_cat(test_base, k)
-
-        ensure_dir (path_dirname(test_file_path))
-        test_file = open (test_file_path, 'w+')
-        test_file.write (test_file_path + '\n')
-        test_file.close()
+    create_files_from_map (test_base, file_map)
 
     result_dict = {}
     for k in file_map:
@@ -233,28 +227,47 @@ def mfd_test(self, expected):
 
 def canonical_file_name_tests():
     test_push ('canonical filename regex')
-    regex_test (canonical_fname_r, "fscn_10_8JRPV4P32J.jpg", True)
-    regex_test (canonical_fname_r, "nsdklfjlsdjflnjndsk_10_8JRPV4P32J.jpg", True)
+    regex_test (canonical_fname_r, "10_fscn_8JRPV4P32J.jpg", True)
+    regex_test (canonical_fname_r, "10_nsdklfjlsdjflnjndsk_8JRPV4P32J.jpg", True)
     regex_test (canonical_fname_r, "nsdklfjlsdjflnjndsk_8JRPV4P32J.jpg", True)
     regex_test (canonical_fname_r, "8JRPV4P32J.jpg", True)
-    regex_test (canonical_fname_r, "8JRPV4P32J_8JRPV4P32J.jpg", True)
+    regex_test (canonical_fname_r, "8JRPV4P32J_8JRPV4P32J.jpg", True) # First 8JRPV4P32J is the prefix
     regex_test (canonical_fname_r, "24_9F663P3R7W.mov", True)
 
     # Pagination support tests
-    regex_test (canonical_fname_r, "fscn_10_8JRPV4P32J.1.jpg", True)
-    regex_test (canonical_fname_r, "nsdklfjlsdjflnjndsk_10_8JRPV4P32J.1.jpg", True)
+    regex_test (canonical_fname_r, "10_fscn_8JRPV4P32J.1.jpg", True)
+    regex_test (canonical_fname_r, "10_nsdklfjlsdjflnjndsk_8JRPV4P32J.1.jpg", True)
     regex_test (canonical_fname_r, "nsdklfjlsdjflnjndsk_8JRPV4P32J.1.jpg", True)
     regex_test (canonical_fname_r, "8JRPV4P32J.1.jpg", True)
     regex_test (canonical_fname_r, "8JRPV4P32J_8JRPV4P32J.1.jpg", True)
     regex_test (canonical_fname_r, "24_9F663P3R7W.1.jpg", True)
-    regex_test (canonical_fname_r, "fscn_10_8JRPV4P32J.1.10.100.1000.jpg", True)
-    regex_test (canonical_fname_r, "nsdklfjlsdjflnjndsk_10_8JRPV4P32J.1.10.100.1000.jpg", True)
+    regex_test (canonical_fname_r, "10_fscn_8JRPV4P32J.1.10.100.1000.jpg", True)
+    regex_test (canonical_fname_r, "10_nsdklfjlsdjflnjndsk_8JRPV4P32J.1.10.100.1000.jpg", True)
     regex_test (canonical_fname_r, "nsdklfjlsdjflnjndsk_8JRPV4P32J.1.10.100.1000.jpg", True)
     regex_test (canonical_fname_r, "8JRPV4P32J.1.10.100.1000.jpg", True)
     regex_test (canonical_fname_r, "8JRPV4P32J_8JRPV4P32J.1.10.100.1000.jpg", True)
-    regex_test (canonical_fname_r, "24_9F663P3R7W.1.10.100.1000.jpg", True)
 
+    # Named
+    regex_test (canonical_fname_r, "10_fscn_8JRPV4P32J My File Name.jpg", True)
+    regex_test (canonical_fname_r, "10_nsdklfjlsdjflnjndsk_8JRPV4P32J My File Name.jpg", True)
+    regex_test (canonical_fname_r, "nsdklfjlsdjflnjndsk_8JRPV4P32J My File Name.jpg", True)
+    regex_test (canonical_fname_r, "8JRPV4P32J My File Name.jpg", True)
+    regex_test (canonical_fname_r, "8JRPV4P32J_8JRPV4P32J My File Name.jpg", True)
+    regex_test (canonical_fname_r, "24_9F663P3R7W My File Name.mov", True)
 
+    regex_test (canonical_fname_r, "10_fscn_8JRPV4P32J.1 My File Name.jpg", True)
+    regex_test (canonical_fname_r, "10_nsdklfjlsdjflnjndsk_8JRPV4P32J.1 My File Name.jpg", True)
+    regex_test (canonical_fname_r, "nsdklfjlsdjflnjndsk_8JRPV4P32J.1 My File Name.jpg", True)
+    regex_test (canonical_fname_r, "8JRPV4P32J.1 My File Name.jpg", True)
+    regex_test (canonical_fname_r, "8JRPV4P32J_8JRPV4P32J.1 My File Name.jpg", True)
+    regex_test (canonical_fname_r, "24_9F663P3R7W.1 My File Name.jpg", True)
+    regex_test (canonical_fname_r, "10_fscn_8JRPV4P32J.1.10.100.1000 My File Name.jpg", True)
+    regex_test (canonical_fname_r, "10_nsdklfjlsdjflnjndsk_8JRPV4P32J.1.10.100.1000 My File Name.jpg", True)
+    regex_test (canonical_fname_r, "nsdklfjlsdjflnjndsk_8JRPV4P32J.1.10.100.1000 My File Name.jpg", True)
+    regex_test (canonical_fname_r, "8JRPV4P32J.1.10.100.1000 My File Name.jpg", True)
+    regex_test (canonical_fname_r, "8JRPV4P32J_8JRPV4P32J.1.10.100.1000 My File Name.jpg", True)
+
+    # Non canonical
     regex_test (canonical_fname_r, "lkndsfkf.jpg", False)
     regex_test (canonical_fname_r, "IMG00003.JPG", False)
     regex_test (canonical_fname_r, "IMG55555.JPG", False)
@@ -274,16 +287,30 @@ def canonical_file_name_tests():
     test_push ('canonical_parse()')
     canonical_parse_test ("SAM_2345.JPG", CanonicalName())
 
-    canonical_parse_test ("XC9RJ594PR.jpg", CanonicalName(True, None, None, "XC9RJ594PR", [], 'jpg'))
-    canonical_parse_test ("picture_5PPMQ734QQ.jpg", CanonicalName(True, "picture", None, "5PPMQ734QQ", [], 'jpg'))
-    canonical_parse_test ("page_10_8JRPV4P32J.jpg", CanonicalName(True, "page", 10, "8JRPV4P32J", [], 'jpg'))
-    canonical_parse_test ("24_9F663P3R7W.mov", CanonicalName(True, None, 24, "9F663P3R7W", [], 'mov'))
+    canonical_parse_test ("XC9RJ594PR.jpg", CanonicalName(True, None, None, "XC9RJ594PR", [], None, 'jpg'))
+    canonical_parse_test ("picture_5PPMQ734QQ.jpg", CanonicalName(True, None, "picture", "5PPMQ734QQ", [], None, 'jpg'))
+    canonical_parse_test ("10_page_8JRPV4P32J.jpg", CanonicalName(True, 10, "page", "8JRPV4P32J", [], None, 'jpg'))
+    canonical_parse_test ("24_9F663P3R7W.mov", CanonicalName(True, 24, None, "9F663P3R7W", [], None, 'mov'))
+    canonical_parse_test ("8JRPV4P32J_8JRPV4P32J.jpg", CanonicalName(True, None, "8JRPV4P32J", "8JRPV4P32J", [], None, 'jpg'))
 
-    canonical_parse_test ("XC9RJ594PR.1.10.100.1000.jpg", CanonicalName(True, None, None, "XC9RJ594PR", [1, 10, 100, 1000], 'jpg'))
-    canonical_parse_test ("picture_5PPMQ734QQ.1.10.100.1000.txt", CanonicalName(True, "picture", None, "5PPMQ734QQ", [1, 10, 100, 1000], 'txt'))
-    canonical_parse_test ("page_10_8JRPV4P32J.1.10.100.1000.jpg", CanonicalName(True, "page", 10, "8JRPV4P32J", [1, 10, 100, 1000], 'jpg'))
-    canonical_parse_test ("24_9F663P3R7W.1000.100.10.1.jpg", CanonicalName(True, None, 24, "9F663P3R7W", [1000, 100, 10, 1], 'jpg'))
-    canonical_parse_test ("scn_1_8JRPV4P32J.2.jpg", CanonicalName(True, "scn", 1, "8JRPV4P32J", [2], 'jpg'))
+    # Location
+    canonical_parse_test ("XC9RJ594PR.1.10.100.1000.jpg", CanonicalName(True, None, None, "XC9RJ594PR", [1, 10, 100, 1000], None, 'jpg'))
+    canonical_parse_test ("picture_5PPMQ734QQ.1.10.100.1000.txt", CanonicalName(True, None, "picture", "5PPMQ734QQ", [1, 10, 100, 1000], None, 'txt'))
+    canonical_parse_test ("10_page_8JRPV4P32J.1.10.100.1000.jpg", CanonicalName(True, 10, "page", "8JRPV4P32J", [1, 10, 100, 1000], None, 'jpg'))
+    canonical_parse_test ("24_9F663P3R7W.1000.100.10.1.jpg", CanonicalName(True, 24, None, "9F663P3R7W", [1000, 100, 10, 1], None, 'jpg'))
+    canonical_parse_test ("1_scn_8JRPV4P32J.2.jpg", CanonicalName(True, 1, "scn", "8JRPV4P32J", [2], None, 'jpg'))
+
+    # Named
+    canonical_parse_test ("XC9RJ594PR My File Name.jpg", CanonicalName(True, None, None, "XC9RJ594PR", [], "My File Name", 'jpg'))
+    canonical_parse_test ("picture_5PPMQ734QQ My File Name.jpg", CanonicalName(True, None, "picture", "5PPMQ734QQ", [], "My File Name", 'jpg'))
+    canonical_parse_test ("10_page_8JRPV4P32J My File Name.jpg", CanonicalName(True, 10, "page", "8JRPV4P32J", [], "My File Name", 'jpg'))
+    canonical_parse_test ("24_9F663P3R7W My File Name.mov", CanonicalName(True, 24, None, "9F663P3R7W", [], "My File Name", 'mov'))
+    canonical_parse_test ("XC9RJ594PR.1.10.100.1000 My File Name.jpg", CanonicalName(True, None, None, "XC9RJ594PR", [1, 10, 100, 1000], "My File Name", 'jpg'))
+    canonical_parse_test ("picture_5PPMQ734QQ.1.10.100.1000 My File Name.txt", CanonicalName(True, None, "picture", "5PPMQ734QQ", [1, 10, 100, 1000], "My File Name", 'txt'))
+    canonical_parse_test ("10_page_8JRPV4P32J.1.10.100.1000 My File Name.jpg", CanonicalName(True, 10, "page", "8JRPV4P32J", [1, 10, 100, 1000], "My File Name", 'jpg'))
+    canonical_parse_test ("24_9F663P3R7W.1000.100.10.1 My File Name.jpg", CanonicalName(True, 24, None, "9F663P3R7W", [1000, 100, 10, 1], "My File Name", 'jpg'))
+    canonical_parse_test ("1_scn_8JRPV4P32J.2 My File Name.jpg", CanonicalName(True, 1, "scn", "8JRPV4P32J", [2], "My File Name", 'jpg'))
+    canonical_parse_test ("1_scn_8JRPV4P32J.2  My File Name.jpg", CanonicalName(True, 1, "scn", "8JRPV4P32J", [2], " My File Name", 'jpg'))
     test_pop()
 
 def canonical_rename_tests():

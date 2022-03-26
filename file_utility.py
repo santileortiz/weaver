@@ -4,7 +4,8 @@ from natsort import natsorted
 import random
 import errno
 
-canonical_fname_r = '^(?:(.*?)_)??(?:([0-9]*)_)?([23456789CFGHJMPQRVWX]{8,})((?:\.[0-9]+)+)?\.(.*)$'
+canonical_fname_r = '^(?:(?P<idx>[0-9]*)_)?(?:(?P<prefix>.*?)_)?(?P<id>[23456789CFGHJMPQRVWX]{8,})(?P<location>(?:\.[0-9]+)+)?(?: (?P<name>.+))?\.(?P<extension>.*)$'
+
 
 # TODO: Implement something like an improved C struct but in Python.
 #  - Mutable, unlike namedtuple.
@@ -13,19 +14,20 @@ canonical_fname_r = '^(?:(.*?)_)??(?:([0-9]*)_)?([23456789CFGHJMPQRVWX]{8,})((?:
 #  - Automatic __eq__ implementation that compares by value.
 #  - Automatic __repr__ implementation.
 class CanonicalName():
-    def __init__(self, is_canonical=False, prefix=None, idx=None, identifier=None, location=[], extension=None):
+    def __init__(self, is_canonical=False, idx=None, prefix=None, identifier=None, location=[], name=None, extension=None):
         self.is_canonical = is_canonical
         self.prefix = prefix
         self.idx = idx
         self.identifier = identifier
         self.location = location
+        self.name = name
         self.extension = extension
 
     def __eq__(self, other):
-        return other != None and isinstance(other, CanonicalName) and self.is_canonical == other.is_canonical and self.prefix == other.prefix and self.idx == other.idx and self.identifier == other.identifier and self.location == other.location and self.extension == other.extension
+        return other != None and isinstance(other, CanonicalName) and self.is_canonical == other.is_canonical and self.idx == other.idx and self.prefix == other.prefix and self.identifier == other.identifier and self.location == other.location and self.name == other.name and self.extension == other.extension
 
     def __repr__(self):
-        return f'({repr(self.is_canonical)}, {repr(self.prefix)}, {repr(self.idx)}, {repr(self.identifier)}, {repr(self.location)}, {repr(self.extension)})'
+        return f'({repr(self.is_canonical)}, {repr(self.idx)}, {repr(self.prefix)}, {repr(self.identifier)}, {repr(self.location)}, {repr(self.name)}, {repr(self.extension)})'
 
 @automatic_test_function
 def canonical_parse (path):
@@ -39,23 +41,28 @@ def canonical_parse (path):
     idx = None
     identifier = None
     location_str = None
+    name = None
     extension = None
 
     if result != None:
-        is_canonical = True
-        prefix = result.group(1)
+        groups = result.groupdict()
 
-        idx_str = result.group(2)
+        is_canonical = True
+        prefix = groups['prefix']
+
+        idx_str = groups['idx']
         idx = int(idx_str) if idx_str != None else None
-        identifier = result.group(3)
-        location_str = result.group(4)
-        extension = result.group(5)
+
+        identifier = groups['id']
+        location_str = groups['location']
+        name = groups['name']
+        extension = groups['extension']
 
     location = []
     if location_str != None:
         location = [int(i) for i in location_str.split('.')[1:]]
 
-    return CanonicalName(is_canonical, prefix, idx, identifier, location, extension)
+    return CanonicalName(is_canonical, idx, prefix, identifier, location, name, extension)
 
 def is_canonical (path):
     return canonical_parse.is_canonical
@@ -99,7 +106,7 @@ def new_canonical_name (prefix=None,
         idx_str = f'{idx}_'
 
     if identifier == None:
-        identifier = new_file_id()
+        identifier = new_identifier()
 
     location_str = ''
     if len(location) > 0:
@@ -131,7 +138,7 @@ def new_unique_canonical_name (path, idx=None, prefix=None, location=[], extensi
     while True:
         new_fname_error, new_fname = new_canonical_name(prefix=prefix,
                 idx=idx,
-                identifier=new_file_id(length=id_length),
+                identifier=new_identifier(length=id_length),
                 location=location,
                 extension=extension,
                 path=path)
@@ -143,7 +150,7 @@ def new_unique_canonical_name (path, idx=None, prefix=None, location=[], extensi
 
 def file_canonical_rename (path, target,
         prefix, idx, identifier, location, extension,
-        verbose, dry_run, error_if_target_exists=False):
+        verbose, dry_run, original_names=None, error_if_target_exists=False):
     error = None
 
     if extension == None:
@@ -174,8 +181,15 @@ def file_canonical_rename (path, target,
                 # following error:
                 #   OSError: [Errno 18] Invalid cross-device link: ...
                 os.rename (f'{path}', tgt_path)
+
             except:
-                error = ecma_red('error:') +  f'exception while moving: {path} -> {tgt_path}'
+                error = ecma_red('error:') +  f' exception while moving: {path} -> {tgt_path}'
+
+            if original_names != None:
+                original_names_file = open(original_names, 'a+')
+                original_name = '"' + path_basename(path).encode("unicode_escape").decode().replace('"', '\\"') + '"'
+                original_names_file.write(f'{identifier} {original_name};\n')
+                original_names_file.close()
 
     return (error, tgt_path)
 
@@ -227,8 +241,13 @@ def canonical_renumber (path_or_file_list, new_id_order, verbose=False, dry_run=
 
     return (error, result)
 
+def append_empty_line(fname):
+    original_names_file = open(fname, 'a+')
+    original_names_file.write(f'\n')
+    original_names_file.close()
+
 def canonical_move (source, target, prefix=None, ordered=False, position=None,
-        dry_run=False, verbose=False):
+        dry_run=False, original_names=None, verbose=False):
     error = None
     result = []
 
@@ -246,6 +265,9 @@ def canonical_move (source, target, prefix=None, ordered=False, position=None,
 
     is_ordered = True if ordered or position != None else False
 
+    if original_names != None:
+        append_empty_line (original_names)
+
     tmp_result = []
     for dirpath, dirnames, filenames in os.walk(source):
         i = 1 if is_ordered else None
@@ -255,14 +277,14 @@ def canonical_move (source, target, prefix=None, ordered=False, position=None,
         for fname in filenames:
             f_base, f_extension = path_split (fname)
 
-            file_id = new_file_id()
+            file_id = new_identifier()
             source_ids.append (file_id)
 
             path = path_cat(dirpath, fname)
             rename_error, new_path = file_canonical_rename (path,
                     target,
                     prefix, i, file_id, [], f_extension,
-                    verbose, dry_run, True)
+                    verbose, dry_run, original_names, True)
 
             if rename_error != None:
                 error = '' if error == None else error
@@ -301,15 +323,15 @@ def canonical_move (source, target, prefix=None, ordered=False, position=None,
     return (error, result)
 
 def canonical_rename (path, prefix=None, ordered=False,
-        dry_run=False, verbose=False):
-    canonical_move (path, path, prefix=prefix, ordered=ordered,
-            dry_run=dry_run, verbose=verbose)
+        dry_run=False, original_names=None, verbose=False):
+    return canonical_move (path, path, prefix=prefix, ordered=ordered,
+            dry_run=dry_run, original_names=original_names, verbose=verbose)
 
 def build_file_tree (file_tree):
     if type(file_tree) == type(set()):
         pass
 
-def new_file_id(length = 10):
+def new_identifier(length = 10):
     characters = ['2','3','4','5','6','7','8','9','C','F','G','H','J','M','P','Q','R','V','W','X']
     new_id = ""
     for i in range(length):

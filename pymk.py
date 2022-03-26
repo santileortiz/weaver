@@ -238,18 +238,11 @@ def cloc():
 def install_dependencies ():
     ex ("sudo apt-get install python3-jinja2 build-essential python3-psutil")
 
-def new_file_id(length = 10):
-    characters = ['2','3','4','5','6','7','8','9','C','F','G','H','J','M','P','Q','R','V','W','X']
-    new_id = ""
-    for i in range(length):
-        new_id += random.choice(characters)
-
-    return new_id
-
 def rename_files ():
     prefix = get_cli_arg_opt ("--prefix")
     ordered = get_cli_bool_opt ("--ordered")
     dry_run = not get_cli_bool_opt ("--execute")
+    save_original_name = get_cli_bool_opt ("--save-original-name")
 
     rest_args = get_cli_no_opt ()
 
@@ -258,13 +251,19 @@ def rename_files ():
         return
 
     path = os.path.abspath(rest_args[0])
+    original_names_path = path_resolve('~/.weaver/data/original_names.tsplx')
 
-    fu.canonical_rename (path, prefix, ordered=ordered,
-            dry_run=dry_run, verbose=True)
+    error, _ = fu.canonical_rename (path, prefix, ordered=ordered,
+            dry_run=dry_run, original_names=original_names_path, verbose=True)
+
+    if error != None:
+        print (error)
 
     if dry_run:
         print ('Dry run by default, to perform changes use --execute')
 
+# TODO: Make it work like mv, receive multiple files then the target directory
+# at the end. This will allow using bash wildcards.
 def move_files ():
     prefix = get_cli_arg_opt ("--prefix")
     ordered = get_cli_bool_opt ("--ordered")
@@ -292,6 +291,28 @@ def move_files ():
 
     if dry_run:
         print ('Dry run by default, to perform changes use --execute')
+
+def create_test_dir():
+    file_map = {
+        'DSC00004.JPG': None,
+        'DSC00005.JPG': None,
+        'DSC00006.JPG': None,
+        'DSC00076.JPG': None,
+        'DSC00106.JPG': None,
+        'DSC00334.JPG': None,
+        'IMG00001.JPG': None,
+        'IMG00002.JPG': None,
+        'IMG00003.JPG': None,
+        'IMG00004.JPG': None,
+        'IMG00005.JPG': None,
+        'IMG00006.JPG': None,
+        'IMG00013.JPG': None,
+        'IMG00023.JPG': None,
+        'IMG00043.JPG': None,
+        'IMG00073.JPG': None,
+        'IMG00103.JPG': None
+    }
+    file_utility_tests.create_files_from_map('bin/test', file_map)
 
 
 def input_char(win):
@@ -392,6 +413,23 @@ def interactive_scan():
 
 def test_file_utility():
     file_utility_tests.tests()
+
+def id():
+    args = get_cli_no_opt()
+
+    cnt = 1
+    if args != None:
+        cnt = int(args[0])
+
+    ids = []
+    for i in range(cnt):
+        idx = None
+        if get_cli_bool_opt('--ordered'):
+            idx = i + 1
+
+        _, name = fu.new_canonical_name(idx=idx)
+        ids.append(name)
+    print (" ".join(ids))
 
 builtin_completions = ['--get_build_deps']
 if __name__ == "__main__":
