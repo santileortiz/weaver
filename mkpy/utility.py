@@ -844,6 +844,11 @@ def path_exists (path_s):
     """
     return pathlib.Path(path_resolve(path_s)).exists()
 
+def path_parse (path):
+    dirname, basename = os.path.split(path)
+    fname, extension = os.path.splitext(basename)
+    return (dirname, fname, extension)
+
 def path_dirname (path_s):
     return os.path.dirname(path_s)
 
