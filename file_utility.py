@@ -32,7 +32,6 @@ class CanonicalName():
 @automatic_test_function
 def canonical_parse (path):
     fname = path_basename (path)
-    f_base, f_extension = path_split (fname)
 
     result = re.search(canonical_fname_r, fname)
 
@@ -93,6 +92,7 @@ def new_canonical_name (prefix=None,
         idx=None,
         identifier=None,
         location=[],
+        name=None,
         extension=None,
         path=None):
     error = None
@@ -112,6 +112,10 @@ def new_canonical_name (prefix=None,
     if len(location) > 0:
         location_str = '.' + '.'.join([str(i) for i in location])
 
+    name_str = ''
+    if name != None:
+        name_str = f' {name}'
+
     extension_str = ''
     if extension != None:
         if not extension.startswith('.'):
@@ -119,7 +123,7 @@ def new_canonical_name (prefix=None,
         else:
             extension_str = extension
 
-    new_fname = f"{prefix_str}{idx_str}{identifier}{location_str}{extension_str}"
+    new_fname = f"{prefix_str}{idx_str}{identifier}{location_str}{name_str}{extension_str}"
 
     if path != None:
         tgt_path = f'{path_cat(path, new_fname)}'
@@ -134,12 +138,13 @@ def new_canonical_name (prefix=None,
 
     return (error, new_fname)
 
-def new_unique_canonical_name (path, idx=None, prefix=None, location=[], extension=None, id_length=10):
+def new_unique_canonical_name (path, idx=None, prefix=None, location=[], name=None, extension=None, id_length=10):
     while True:
         new_fname_error, new_fname = new_canonical_name(prefix=prefix,
                 idx=idx,
                 identifier=new_identifier(length=id_length),
                 location=location,
+                name=name,
                 extension=extension,
                 path=path)
 
@@ -149,12 +154,52 @@ def new_unique_canonical_name (path, idx=None, prefix=None, location=[], extensi
     return new_fname
 
 def file_canonical_rename (path, target,
-        prefix, idx, identifier, location, extension,
-        verbose, dry_run, original_names=None, error_if_target_exists=False):
+        prefix, idx, identifier, location, name,
+        verbose, dry_run, keep_name=None, force_rename=False, original_names=None, error_if_target_exists=False):
     error = None
 
+    original_dirname, original_basename, extension = path_parse(path)
+    canonical_name = canonical_parse(original_basename)
+    
+    if canonical_name.is_canonical and not force_rename and identifier != None and identifier != canonical_name.identifier:
+        error = ecma_red('error:') + f' refusing to change id of file already in canonical form: {path}'
+        return (error, None)
+
+    """
+    keep_name   name       is_canonical   new_name
+    ------------------------------------+---------------------------
+    None        None       False        | None
+    None        None       True         | canonical_name.name
+    None        "MyName"   X            | "MyName"
+    False       X          X            | name
+    True        None       False        | original_basename
+    True        None       True         | canonical_name.name
+    True        "MyName"   False        | original_basename (warn if name!=new_name)
+    True        "MyName"   True         | canonical_name.name (warn if name!=new_name)
+    """
+    if keep_name == None:
+        if name != None:
+            new_name = name
+        elif canonical_name.is_canonical:
+            new_name = canonical_name.name
+        else:
+            new_name = None
+    elif keep_name == False:
+        new_name = name
+    elif keep_name == True:
+        if canonical_name.is_canonical:
+            new_name = canonical_name.name
+        else:
+            new_name = original_basename
+    if keep_name == True and name != None and name != new_name:
+        print (ecma_yellow('warn:') + f' attempting to change file\'s user name with keep_name==True, ignored {name} used: {new_name}')
+
     if extension == None:
-        _, extension = path_split(path)
+        if original_extension == None:
+            _, extension = path_split(original_basename)
+        else:
+            extension = original_extension
+
     extension_str = extension
     if extension in ['.JPG', '.JPEG', '.MOV']:
         extension_str = extension.lower()
@@ -166,8 +211,12 @@ def file_canonical_rename (path, target,
             idx=idx,
             identifier=identifier,
             location=location,
+            name=new_name,
             extension=extension_str,
             path=target)
+
+    if identifier == None:
+        identifier = canonical_parse(new_fname).identifier
 
     tgt_path = f'{path_cat(target, new_fname)}'
 
@@ -186,10 +235,13 @@ def file_canonical_rename (path, target,
                 error = ecma_red('error:') +  f' exception while moving: {path} -> {tgt_path}'
 
             if original_names != None:
-                original_names_file = open(original_names, 'a+')
-                original_name = '"' + path_basename(path).encode("unicode_escape").decode().replace('"', '\\"') + '"'
-                original_names_file.write(f'{identifier} {original_name};\n')
-                original_names_file.close()
+                try:
+                    original_names_file = open(original_names, 'a+')
+                    original_name = '"' + path_basename(path).encode("unicode_escape").decode().replace('"', '\\"') + '"'
+                    original_names_file.write(f'{identifier} {original_name};\n')
+                    original_names_file.close()
+                except:
+                    error = ecma_red('error:') +  f' exception appending to: {original_names}'
 
     return (error, tgt_path)
 
@@ -247,7 +299,7 @@ def append_empty_line(fname):
     original_names_file.close()
 
 def canonical_move (source, target, prefix=None, ordered=False, position=None,
-        dry_run=False, original_names=None, verbose=False):
+        keep_name=False, dry_run=False, original_names=None, verbose=False):
     error = None
     result = []
 
@@ -275,16 +327,16 @@ def canonical_move (source, target, prefix=None, ordered=False, position=None,
         filenames = natsorted (filenames)
 
         for fname in filenames:
-            f_base, f_extension = path_split (fname)
-
             file_id = new_identifier()
             source_ids.append (file_id)
 
             path = path_cat(dirpath, fname)
             rename_error, new_path = file_canonical_rename (path,
                     target,
-                    prefix, i, file_id, [], f_extension,
-                    verbose, dry_run, original_names, True)
+                    prefix, i, file_id, [], None,
+                    verbose, dry_run,
+                    keep_name=keep_name,
+                    original_names=original_names, error_if_target_exists=True)
 
             if rename_error != None:
                 error = '' if error == None else error
@@ -350,10 +402,11 @@ class MfdActions(Enum):
     END_SECTION = 3
 
 class MultiFileDocument():
-    def __init__(self, target_path, idx=None, prefix='scn', extension='jpg'):
+    def __init__(self, target_path, idx=None, prefix='scn', name=None, extension='jpg'):
         self.target_path = target_path
         self.idx = idx
         self.prefix = prefix
+        self.name = name
         self.extension = extension
 
         self.identifier = ''
@@ -375,6 +428,7 @@ def mfd_new(self):
 
     new_fname = new_unique_canonical_name(self.target_path,
             prefix=self.prefix,
+            name=self.name,
             extension=self.extension)
     self.identifier = canonical_parse(new_fname).identifier
 
@@ -391,7 +445,7 @@ def mfd_add_section(self):
         new_location = [1] + canonical_parse(fname).location
 
         error, new_path = file_canonical_rename (path_cat(self.target_path, fname), None,
-                self.prefix, self.idx, self.identifier, new_location, self.extension,
+                self.prefix, self.idx, self.identifier, new_location, None,
                 False, False)
         new_document_files.append (path_basename (new_path))
 
@@ -421,6 +475,7 @@ def mfd_new_page(self):
             prefix=self.prefix,
             identifier=self.identifier,
             location=location,
+            name=self.name,
             extension=self.extension)
     self.document_files.append(new_fname)
 

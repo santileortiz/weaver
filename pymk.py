@@ -17,13 +17,21 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 base_dir = os.path.abspath(path_resolve('~/.weaver'))
 ensure_dir(base_dir)
 
-notes_dir = 'notes'
-source_notes_dir = path_cat(base_dir, notes_dir)
+notes_dirname = 'notes'
+source_notes_dir = path_cat(base_dir, notes_dirname)
 ensure_dir (source_notes_dir)
 
-files_dir = 'files'
-source_files_dir = path_cat(base_dir, files_dir)
+files_dirname = 'files'
+source_files_dir = path_cat(base_dir, files_dirname)
 ensure_dir (source_files_dir)
+
+data_dirname = 'data'
+data_dir = path_cat(base_dir, data_dirname)
+ensure_dir (data_dir)
+
+file_original_name_path = path_cat(data_dir, 'original-name.tsplx')
+# TODO: Store file hashes so we can avoid storing duplicates
+#file_hash_path = path_cat(data_dir, 'hash.tsplx')
 
 # This directory contains data that is automatically generated from user's data
 # in the base directory.
@@ -176,7 +184,7 @@ def generate ():
         template.stream(locals()).dump(out_path)
 
     gn.copy_changed(static_dir, out_dir)
-    gn.copy_changed(source_files_dir, path_cat(out_dir, files_dir))
+    gn.copy_changed(source_files_dir, path_cat(out_dir, files_dirname))
 
     success = True
     if c_needs_rebuild ('weaver.c', './bin/weaver') or ex (f'./bin/weaver --has-js', echo=False) == 0:
@@ -189,7 +197,7 @@ def generate ():
     # TODO: The HTML generator should only process source notes that changed.
     # Currently it generates all notes, all the time.
     if success:
-        ex (f'./bin/weaver --generate-static --output-dir {path_cat(out_dir, notes_dir)}')
+        ex (f'./bin/weaver --generate-static --output-dir {path_cat(out_dir, notes_dirname)}')
 
 
 ensure_dir ("bin")
@@ -251,10 +259,9 @@ def rename_files ():
         return
 
     path = os.path.abspath(rest_args[0])
-    original_names_path = path_resolve('~/.weaver/data/original_names.tsplx')
 
     error, _ = fu.canonical_rename (path, prefix, ordered=ordered,
-            dry_run=dry_run, original_names=original_names_path, verbose=True)
+            dry_run=dry_run, original_names=file_original_name_path, verbose=True)
 
     if error != None:
         print (error)
@@ -287,10 +294,50 @@ def move_files ():
             prefix=prefix,
             ordered=ordered,
             position=position,
-            dry_run=dry_run, verbose=True)
+            dry_run=dry_run, original_names=file_original_name_path, verbose=True)
 
     if dry_run:
         print ('Dry run by default, to perform changes use --execute')
+
+def file_store():
+    is_vim_mode = get_cli_bool_opt('--vim')
+    args = get_cli_no_opt()
+
+    files = []
+    if args == None:
+        separator = '|||'
+        files_str = ex(f'zenity --file-selection --multiple --separator=\'{separator}\'', echo=False,ret_stdout=True)
+        if len(files_str) > 0:
+            files = files_str.split(separator)
+    else:
+        files = args
+
+    original_paths = []
+    new_basenames = []
+    for path in files:
+        error, new_path = fu.file_canonical_rename(path, data_dir,
+            None, None, None, [], None,
+            False, False, keep_name=True, original_names=file_original_name_path)
+
+        if error == None:
+            original_paths.append(path)
+            new_basenames.append(path_basename(new_path))
+        else:
+            print(error)
+
+    if len(new_basenames) > 0:
+        result = []
+        if is_vim_mode:
+            for new_basename in new_basenames:
+                canonical_name = fu.canonical_parse(new_basename)
+                result.append(f'[[{canonical_name.identifier}]]')
+            print(', '.join(result))
+
+        else:
+            for i, new_basename in enumerate(new_basenames):
+                canonical_name = fu.canonical_parse(new_basename)
+                result.append(f'{original_paths[i]} -> {new_basename}')
+            print('\n'.join(result))
 
 def create_test_dir():
     file_map = {
@@ -416,7 +463,7 @@ def test_file_utility():
 
 def id():
     args = get_cli_no_opt()
-
+    
     cnt = 1
     if args != None:
         cnt = int(args[0])
