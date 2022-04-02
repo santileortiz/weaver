@@ -315,7 +315,7 @@ def file_store():
     original_paths = []
     new_basenames = []
     for path in files:
-        error, new_path = fu.file_canonical_rename(path, data_dir,
+        error, new_path = fu.file_canonical_rename(path, source_files_dir,
             None, None, None, [], None,
             False, False, keep_name=True, original_names=file_original_name_path)
 
