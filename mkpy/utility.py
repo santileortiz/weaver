@@ -172,7 +172,7 @@ def handle_tab_complete ():
             elif is_linux():
                 warn('Tab completions not installed:')
                 print(' Use "sudo ./pymk.py --install_completions" to install them\n')
-        return
+            return
 
     # Add the builtin tab completions the user wants
     if len(builtin_completions) > 0:
