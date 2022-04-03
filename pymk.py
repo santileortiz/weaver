@@ -246,7 +246,17 @@ def cloc():
 def install_dependencies ():
     ex ("sudo apt-get install python3-jinja2 build-essential python3-psutil")
 
-def rename_files ():
+def resolve_source_list(path_list):
+    source_list = []
+    for path in path_list:
+        if path_isdir(path):
+            source_list += fu.collect(path)
+        else:
+            source_list.append(path)
+
+    return source_list
+
+def file_rename ():
     prefix = get_cli_arg_opt ("--prefix")
     ordered = get_cli_bool_opt ("--ordered")
     dry_run = not get_cli_bool_opt ("--execute")
@@ -255,12 +265,14 @@ def rename_files ():
     rest_args = get_cli_no_opt ()
 
     if rest_args == None:
-        print (f"usage: ./pymk.py {get_function_name()} [OPTIONS] DIRECTORY")
+        print (f"usage: ./pymk.py {get_function_name()} [OPTIONS] SOURCE...")
         return
 
-    path = os.path.abspath(rest_args[0])
+    source_list = resolve_source_list(rest_args)
+    if source_list==None:
+        return
 
-    error, _ = fu.canonical_rename (path, prefix, ordered=ordered,
+    error, _ = fu.canonical_rename (source_list, prefix, ordered=ordered,
             dry_run=dry_run, original_names=file_original_name_path, verbose=True)
 
     if error != None:
@@ -269,13 +281,11 @@ def rename_files ():
     if dry_run:
         print ('Dry run by default, to perform changes use --execute')
 
-# TODO: Make it work like mv, receive multiple files then the target directory
-# at the end. This will allow using bash wildcards.
-def move_files ():
+def file_move ():
     prefix = get_cli_arg_opt ("--prefix")
     ordered = get_cli_bool_opt ("--ordered")
     dry_run = not get_cli_bool_opt ("--execute")
-    target = get_cli_arg_opt ("--target")
+    target = get_cli_arg_opt ("--target-directory,-t")
 
     position = get_cli_arg_opt ("--position")
     if position != None:
@@ -284,12 +294,27 @@ def move_files ():
     rest_args = get_cli_no_opt()
 
     if rest_args == None:
-        print (f"usage: ./pymk.py {get_function_name()} [OPTIONS] [--target TARGET_DIRECTORY] SOURCE_DIRECTORY")
+        print (f"usage:")
+        print (f"  ./pymk.py {get_function_name()} [OPTIONS] [-t DIRECTORY] SOURCE...")
+        print (f"  ./pymk.py {get_function_name()} [OPTIONS] SOURCE... DEST")
         return
 
-    source = os.path.abspath (rest_args[0])
+    if target==None:
+        target = os.path.abspath(rest_args[-1])
+        path_list = [os.path.abspath(path) for path in rest_args[:-1]]
 
-    fu.canonical_move (source,
+        if not path_isdir(target):
+            print(ecma_red("error:") + f" DEST is not a directory")
+            return
+    else:
+        path_list = [os.path.abspath(path) for path in rest_args]
+
+    source_list = resolve_source_list(path_list)
+    if source_list==None or len(source_list)==0:
+        print(ecma_yellow("warning:") + f" no source files, nothing to do")
+        return
+
+    fu.canonical_move (source_list,
             target,
             prefix=prefix,
             ordered=ordered,

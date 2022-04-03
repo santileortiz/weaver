@@ -245,19 +245,30 @@ def file_canonical_rename (path, target,
 
     return (error, tgt_path)
 
-def canonical_renumber (path_or_file_list, new_id_order, verbose=False, dry_run=False):
-    error = None
+def collect(path_or_file_list):
+    """
+    Resolves a parameter that may be either a file list or a path. It returns a
+    list of absolute paths to files.
+    """
 
-    result = []
     file_list = []
     if type(path_or_file_list) == type(''):
         for dirpath, dirnames, filenames in os.walk(path_or_file_list):
             for fname in filenames:
                 file_list.append (path_cat(dirpath, fname))
+        file_list = natsorted(file_list, key=lambda path: path_basename(path))
+
     else:
         file_list = path_or_file_list
 
+    return file_list
+
+def canonical_renumber (path_or_file_list, new_id_order, verbose=False, dry_run=False):
+    error = None
+
+    result = []
     non_canonical = []
+    file_list = collect (path_or_file_list)
 
     canonical_files = {}
     canonical_idx = {}
@@ -298,10 +309,12 @@ def append_empty_line(fname):
     original_names_file.write(f'\n')
     original_names_file.close()
 
-def canonical_move (source, target, prefix=None, ordered=False, position=None,
+def canonical_move (path_or_file_list, target, prefix=None, ordered=False, position=None,
         keep_name=False, dry_run=False, original_names=None, verbose=False):
     error = None
     result = []
+
+    file_list = collect (path_or_file_list)
 
     original_target_files = []
     if path_exists(target):
@@ -317,41 +330,39 @@ def canonical_move (source, target, prefix=None, ordered=False, position=None,
 
     is_ordered = True if ordered or position != None else False
 
-    if original_names != None:
+    if original_names != None and not dry_run:
         append_empty_line (original_names)
 
-    tmp_result = []
-    for dirpath, dirnames, filenames in os.walk(source):
-        i = 1 if is_ordered else None
+    for i, path in enumerate(file_list, 1):
+        if not path_exists(path):
+            error = '' if error == None else error
+            error += ecma_red('error:') + f' no such file: {path}\n'
+            continue
 
-        filenames = natsorted (filenames)
+        file_id = new_identifier()
+        source_ids.append (file_id)
 
-        for fname in filenames:
-            file_id = new_identifier()
-            source_ids.append (file_id)
+        rename_error, new_path = file_canonical_rename (path,
+                target,
+                prefix,
+                i if is_ordered else None,
+                file_id,
+                [],
+                None,
+                verbose, dry_run,
+                keep_name=keep_name,
+                original_names=original_names, error_if_target_exists=True)
 
-            path = path_cat(dirpath, fname)
-            rename_error, new_path = file_canonical_rename (path,
-                    target,
-                    prefix, i, file_id, [], None,
-                    verbose, dry_run,
-                    keep_name=keep_name,
-                    original_names=original_names, error_if_target_exists=True)
-
-            if rename_error != None:
-                error = '' if error == None else error
-                error += '{rename_error}\n'
-            elif position==None:
-                result.append ([path, new_path])
-                if verbose:
-                    print (f'{path} -> {new_path}')
-            else:
-                tmp_result.append ([path, new_path])
-
-            if is_ordered:
-                i += 1
+        if rename_error != None:
+            error = '' if error == None else error
+            error += f'{rename_error}\n'
+        else:
+            result.append ([path, new_path])
+            if verbose and position==None:
+                print (f'{path} -> {new_path}')
 
     if position != None:
+        tmp_result = result[:]
         move_source_files = [r[0] for r in tmp_result]
         move_target_files = [r[1] for r in tmp_result] + original_target_files
         if position < 0:
@@ -374,10 +385,36 @@ def canonical_move (source, target, prefix=None, ordered=False, position=None,
 
     return (error, result)
 
-def canonical_rename (path, prefix=None, ordered=False,
+def canonical_rename (path_or_file_list, prefix=None, ordered=False,
         dry_run=False, original_names=None, verbose=False):
-    return canonical_move (path, path, prefix=prefix, ordered=ordered,
+
+    if type(path_or_file_list) == type(''):
+        target = path_or_file_list if path_isdir(path_or_file_list) else path_dirname(path_or_file_list)
+        return canonical_move (path_or_file_list, target, prefix=prefix, ordered=ordered,
             dry_run=dry_run, original_names=original_names, verbose=verbose)
+
+    else:
+        error = None
+        result = []
+
+        files_by_folder = {}
+        for path in path_or_file_list:
+            dirname = path_dirname(path)
+            if dirname not in files_by_folder.keys():
+                files_by_folder[dirname] = []
+            files_by_folder[dirname].append(path)
+
+        for target in files_by_folder:
+            sub_error, sub_result = canonical_move (files_by_folder[target], target, prefix=prefix, ordered=ordered,
+                dry_run=dry_run, original_names=original_names, verbose=verbose)
+
+            if sub_error != None:
+                if error == None:
+                    error = ''
+                error += sub_error
+            result += sub_result
+
+    return (error, result)
 
 def build_file_tree (file_tree):
     if type(file_tree) == type(set()):
