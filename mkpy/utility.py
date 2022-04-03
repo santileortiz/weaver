@@ -122,7 +122,7 @@ def get_completions_path():
 
     return completions_path
 
-def check_completions ():
+def completions_exist ():
     completions_path = get_completions_path()
     if completions_path == '' or not path_exists(completions_path):
         return False
@@ -143,7 +143,7 @@ def recommended_opt (s):
     return res
 
 def is_interactive():
-    return "i" in ex("echo $-", ret_stdout=True, echo=False)
+    return os.isatty(sys.stdin.fileno())
 
 builtin_completions = []
 cli_completions = {}
@@ -157,13 +157,13 @@ def handle_tab_complete ():
     global cli_completions, builtin_completions
 
     # Check that the tab completion script is installed
-    if not check_completions () and is_interactive():
+    if is_interactive():
         if get_cli_bool_opt('--install_completions'):
             print ('Installing tab completions...')
-            ex ('cp mkpy/pymk.py {}'.format(get_completions_path()))
+            ex (f'cp mkpy/pymk.py {get_completions_path()}')
             exit ()
 
-        else:
+        elif not completions_exist ():
             if is_macos():
                 warn('Tab completions not installed:')
                 print(' 1) Install brew (https://brew.sh/)')
@@ -172,7 +172,6 @@ def handle_tab_complete ():
             elif is_linux():
                 warn('Tab completions not installed:')
                 print(' Use "sudo ./pymk.py --install_completions" to install them\n')
-
         return
 
     # Add the builtin tab completions the user wants
@@ -195,6 +194,7 @@ def handle_tab_complete ():
         if not match_found:
             f_names = [s for s,f in get_user_functions()]
             print (' '.join(f_names))
+
             if line[-1] == '-':
                 def_opts = [recommended_opt(s) for s in cli_completions.keys()]
                 print (' '.join(def_opts))
