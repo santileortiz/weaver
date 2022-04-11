@@ -36,6 +36,7 @@ struct psx_token_t {
     int margin;
     int content_start;
     int heading_number;
+    int coalesced_spaces;
     bool is_eol;
 };
 

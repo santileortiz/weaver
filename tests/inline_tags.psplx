@@ -1,5 +1,7 @@
 # Inline Tags
 
+Escape \ character \\ tes\ts\
+
 Testing \i{itallic} and \b{bold} styles of text. It should also be possible to
 \b{\i{nest}} \i{\b{them}}.
 

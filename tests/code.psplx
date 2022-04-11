@@ -1,6 +1,14 @@
 # Code
 
-Some initial paragraph with \code{inline} code.
+Some initial paragraph with \code{inline tag} code and `Markdown syntax` code.
+
+`   spaces   are  stripped out from Markdown notation   `
+
+But \code{  not from  tag `   notation      }.
+
+Testing `escape \ character \\ inside co\de string\ `. Used in Windows file paths.
+
+Testing escaping of \``even ins\`ide \` a code string\`` and mid\`word \`
 
 \code
 |minimal

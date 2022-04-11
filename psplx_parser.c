@@ -94,6 +94,12 @@ char pps_curr_char (struct psx_parser_state_t *ps)
 }
 
 static inline
+char pps_prev_char (struct psx_parser_state_t *ps)
+{
+    return *(ps->pos-1);
+}
+
+static inline
 bool pps_is_eof (struct psx_parser_state_t *ps)
 {
     return ps->is_eof || pps_curr_char(ps) == '\0';
@@ -112,9 +118,15 @@ bool pps_is_space (struct psx_parser_state_t *ps)
 }
 
 static inline
+bool char_is_operator (char c)
+{
+    return char_in_str(c, ",=[]{}\\|`");
+}
+
+static inline
 bool pps_is_operator (struct psx_parser_state_t *ps)
 {
-    return !pps_is_eof(ps) && char_in_str(pps_curr_char(ps), ",=[]{}\\|");
+    return !pps_is_eof(ps) && char_is_operator(pps_curr_char(ps));
 }
 
 static inline
@@ -294,11 +306,11 @@ bool ps_parse_tag_parameters (struct psx_parser_state_t *ps, struct psx_tag_para
             if (pps_curr_char(ps) == ',' || pps_curr_char(ps) == ']') {
                 if (parameters != NULL) {
                     LINKED_LIST_APPEND_NEW (&ps->pool, struct sstring_ll_t, parameters->positional, new_param);
-                    new_param->v = sstr_trim(SSTRING(start, ps->pos - start));
+                    new_param->v = sstr_strip(SSTRING(start, ps->pos - start));
                 }
 
             } else if (pps_curr_char(ps) == '=') {
-                sstring_t name = sstr_trim(SSTRING(start, ps->pos - start));
+                sstring_t name = sstr_strip(SSTRING(start, ps->pos - start));
 
                 // Advance over the '=' character
                 pps_advance_char (ps);
@@ -315,7 +327,7 @@ bool ps_parse_tag_parameters (struct psx_parser_state_t *ps, struct psx_tag_para
                     has_parameters = false;
                 }
 
-                sstring_t value = sstr_trim(SSTRING(value_start, ps->pos - value_start));
+                sstring_t value = sstr_strip(SSTRING(value_start, ps->pos - value_start));
 
                 if (parameters != NULL) {
                     sstring_map_tree_insert (&parameters->named, name, value);
@@ -390,7 +402,7 @@ struct psx_token_t ps_next_peek(struct psx_parser_state_t *ps)
         if (heading_number <= 6) {
             pps_consume_spaces (ps);
 
-            tok->value = sstr_trim(pps_advance_line (ps));
+            tok->value = sstr_strip(pps_advance_line (ps));
             tok->is_eol = true;
             tok->margin = non_space_pos - backup_pos;
             tok->type = TOKEN_TYPE_TITLE;
@@ -422,7 +434,7 @@ struct psx_token_t ps_next_peek(struct psx_parser_state_t *ps)
     }
 
     if (tok->type == TOKEN_TYPE_PARAGRAPH) {
-        tok->value = sstr_trim(pps_advance_line (ps));
+        tok->value = sstr_strip(pps_advance_line (ps));
         tok->is_eol = true;
     }
 
@@ -481,12 +493,21 @@ struct psx_token_t ps_inline_next(struct psx_parser_state_t *ps)
         // :tag_parsing
         pps_advance_char (ps);
 
-        char *start = ps->pos;
-        while (!pps_is_eof(ps) && !pps_is_operator(ps) && !pps_is_space(ps)) {
+        if (!pps_is_operator(ps) || pps_curr_char(ps) == '\\') {
+            char *start = ps->pos;
+            while (!pps_is_eof(ps) && !pps_is_operator(ps) && !pps_is_space(ps)) {
+                pps_advance_char (ps);
+            }
+            tok.value = SSTRING(start, ps->pos - start);
+            tok.type = TOKEN_TYPE_TAG;
+
+        } else {
+            // Escaped operator
+            tok.value = SSTRING(ps->pos, 1);
+            tok.type = TOKEN_TYPE_TEXT;
+
             pps_advance_char (ps);
         }
-        tok.value = SSTRING(start, ps->pos - start);
-        tok.type = TOKEN_TYPE_TAG;
 
     } else if (pps_is_operator(ps)) {
         tok.type = TOKEN_TYPE_OPERATOR;
@@ -495,7 +516,9 @@ struct psx_token_t ps_inline_next(struct psx_parser_state_t *ps)
 
     } else if (pps_is_space(ps)) {
         // This collapses consecutive spaces into a single one.
+        tok.coalesced_spaces = 0;
         while (pps_is_space(ps)) {
+            tok.coalesced_spaces++;
             pps_advance_char (ps);
         }
 
@@ -544,6 +567,9 @@ void str_cat_literal_token (string_t *str, struct psx_token_t token)
         strn_cat_c(str, token.value.s, token.value.len);
         str_cat_c (str, ".");
 
+    } else if (token.type == TOKEN_TYPE_SPACE) {
+        str_cat_char(str, ' ', token.coalesced_spaces);
+
     } else {
         strn_cat_c (str, token.value.s, token.value.len);
     }
@@ -562,6 +588,46 @@ void str_cat_literal_token_ps (string_t *str, struct psx_parser_state_t *ps)
     str_cat_literal_token (str, ps->token);
 }
 
+bool psx_extract_until_unescaped_operator (struct psx_parser_state_t *ps, char c, string_t *tgt)
+{
+    assert (char_is_operator(c));
+
+    bool success = true;
+
+    char *last_start = ps->pos;
+    while (!ps->is_eof) {
+        pps_advance_char (ps);
+
+        if (pps_curr_char(ps) == c) {
+            if (pps_prev_char(ps) == '\\') {
+                strn_cat_c (tgt, last_start, ps->pos - last_start - 1);
+                str_cat_char (tgt, c, 1);
+
+                pps_advance_char (ps);
+                last_start = ps->pos;
+
+                if (pps_curr_char(ps) == c) break;
+            } else {
+                break;
+            }
+
+        }
+    }
+
+    if (pps_curr_char(ps) == c) {
+        strn_cat_c (tgt, last_start, ps->pos - last_start);
+        last_start = ps->pos;
+
+        // Advance over the _c_ character
+        pps_advance_char (ps);
+
+    } else {
+        success = false;
+    }
+
+    return success;
+}
+
 bool psx_cat_tag_content (struct psx_parser_state_t *ps, string_t *str, bool expect_balanced_braces)
 {
     bool has_content = false;
@@ -572,19 +638,7 @@ bool psx_cat_tag_content (struct psx_parser_state_t *ps, string_t *str, bool exp
         has_content = true;
 
         if (!expect_balanced_braces) {
-            char *content_start = ps->pos;
-            while (!ps->is_eof && pps_curr_char(ps) != '}') {
-                pps_advance_char (ps);
-            }
-
-            if (pps_curr_char(ps) == '}') {
-                strn_cat_c (str, content_start, ps->pos - content_start);
-
-                // Advance over the '}' character
-                pps_advance_char (ps);
-            } else {
-                has_content = false;
-            }
+            has_content = psx_extract_until_unescaped_operator (ps, '}', str);
 
         } else {
             int brace_level = 1;
@@ -704,6 +758,19 @@ void psx_append_html_element (struct psx_parser_state_t *ps, struct html_t *html
 {
     struct psx_block_unit_t *head_ctx = DYNAMIC_ARRAY_GET_LAST(ps->block_unit_stack);
     html_element_append_child (html, head_ctx->html_element, html_element);
+}
+
+void psx_append_inline_code_element (struct psx_parser_state_t *ps, struct html_t *html, string_t *str)
+{
+    str_replace (str, "\n", " ", NULL);
+
+    struct html_element_t *code_element = html_new_element (html, "code");
+    html_element_class_add(html, code_element, "code-inline");
+    if (str_len(str) > 0) {
+        html_element_append_strn (html, code_element, str_len(str), str_data(str));
+    }
+
+    psx_append_html_element(ps, html, code_element);
 }
 
 struct psx_block_unit_t* psx_push_block_unit_new (struct psx_parser_state_t *ps, struct html_t *html, sstring_t tag)
@@ -965,12 +1032,12 @@ void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html
                 sstring_t title = SSTRING(str_data(&tag->content), str_len(&tag->content));
                 if (pos > 0 && str_data(&tag->content)[pos - 1] == '-') {
                     pos--;
-                    url = sstr_trim(SSTRING(str_data(&tag->content) + pos + 2, str_len(&tag->content) - (pos + 2)));
-                    title = sstr_trim(SSTRING(str_data(&tag->content), pos));
+                    url = sstr_strip(SSTRING(str_data(&tag->content) + pos + 2, str_len(&tag->content) - (pos + 2)));
+                    title = sstr_strip(SSTRING(str_data(&tag->content), pos));
 
                     // TODO: It would be nice to have this API...
-                    //sstr_trim(sstr_substr(pos+2));
-                    //sstr_trim(sstr_substr(0, pos));
+                    //sstr_strip(sstr_substr(pos+2));
+                    //sstr_strip(sstr_substr(0, pos));
                 }
 
                 struct html_element_t *link_element = html_new_element (html, "a");
@@ -1048,23 +1115,23 @@ void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html
                 ps_html_cat_literal_tag (ps, tag, html);
             }
 
-        } else if (ps_match(ps, TOKEN_TYPE_TAG, "code")) {
-            // TODO: Actually do something with the passed language name
-            struct psx_tag_t *tag = ps_parse_tag_full (ps, &original_pos, true);
-            if (tag->has_content) {
-                str_replace (&tag->content, "\n", " ", NULL);
+        } else if (ps_match(ps, TOKEN_TYPE_TAG, "code") || ps_match(ps, TOKEN_TYPE_OPERATOR, "`")) {
+            if (ps_match(ps, TOKEN_TYPE_TAG, "code")) {
+                // TODO: Actually do something with the passed language name
+                struct psx_tag_t *tag = ps_parse_tag_full (ps, &original_pos, true);
+                if (tag->has_content) {
+                    psx_append_inline_code_element (ps, html, &tag->content);
 
-                struct html_element_t *code_element = html_new_element (html, "code");
-                html_element_class_add(html, code_element, "code-inline");
-                if (str_len(&tag->content) > 0) {
-                    html_element_append_strn (html, code_element, str_len(&tag->content), str_data(&tag->content));
+                } else {
+                    ps_restore_pos (ps, original_pos);
+                    ps_html_cat_literal_tag (ps, tag, html);
                 }
 
-                psx_append_html_element(ps, html, code_element);
-
             } else {
-                ps_restore_pos (ps, original_pos);
-                ps_html_cat_literal_tag (ps, tag, html);
+                string_t content = {0};
+                psx_extract_until_unescaped_operator (ps, '`', &content);
+                str_strip (&content);
+                psx_append_inline_code_element (ps, html, &content);
             }
 
         } else if (ps_match(ps, TOKEN_TYPE_TAG, "note")) {
