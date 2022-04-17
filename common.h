@@ -2396,6 +2396,18 @@ typedef struct {
     uint32_t num_bins;
 } mem_pool_t;
 
+// This is a pattern I use to allow structs whose children are allocated in a
+// higher level pool.
+// TODO: I'm still not sure this is the right approach, probably a better
+// alternative would be to create a pool tree. Mostly because using a single
+// higher level pool, makes it impossible to use markers at the higher level.
+#define mem_pool_variable_ensure(name) \
+{                                      \
+    if (name->pool == NULL) {          \
+        name->pool = &name->_pool;     \
+    }                                  \
+}
+
 // Sometimes we want to execute code when something we allocated in a pool gets
 // destroyed, that's what this callback is for. The alloceted argument will
 // point to the allocated memory when the callback was assigned.
@@ -3983,11 +3995,11 @@ ON_DESTROY_CALLBACK (pooled_free_call)
 
 #define DYNAMIC_ARRAY_INITIAL_SIZE 50
 
-#define DYNAMIC_ARRAY_INIT(pool,head_name,initial_size)                                 \
-{                                                                                       \
-    mem_pool_push_cb(pool, pooled_free_call, &head_name);                               \
-    head_name ## _size = initial_size == 0 ? DYNAMIC_ARRAY_INITIAL_SIZE : initial_size; \
-    DYNAMIC_ARRAY_REALLOC (head_name, head_name ## _size);                              \
+#define DYNAMIC_ARRAY_INIT(pool,head_name,initial_size)                                  \
+{                                                                                        \
+    mem_pool_push_cb(pool, pooled_free_call, &head_name);                                \
+    head_name ## _size = initial_size == -1 ? DYNAMIC_ARRAY_INITIAL_SIZE : initial_size; \
+    DYNAMIC_ARRAY_REALLOC (head_name, head_name ## _size);                               \
 }
 
 #define DYNAMIC_ARRAY_APPEND(head_name,element)                             \

@@ -6,7 +6,7 @@ BINARY_TREE_NEW(attribute_map, string_t, string_t, strcmp(str_data(&a),str_data(
 
 struct html_element_t {
     string_t tag;
-    struct attribute_map_tree_t attributes;
+    struct attribute_map_t attributes;
 
     struct html_element_t *next;
 
@@ -27,13 +27,6 @@ struct html_t {
 void html_destroy (struct html_t *html)
 {
     mem_pool_destroy (html->pool);
-}
-
-#define mem_pool_variable_ensure(name) \
-{                                      \
-    if (name->pool == NULL) {          \
-        name->pool = &name->_pool;     \
-    }                                  \
 }
 
 void html_escape (string_t *str)
@@ -137,11 +130,11 @@ void html_element_attribute_set (struct html_t *html, struct html_element_t *htm
 
     string_t *attribute_str = str_new_pooled (html->pool, attribute);
 
-    struct attribute_map_tree_node_t *node;
-    attribute_map_tree_lookup (&html_element->attributes, *attribute_str, &node);
+    struct attribute_map_node_t *node;
+    attribute_map_lookup (&html_element->attributes, *attribute_str, &node);
     if (node == NULL) {
         string_t *value_str = str_new_pooled (html->pool, value);
-        attribute_map_tree_insert (&html_element->attributes, *attribute_str, *value_str);
+        attribute_map_insert (&html_element->attributes, *attribute_str, *value_str);
 
     } else {
         str_set (&node->value, value);
@@ -157,8 +150,8 @@ void html_element_class_add (struct html_t *html, struct html_element_t *html_el
     string_t attr = {0};
     str_set (&attr, "class");
 
-    struct attribute_map_tree_node_t *node;
-    attribute_map_tree_lookup (&html_element->attributes, attr, &node);
+    struct attribute_map_node_t *node;
+    attribute_map_lookup (&html_element->attributes, attr, &node);
     if (node == NULL) {
         html_element_attribute_set (html, html_element, str_data(&attr), value);
 

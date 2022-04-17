@@ -51,8 +51,8 @@ BINARY_TREE_NEW(bool_opt_set,char*,void*,strcmp(a,b))
 struct cli_ctx_t {
     mem_pool_t pool;
 
-    struct bool_opt_set_tree_t arg_opts;
-    struct bool_opt_set_tree_t bool_opts;
+    struct bool_opt_set_t arg_opts;
+    struct bool_opt_set_t bool_opts;
 };
 
 void cli_ctx_destroy (struct cli_ctx_t *cli_ctx)
@@ -77,7 +77,7 @@ char* get_cli_arg_opt_ctx (struct cli_ctx_t *cli_ctx, char *opt, char **argv, in
 
     if (cli_ctx != NULL) {
         if (cli_ctx->arg_opts.pool == NULL) cli_ctx->arg_opts.pool = &cli_ctx->pool;
-        bool_opt_set_tree_insert (&cli_ctx->arg_opts, opt, NULL);
+        bool_opt_set_insert (&cli_ctx->arg_opts, opt, NULL);
     }
 
     return arg;
@@ -98,7 +98,7 @@ bool get_cli_bool_opt_ctx (struct cli_ctx_t *cli_ctx, char *opt, char **argv, in
 
     if (cli_ctx != NULL) {
         if (cli_ctx->bool_opts.pool == NULL) cli_ctx->bool_opts.pool = &cli_ctx->pool;
-        bool_opt_set_tree_insert (&cli_ctx->bool_opts, opt, NULL);
+        bool_opt_set_insert (&cli_ctx->bool_opts, opt, NULL);
     }
 
     return found;
@@ -116,10 +116,10 @@ char* get_cli_no_opt_arg (struct cli_ctx_t *cli_ctx, char **argv, int argc)
 
     for (int i=1; arg==NULL && i<argc; i++) {
         if (argv[i][0] == '-') {
-            bool found = bool_opt_set_tree_lookup (&cli_ctx->bool_opts, argv[i], NULL);
+            bool found = bool_opt_set_lookup (&cli_ctx->bool_opts, argv[i], NULL);
 
             if (!found) {
-                found = bool_opt_set_tree_lookup (&cli_ctx->arg_opts, argv[i], NULL);
+                found = bool_opt_set_lookup (&cli_ctx->arg_opts, argv[i], NULL);
 
                 // This option receives an argument skip it.
                 if (found) i++;

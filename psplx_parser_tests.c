@@ -8,6 +8,7 @@
 #include "cli_parser.c"
 #include "automacros.h"
 
+#include "file_utility.h"
 #include "block.h"
 #include "note_runtime.h"
 
@@ -32,7 +33,7 @@ struct note_t* push_test_note (struct note_runtime_t *rt, char *source, size_t s
         printf ("%s", str_data(&new_note->error_msg));
 
     } else {
-        title_to_note_tree_insert (&rt->notes_by_title, &new_note->title, new_note);
+        title_to_note_insert (&rt->notes_by_title, &new_note->title, new_note);
     }
 
     str_pool (&rt->pool, &new_note->html);
@@ -132,7 +133,7 @@ void negative_programmatic_test (struct test_ctx_t *t, struct note_runtime_t *rt
     NEW_SHARED_VARIABLE_NAMED (bool, errored_successfuly, false, "NEGATIVE_TEST_subprocess_success");
     CRASH_TEST(no_crash, t->error,
         struct note_t *test_note = push_test_note (rt, source, strlen(source), test_id, strlen(test_id), test_id);
-        rt_process_note (&rt->pool, test_note);
+        rt_process_note (&rt->pool, NULL, test_note);
 
         if (test_note->error || str_len (&test_note->error_msg) > 0) {
             *errored_successfuly = true;
@@ -241,7 +242,9 @@ int main(int argc, char** argv)
                     printf ("%s", str_data(&note->html));
 
                 } else if (blocks_out) {
-                    struct psx_block_t *root_block = parse_note_text (&pool, str_data(&note->path), str_data(&note->psplx), NULL);
+                    STACK_ALLOCATE(struct psx_parser_ctx_t, ctx);
+                    ctx->path = str_data(&note->path);
+                    struct psx_block_t *root_block = parse_note_text (&pool, ctx, str_data(&note->psplx));
                     printf_block_tree (root_block, 4);
 
                 } else if (no_output) {

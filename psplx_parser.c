@@ -43,6 +43,8 @@ int psx_content_width = 588; // px
 struct psx_parser_ctx_t {
     char *id;
     char *path;
+    struct file_vault_t *vlt;
+
     string_t *error_msg;
 };
 
@@ -215,7 +217,7 @@ struct psx_tag_parameters_t {
     struct sstring_ll_t *positional;
     struct sstring_ll_t *positional_end;
 
-    struct sstring_map_tree_t named;
+    struct sstring_map_t named;
 };
 
 GCC_PRINTF_FORMAT(2, 3)
@@ -330,7 +332,7 @@ bool ps_parse_tag_parameters (struct psx_parser_state_t *ps, struct psx_tag_para
                 sstring_t value = sstr_strip(SSTRING(value_start, ps->pos - value_start));
 
                 if (parameters != NULL) {
-                    sstring_map_tree_insert (&parameters->named, name, value);
+                    sstring_map_insert (&parameters->named, name, value);
                 }
             }
         }
@@ -959,8 +961,7 @@ struct psx_tag_t* psx_parse_tag_note (struct psx_parser_state_t *ps, char **orig
 void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html, struct html_element_t *container, char *content)
 {
     string_t buff = {0};
-    struct psx_parser_state_t _ps = {0};
-    struct psx_parser_state_t *ps = &_ps;
+    STACK_ALLOCATE (struct psx_parser_state_t, ps);
     ps->ctx = *ctx;
     ps_init (ps, content);
     char *original_pos = NULL;
@@ -1104,8 +1105,16 @@ void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html
                 str_replace (&tag->content, "\n", " ", NULL);
 
                 struct html_element_t *img_element = html_new_element (html, "img");
-                str_set_printf (&buff, "files/%s", str_data(&tag->content));
+                if (is_canonical_id(str_data(&tag->content))) {
+                    uint64_t id = canonical_id_parse(str_data(&tag->content), 0);
+                    struct vlt_file_t *file = file_id_lookup (ctx->vlt, id);
+                    str_set_printf (&buff, "files/%s", str_data(&file->path));
+
+                } else {
+                    str_set_printf (&buff, "files/%s", str_data(&tag->content));
+                }
                 html_element_attribute_set (html, img_element, "src", str_data(&buff));
+
                 str_set_printf (&buff, "%d", psx_content_width);
                 html_element_attribute_set (html, img_element, "width", str_data(&buff));
                 psx_append_html_element(ps, html, img_element);
@@ -1245,12 +1254,12 @@ enum psx_user_tag_cb_status_t {
 // CAUTION: DON'T MODIFY THE BLOCK CONTENT'S STRING FROM A psx_user_tag_cb_t.
 // These callbacks are called while parsing the block's content, modifying
 // block->inline_content will mess up the parser.
-#define PSX_USER_TAG_CB(funcname) enum psx_user_tag_cb_status_t funcname(struct block_allocation_t *block_allocation, struct psx_parser_state_t *ps_inline, struct psx_block_t **block, struct str_replacement_t *replacement)
+#define PSX_USER_TAG_CB(funcname) enum psx_user_tag_cb_status_t funcname(struct psx_parser_ctx_t *ctx, struct block_allocation_t *block_allocation, struct psx_parser_state_t *ps_inline, struct psx_block_t **block, struct str_replacement_t *replacement)
 typedef PSX_USER_TAG_CB(psx_user_tag_cb_t);
 
 BINARY_TREE_NEW (psx_user_tag_cb, char*, psx_user_tag_cb_t*, strcmp(a, b));
 
-void psx_populate_internal_cb_tree (struct psx_user_tag_cb_tree_t *tree);
+void psx_populate_internal_cb_tree (struct psx_user_tag_cb_t *tree);
 
 // TODO: User callbacks will be modifying the tree. It's possible the user
 // messes up and for example adds a cycle into the tree, we should detect such
@@ -1275,7 +1284,7 @@ void psx_block_tree_user_callbacks_full (struct psx_parser_ctx_t *ctx, struct bl
         ps_inline->ctx = *ctx;
         ps_init (ps_inline, str_data(&block->inline_content));
 
-        struct psx_user_tag_cb_tree_t user_cb_tree = {0};
+        struct psx_user_tag_cb_t user_cb_tree = {0};
         user_cb_tree.pool = &ps_inline->pool;
         psx_populate_internal_cb_tree (&user_cb_tree);
 
@@ -1295,7 +1304,7 @@ void psx_block_tree_user_callbacks_full (struct psx_parser_ctx_t *ctx, struct bl
                     ps_inline->ctx.error_msg = &cb_error_msg;
 
                     struct str_replacement_t tmp_replacement = {0};
-                    enum psx_user_tag_cb_status_t status = cb (ba, ps_inline, block_p, &tmp_replacement);
+                    enum psx_user_tag_cb_status_t status = cb (ctx, ba, ps_inline, block_p, &tmp_replacement);
                     tmp_replacement.start_idx = tag_start - block_start;
                     tmp_replacement.len = ps_inline->pos - tag_start;
 
@@ -1674,12 +1683,10 @@ void psx_parse (struct psx_parser_state_t *ps)
     }
 }
 
-struct psx_block_t* parse_note_text (mem_pool_t *pool, char *path, char *note_text, string_t *error_msg)
+struct psx_block_t* parse_note_text (mem_pool_t *pool, struct psx_parser_ctx_t *ctx, char *note_text)
 {
-    struct psx_parser_state_t _ps = {0};
-    struct psx_parser_state_t *ps = &_ps;
-    ps->ctx.path = path;
-    ps->ctx.error_msg = error_msg;
+    STACK_ALLOCATE (struct psx_parser_state_t, ps);
+    ps->ctx = *ctx;
     ps_init (ps, note_text);
 
     ps->block_allocation.pool = pool;
@@ -1717,8 +1724,7 @@ struct psx_block_t* parse_note_text (mem_pool_t *pool, char *path, char *note_te
 
 struct psx_block_t* psx_parse_string (struct block_allocation_t *ba, char *text, string_t *error_msg)
 {
-    struct psx_parser_state_t _ps = {0};
-    struct psx_parser_state_t *ps = &_ps;
+    STACK_ALLOCATE (struct psx_parser_state_t, ps);
     ps->ctx.error_msg = error_msg;
     ps_init (ps, text);
 
@@ -1775,28 +1781,25 @@ void printf_block_tree (struct psx_block_t *root, int indent)
 }
 
 // @AUTO_MACRO_PREFIX(PROCESS_NOTE_)
-char* markup_to_html (mem_pool_t *pool_out, char *path, char *markup, char *id, string_t *error_msg)
+char* markup_to_html (mem_pool_t *pool_out, struct file_vault_t *vlt, char *path, char *markup, char *id, string_t *error_msg)
 {
-    mem_pool_t _pool_l = {0};
-    mem_pool_t *pool_l = &_pool_l;
+    STACK_ALLOCATE (mem_pool_t, pool_l);
 
-    struct note_t _note = {0};
-    struct note_t *note = &_note;
+    STACK_ALLOCATE (struct note_t, note);
     note->id = id;
 
-    struct psx_parser_ctx_t _ctx = {0};
-    struct psx_parser_ctx_t *ctx = &_ctx;
+    STACK_ALLOCATE (struct psx_parser_ctx_t, ctx);
     ctx->id = id;
     ctx->path = path;
+    ctx->vlt = vlt;
     ctx->error_msg = error_msg;
 
-    struct block_allocation_t _ba = {0};
-    struct block_allocation_t *ba = &_ba;
+    STACK_ALLOCATE (struct block_allocation_t, ba);
     ba->pool = pool_l;
 
 
     // Parse                  @AUTO_MACRO(BEGIN)
-    note->tree = parse_note_text (pool_l, path, markup, error_msg);
+    note->tree = parse_note_text (pool_l, ctx, markup);
     if (note->tree == NULL) {
         note->error = true;
     }
@@ -1864,7 +1867,7 @@ PSX_USER_TAG_CB (summary_tag_handler)
         struct psx_block_t *result_end = NULL;
 
         mem_pool_t pool = {0};
-        struct psx_block_t *note_tree = parse_note_text (&pool, NULL, str_data(&note->psplx), NULL);
+        struct psx_block_t *note_tree = parse_note_text (&pool, ctx, str_data(&note->psplx));
 
         struct psx_block_t *title = note_tree->block_content;
         struct psx_block_t *new_title = psx_block_new_cpy (block_allocation, title);
@@ -1968,9 +1971,9 @@ PSX_INTERNAL_CUSTOM_TAG_ROW ("Math",        math_tag_display_handler) \
 PSX_INTERNAL_CUSTOM_TAG_ROW ("summary",     summary_tag_handler) \
 PSX_INTERNAL_CUSTOM_TAG_ROW ("orphan_list", orphan_list_tag_handler) \
 
-void psx_populate_internal_cb_tree (struct psx_user_tag_cb_tree_t *tree)
+void psx_populate_internal_cb_tree (struct psx_user_tag_cb_t *tree)
 {
-#define PSX_INTERNAL_CUSTOM_TAG_ROW(name,cb) psx_user_tag_cb_tree_insert (tree, name, cb);
+#define PSX_INTERNAL_CUSTOM_TAG_ROW(name,cb) psx_user_tag_cb_insert (tree, name, cb);
     PSX_INTERNAL_CUSTOM_TAG_TABLE
 #undef PSX_INTERNAL_CUSTOM_TAG_ROW
 }

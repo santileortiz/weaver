@@ -16,8 +16,10 @@ struct note_runtime_t {
 
     struct block_allocation_t block_allocation;
 
-    struct id_to_note_tree_t notes_by_id;
-    struct title_to_note_tree_t notes_by_title;
+    struct id_to_note_t notes_by_id;
+    struct title_to_note_t notes_by_title;
+
+    struct file_vault_t vlt;
 } __g_note_runtime;
 
 struct note_t* rt_new_note (struct note_runtime_t *rt, char *id, size_t id_len);

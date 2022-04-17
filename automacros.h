@@ -1,21 +1,18 @@
 /* Stub for 'PROCESS_NOTE_'
-char* markup_to_html (mem_pool_t *pool_out, char *path, char *markup, char *id, string_t *error_msg)
+char* markup_to_html (mem_pool_t *pool_out, struct file_vault_t *vlt, char *path, char *markup, char *id, string_t *error_msg)
 {
-    mem_pool_t _pool_l = {0};
-    mem_pool_t *pool_l = &_pool_l;
+    STACK_ALLOCATE (mem_pool_t, pool_l);
 
-    struct note_t _note = {0};
-    struct note_t *note = &_note;
+    STACK_ALLOCATE (struct note_t, note);
     note->id = id;
 
-    struct psx_parser_ctx_t _ctx = {0};
-    struct psx_parser_ctx_t *ctx = &_ctx;
+    STACK_ALLOCATE (struct psx_parser_ctx_t, ctx);
     ctx->id = id;
     ctx->path = path;
+    ctx->vlt = vlt;
     ctx->error_msg = error_msg;
 
-    struct block_allocation_t _ba = {0};
-    struct block_allocation_t *ba = &_ba;
+    STACK_ALLOCATE (struct block_allocation_t, ba);
     ba->pool = pool_l;
 
 
@@ -38,7 +35,7 @@ char* markup_to_html (mem_pool_t *pool_out, char *path, char *markup, char *id, 
 */
 
 #define PROCESS_NOTE_PARSE \
-    note->tree = parse_note_text (pool_l, path, markup, error_msg); \
+    note->tree = parse_note_text (pool_l, ctx, markup); \
     if (note->tree == NULL) { \
         note->error = true; \
     } \

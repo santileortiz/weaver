@@ -8,6 +8,7 @@
 #include "cli_parser.c"
 #include "automacros.h"
 
+#include "file_utility.h"
 #include "block.h"
 #include "note_runtime.h"
 
@@ -44,7 +45,7 @@ void rt_init_push_file (struct note_runtime_t *rt, char *fname)
         new_note->error = true;
 
     } else {
-        title_to_note_tree_insert (&rt->notes_by_title, &new_note->title, new_note);
+        title_to_note_insert (&rt->notes_by_title, &new_note->title, new_note);
     }
 
     str_pool (&rt->pool, &new_note->html);
@@ -78,8 +79,16 @@ void rt_init (struct note_runtime_t *rt, struct splx_data_t *config)
 struct config_t {
     string_t config_path;
     string_t source_path;
+    string_t files_path;
     string_t target_path;
 };
+
+void cfg_destroy (struct config_t *cfg)
+{
+    str_free (&cfg->config_path);
+    str_free (&cfg->source_path);
+    str_free (&cfg->target_path);
+}
 
 #define APP_HOME "~/.weaver"
 
@@ -111,6 +120,7 @@ int main(int argc, char** argv)
     STACK_ALLOCATE (struct config_t, cfg);
 
     str_set_path (&cfg->source_path, APP_HOME "/notes/");
+    str_set_path (&cfg->files_path, APP_HOME "/files/");
     str_set_path (&cfg->target_path, "~/.cache/weaver/www/notes/");
     str_set_path (&cfg->config_path, APP_HOME "/config.tsplx");
 
@@ -118,11 +128,19 @@ int main(int argc, char** argv)
     tsplx_parse_name (&config, str_data(&cfg->config_path));
     rt_init (rt, &config);
 
+    rt->vlt.base_dir = str_data(&cfg->files_path);
+    vlt_init (&rt->vlt);
+
     // TODO: Read these paths from some configuration file and from command line
     // parameters.
     if (!dir_exists (str_data(&cfg->source_path))) {
         success = false;
         printf (ECMA_RED("error: ") "source directory does not exist\n");
+    }
+
+    if (!ensure_path_exists (str_data(&cfg->files_path))) {
+        success = false;
+        printf (ECMA_RED("error: ") "files directory could not be created\n");
     }
 
     if (!ensure_path_exists (str_data(&cfg->target_path))) {
@@ -237,7 +255,7 @@ int main(int argc, char** argv)
             // note case, I want to have at least one code path where we use the
             // base signle-file PSPLX to HTML implementation. To avoid rotting
             // of this code and increase usage of it.
-            char *html = markup_to_html (NULL, str_data(&rt->notes->path), str_data(&rt->notes->psplx), str_data(&rt->notes->path), &error_msg);
+            char *html = markup_to_html (NULL, &rt->vlt, str_data(&rt->notes->path), str_data(&rt->notes->psplx), str_data(&rt->notes->path), &error_msg);
             if (html != NULL) {
                 printf ("%s", html);
             }
@@ -255,9 +273,7 @@ int main(int argc, char** argv)
 
     mem_pool_destroy (&rt->pool);
 
-    str_free (&cfg->source_path);
-    str_free (&cfg->target_path);
-
+    cfg_destroy (cfg);
     js_destroy ();
     return retval;
 }

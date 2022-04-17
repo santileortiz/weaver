@@ -24,7 +24,7 @@ struct note_t* rt_new_note (struct note_runtime_t *rt, char *id, size_t id_len)
 {
     LINKED_LIST_PUSH_NEW (&rt->pool, struct note_t, rt->notes, new_note);
     new_note->id = pom_strndup (&rt->pool, id, id_len);
-    id_to_note_tree_insert (&rt->notes_by_id, new_note->id, new_note);
+    id_to_note_insert (&rt->notes_by_id, new_note->id, new_note);
     rt->notes_len++;
 
     return new_note;
@@ -52,26 +52,19 @@ void rt_link_notes (struct note_t *src, struct note_t *tgt)
     tgt_link->note = src;
 }
 
-void rt_process_note (mem_pool_t *pool_out, struct note_t *note)
+void rt_process_note (mem_pool_t *pool_out, struct file_vault_t *vlt, struct note_t *note)
 {
     mem_pool_t *pool_l = pool_out;
 
-    char *id = note->id;
-    char *path = str_data(&note->path);
-    char *markup = str_data(&note->psplx);
-
-    string_t *error_msg = &note->error_msg;
-
-    struct psx_parser_ctx_t _ctx = {0};
-    struct psx_parser_ctx_t *ctx = &_ctx;
-    ctx->id = id;
-    ctx->path = path;
+    STACK_ALLOCATE(struct psx_parser_ctx_t, ctx);
+    ctx->id = note->id;
+    ctx->path = str_data(&note->path);
     ctx->error_msg = &note->error_msg;
 
-    struct block_allocation_t _ba = {0};
-    struct block_allocation_t *ba = &_ba;
+    STACK_ALLOCATE (struct block_allocation_t, ba);
     ba->pool = pool_l;
 
+    char *markup = str_data(&note->psplx);
 
     PROCESS_NOTE_PARSE
 
@@ -92,16 +85,18 @@ void rt_process_note (mem_pool_t *pool_out, struct note_t *note)
 
 void rt_process_notes (struct note_runtime_t *rt, string_t *error_msg_out)
 {
-    struct psx_parser_ctx_t _ctx = {0};
-    struct psx_parser_ctx_t *ctx = &_ctx;
+    STACK_ALLOCATE (struct psx_parser_ctx_t, ctx);
+    ctx->vlt = &rt->vlt;
 
     {
         LINKED_LIST_FOR (struct note_t*, curr_note, rt->notes) {
-            mem_pool_t *pool_l = &rt->pool;
             struct note_t *note = curr_note;
-            char *path = str_data(&curr_note->path);
+            ctx->id = curr_note->id;
+            ctx->path = str_data(&curr_note->path);
+            ctx->error_msg = &curr_note->error_msg;
+
+            mem_pool_t *pool_l = &rt->pool;
             char *markup = str_data(&curr_note->psplx);
-            string_t *error_msg = &curr_note->error_msg;
 
             PROCESS_NOTE_PARSE
         }
@@ -121,10 +116,11 @@ void rt_process_notes (struct note_runtime_t *rt, string_t *error_msg_out)
     {
         LINKED_LIST_FOR (struct note_t*, curr_note, rt->notes) {
             struct note_t *note = curr_note;
-            struct block_allocation_t *ba = &rt->block_allocation;
             ctx->id = curr_note->id;
             ctx->path = str_data(&curr_note->path);
             ctx->error_msg = &curr_note->error_msg;
+
+            struct block_allocation_t *ba = &rt->block_allocation;
 
             PROCESS_NOTE_USER_CALLBACKS
         }

@@ -355,7 +355,7 @@ def file_store():
         if is_vim_mode:
             for new_basename in new_basenames:
                 canonical_name = fu.canonical_parse(new_basename)
-                result.append(f'[[{canonical_name.identifier}]]')
+                result.append(f'{canonical_name.identifier}')
             print(', '.join(result))
 
         else:
