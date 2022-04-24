@@ -20,7 +20,7 @@ struct vlt_file_t {
 
     struct vlt_file_t *next;
 };
-BINARY_TREE_NEW (id_to_vlt_file, uint64_t, struct vlt_file_t*, a<b);
+BINARY_TREE_NEW (id_to_vlt_file, uint64_t, struct vlt_file_t*, (a==b) ? 0 : (a<b ? -1 : 1));
 
 // TODO: A vault should be composed of file_repo_t which represent a single
 // directory whose file structure is controlled by weaver and derived from
