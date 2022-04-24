@@ -108,7 +108,7 @@ def search_notes ():
             if not is_vim_mode:
                 note_data = note_f.read()
                 if arg in note_data.lower() or arg in note_title.lower():
-                    print (note_path + ' - ' + note_title)
+                    print (f'http://localhost:8000/?n={fname} - {note_title}')
 
             else:
                 if arg in note_title.lower():
