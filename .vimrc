@@ -11,14 +11,16 @@ endfunction
 
 :vnoremap ` c`<ESC>pa`<ESC>
 
-:vnoremap { c{<ESC>pa}<ESC>
-:vnoremap } c{<ESC>pa}<ESC>
+:vnoremap { c{<ESC>pa}<ESC>vi}
+:vnoremap } c{<ESC>pa}<ESC>vi}
 
-:vnoremap [ c[<ESC>pa]<ESC>
-:vnoremap ] c[<ESC>pa]<ESC>
+:vnoremap [ c[<ESC>pa]<ESC>vi]
+:vnoremap ] c[<ESC>pa]<ESC>vi]
 
-:vnoremap ( c(<ESC>pa)<ESC>
-:vnoremap ) c(<ESC>pa)<ESC>
+:vnoremap ( c(<ESC>pa)<ESC>vi)
+:vnoremap ) c(<ESC>pa)<ESC>vi)
 
-:vnoremap i c\i{<ESC>pa}<ESC>
-:vnoremap b c\b{<ESC>pa}<ESC>
+" i alone is used as start of inner selection commands iw, i(, i[ etc. Avoid
+" conflict with t prefix as in text.
+:vnoremap ti c\i{<ESC>pa}<ESC>
+:vnoremap tb c\b{<ESC>pa}<ESC>
