@@ -10,6 +10,8 @@ import random
 import psutil
 import uuid
 import json
+from zipfile import ZipFile
+from urllib.parse import urlparse, urlunparse, ParseResult
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 # This directory contains user data/configuration. It's essentially what needs
@@ -197,7 +199,7 @@ def generate ():
     # TODO: The HTML generator should only process source notes that changed.
     # Currently it generates all notes, all the time.
     if success:
-        ex (f'./bin/weaver --generate-static --output-dir {path_cat(out_dir, notes_dirname)}')
+        ex (f'./bin/weaver generate --static --output-dir {path_cat(out_dir, notes_dirname)}')
 
 
 ensure_dir ("bin")
@@ -502,6 +504,291 @@ def id():
         _, name = fu.new_canonical_name(idx=idx)
         ids.append(name)
     print (" ".join(ids))
+
+name_predicate = 'name'
+type_predicate = 'a'
+default_indent = 2
+
+class Query():
+    def __init__(self, s):
+        self.s = s
+
+class Identifier():
+    def __init__(self, s):
+        self.s = s
+
+def default_serializer(v):
+    if isinstance(v, Identifier) or v == None:
+        return v
+
+    elif isinstance(v, int):
+        return str(v)
+
+    elif isinstance(v, list):
+        return '[' + ','.join([default_serializer(x) for x in v]) + ']'
+
+    elif isinstance(v, Query):
+        return 'q(' + as_string_literal(v.s) + ')'
+
+    elif isinstance(v, ParseResult):
+        return '<' + urlunparse(v) + '>'
+
+    else:
+        return as_string_literal(v)
+
+def apply_value_serializers(properties, value_serializers):
+    result = {}
+    if value_serializers == None:
+        for p, v in properties.items():
+            result[p] = default_serializer(v)
+    else:
+        pass
+        # TODO: Actually apply custom serializers
+
+    return result;
+
+def write_constructor_parameters(constructors, properties, properties_left,
+        type_name=None, value_serializers=None):
+
+    constructor_parameters = ''
+    first_parameter = True
+
+    properties_serialized_values = apply_value_serializers(properties, value_serializers)
+    
+    if type_name == None:
+        type_name = properties[type_predicate]
+
+    if constructors != None and type_name in constructors.keys():
+        constructor_parameters = '['
+
+        for target_prop in constructors[type_name]:
+            if not first_parameter:
+                constructor_parameters += ','
+            first_parameter=False
+
+            if target_prop not in properties.keys() and target_prop in constructors.keys():
+                constructor_parameters += write_constructor_parameters(constructors, properties, properties_left, target_prop, value_serializers)
+
+            else:
+                if target_prop in properties.keys():
+                    constructor_parameters += properties_serialized_values[target_prop]
+                    properties_left.remove(target_prop)
+
+        constructor_parameters += ']'
+
+    elif name_predicate in properties.keys() and isinstance(properties[name_predicate], str) and '\n' not in properties[name_predicate]:
+        constructor_parameters = f"[{properties_serialized_values[name_predicate]}]"
+        properties_left.remove(name_predicate)
+
+    return constructor_parameters
+
+def ensure_single_empty_line(s):
+    if s[-2] == '\n' and s[-1] == '\n':
+        return ''
+    elif s[-1] == '\n':
+        return '\n'
+    else:
+        return '\n\n'
+
+def as_string_literal(s):
+    return '"' + s.replace('"', '\\"') + '"'
+
+def node_to_object_string(floating, properties, constructors=None, value_serializers=None, indent=0):
+    properties_serialized_values = apply_value_serializers(properties, value_serializers)
+
+    # Serialize the constructor, if one should be added
+    res = ''
+    type_name = None
+    properties_left = set(properties.keys())
+    if type_predicate in properties.keys():
+        type_name = properties[type_predicate]
+        properties_left.remove(type_predicate)
+
+        constructor_parameters = write_constructor_parameters(constructors, properties, properties_left)
+
+        res = ' '*indent + type_name + constructor_parameters
+
+    # Serialize the content of the node
+    if len(properties_left) > 0 or len(floating) > 0:
+        res += ' '*indent + '{\n'
+        for node in floating:
+            res += node_to_object_string([], node, constructors, value_serializers, indent=indent+default_indent) + '\n'
+
+        for prop in properties_left:
+            res += ' '*(indent+default_indent) + f'{prop} ' + properties_serialized_values[prop] + ' ;\n'
+        res += ' '*indent + '}\n\n'
+    else:
+        res += ';\n'
+
+    return res;
+
+def process_json_data_dump():
+    import io
+    import json
+
+    # Right now this is based on a dump of all my playlists, done with Soundiiz
+    path = ex("./bin/weaver lookup --csv H6XH3JGJFW ", ret_stdout=True, echo=False)
+
+    track_constructor = ["name", "artist", "foreign-identifier","platform"]
+    constructors = {
+        # Useful test, uncomment the playlist constructor. Nothing should
+        # break, data output should be equivalent.
+        #"playlist" : ["name", "dump-date"],
+
+        "ytmusic-track" : track_constructor,
+        "spotify-track" : track_constructor,
+    }
+
+    # FIXME: This way of apending strings is O(n^2). I'm sacrificing
+    # performance for clarity and readability on the code. Improve this by
+    # porting the code to C.
+    res = ''
+    with ZipFile(path) as zip_file:
+        print (path)
+        res = 'q(this-file statements ?s) @ {from santileortiz-soundiiz};\n\n'
+
+        for path in zip_file.namelist():
+            dirname, fname, extension = path_parse(path)
+            if extension == '.json':
+                res += ensure_single_empty_line(res)
+
+                m = re.search('(.*) \((.*)\)', fname)
+                dump_date = m.group(2)
+                playlist_properties = {
+                    'a': 'playlist',
+                    'name': m.group(1),
+                    'dump-date': m.group(2),
+                }
+
+                playlist_floating = []
+                playlist_json = json.loads(zip_file.read(path))
+                for track in playlist_json:
+                    track_properties = {
+                        'a': f"{track['platform']}-track",
+                        'name': track['title'],
+                        'foreign-identifier': track['id'],
+                        'artist': Query(track['artist']),
+                    }
+                    playlist_floating.append(track_properties)
+
+                res += node_to_object_string(playlist_floating, playlist_properties, constructors)
+
+    with open(path_cat(data_dir, 'my-playlists.tsplx'), 'w+') as target:
+        target.write(res)
+
+def process_csv_data_dump():
+    import numpy as np
+    import pandas as pd
+    import io
+
+    # Currently this is an example of a data dump from my Fibery workspace
+    path = ex("./bin/weaver lookup --csv G5RJR34J49", ret_stdout=True, echo=False)
+
+    remote_fnames = []
+    type_map = {
+        "Musical Artist": "musician",
+        "Concert": "concert",
+    }
+
+    mapping = {
+        "musician" : [
+            ("Id", "foreign-identifier"),
+            ("Creation Date", "instantiation-date"),
+            ("Modification Date", "edit-date"),
+
+            ("Name", "name")
+        ],
+        "concert" : [
+            ("Id", "foreign-identifier"),
+            ("Creation Date", "instantiation-date"),
+            ("Modification Date", "edit-date"),
+
+            ("Festival", "name"),
+
+            # Fibery has a limitation here, because they serialize relationship
+            # columns by using the name in the foreign table, then they use |
+            # as separator while at the same time allowing the | character in
+            # an entry's name. This means data structure will always be broken
+            # if there are row names containing |, and there's nothing we can
+            # do to fix it.
+            #
+            # TODO: I think there's an RFC for CSV. Do they have some handling
+            # for columns with array-like type?.
+            # TODO: These are really relationships to instances of musician
+            # type. I'm thinking of these alternatives:
+            #  1. Resolve these to IDs. Which means assigning IDs to everything,
+            #     consuming some of the finite amount of IDs available. And also
+            #     making the end serialization less readable as plain text
+            #     (although, editor features like inline hints could help with
+            #     this).
+            #  2. Leave them as strings representing names and add a policy
+            #     where reusing a string always means a relationship
+            #  3. Add a special "query notation" where these name-based
+            #     relationships are expressed like q("Dream Theater").
+            # I'm leaning towards making 1 and 3 work, then allowing users to
+            # decide which one to use when doing the data mapping. Option 2
+            # sounds like a policy with very far reaching consequences
+            # (homonyms are very common, and much more across languages take
+            # for instance "pan" is it a prefix?, in spanish?, english?.
+            ("Lineup", "lineup", lambda x: [Query(v) for v in x.split('|')] if x!=None else None),
+
+            # I think we have a better approach to handling dates, where by
+            # default it's always an interval, a lot of dates in this data
+            # would be better represented as single dates with day precision,
+            # but becaue some fastivals span multiple days I needed to enable
+            # this start and end format.
+            #
+            # TODO: Transform this split dates into compressed versions that
+            # don't use 2 start/end dates and instead use lower precision.
+            (["Fecha Start", "Fecha End"], "date", lambda start,end: f'{start} {end}' if start!=None and end!=None else None),
+            ("Precio", "ticket-price", lambda x: f'{x} MXN' if x!= None else x),
+            ("URL", "url", lambda x: urlparse(x) if x!= None else x)
+        ],
+    }
+
+    constructors = {
+        "fibery-metadata": ["foreign-identifier", "instantiation-date", "edit-date"],
+        "concert" : ["date", "ticket-price", "url", "fibery-metadata"],
+        "musician" : ["name", "fibery-metadata"]
+    }
+
+    res = ''
+    with ZipFile(path) as zip_file:
+        res += 'q(this-file statements ?s) @ {from santileortiz-fibery};\n\n'
+
+        for path in zip_file.namelist():
+
+            dirname, fname, extension = path_parse(path)
+            if fname in type_map.keys():
+                res += ensure_single_empty_line(res)
+
+                target_type = type_map[fname]
+
+                # FIXME: This breaks if there is a column where we expect to
+                # actually have a NaN value.
+                df = pd.read_csv(io.BytesIO(zip_file.read(path))).replace([np.nan], [None])
+
+                res += f'// {fname}\n'
+                for index, row in df.iterrows():
+                    target_properties = {}
+                    target_properties[type_predicate] = target_type
+                    for source_prop, target_prop, *rest in mapping[target_type]:
+                        if not isinstance(source_prop, list):
+                            source_prop = [source_prop]
+
+                        t = lambda x: str(x) if x!= None else x
+                        if len(rest) != 0:
+                            t = rest[0]
+                        source_values = row[source_prop]
+                        value = t(*source_values)
+
+                        if value != None:
+                            target_properties[target_prop] = value
+
+                    res += node_to_object_string([], target_properties, constructors)
+
+    with open(path_cat(data_dir, 'santileortiz-fibery.tsplx'), 'w+') as target:
+        target.write(res)
 
 builtin_completions = ['--get_build_deps']
 if __name__ == "__main__":

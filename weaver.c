@@ -92,9 +92,16 @@ void cfg_destroy (struct config_t *cfg)
 
 #define APP_HOME "~/.weaver"
 
+enum cli_command_t {
+    CLI_COMMAND_GENERATE,
+    CLI_COMMAND_LOOKUP,
+    CLI_COMMAND_NONE
+};
+
 enum cli_output_type_t {
     CLI_OUTPUT_TYPE_STATIC_SITE,
     CLI_OUTPUT_TYPE_HTML,
+    CLI_OUTPUT_TYPE_CSV,
     CLI_OUTPUT_TYPE_DEFAULT
 };
 
@@ -150,17 +157,28 @@ int main(int argc, char** argv)
 
     string_t error_msg = {0};
 
+    enum cli_command_t command = CLI_COMMAND_NONE;
+    if (strcmp (argv[1], "generate") == 0) {
+        command = CLI_COMMAND_GENERATE;
+
+    } else if (strcmp (argv[1], "lookup") == 0) {
+        command = CLI_COMMAND_LOOKUP;
+    }
+
     enum cli_output_type_t output_type = CLI_OUTPUT_TYPE_DEFAULT;
-    if (get_cli_bool_opt_ctx (cli_ctx, "--generate-static", argv, argc)) {
+    if (get_cli_bool_opt_ctx (cli_ctx, "--static", argv, argc)) {
         output_type = CLI_OUTPUT_TYPE_STATIC_SITE;
     }
     if (get_cli_bool_opt_ctx (cli_ctx, "--html", argv, argc)) {
         output_type = CLI_OUTPUT_TYPE_HTML;
     }
+    if (get_cli_bool_opt_ctx (cli_ctx, "--csv", argv, argc)) {
+        output_type = CLI_OUTPUT_TYPE_CSV;
+    }
 
     char *output_dir = get_cli_arg_opt_ctx (cli_ctx, "--output-dir", argv, argc);
 
-    char *note_path = get_cli_no_opt_arg (cli_ctx, argv, argc);
+    char *no_opt = get_cli_no_opt_arg_full (cli_ctx, argv, argc, command == CLI_COMMAND_NONE ? 1 : 2);
 
     // COLLECT INPUT DATA
     //
@@ -181,7 +199,8 @@ int main(int argc, char** argv)
     // files to be processed.
     bool require_target_dir = false;
 
-    if (note_path != NULL) {
+    if (no_opt != NULL) {
+        char *note_path = no_opt;
         require_target_dir = true;
 
         string_t single_note_path = {0};
@@ -206,65 +225,92 @@ int main(int argc, char** argv)
 
     // GENERATE OUTPUT
     if (success) {
-        if (output_type == CLI_OUTPUT_TYPE_STATIC_SITE) {
-            bool has_output = false;
-            if (!has_js) {
-                printf (ECMA_YELLOW("warning: ") "generating static site without javascript engine\n");
-                has_output = true;
-            }
-
-            if (!require_target_dir || output_dir != NULL) {
-                string_t html_path = {0};
-                if (output_dir != NULL) {
-                    str_set_path (&html_path, output_dir);
-                    path_ensure_dir (str_data(&html_path));
-                } else {
-                    str_set (&html_path, str_data(&cfg->target_path));
-                }
-                str_cat_path (&html_path, ""); // Ensure path ends in '/'
-
-                size_t end = str_len (&html_path);
-                LINKED_LIST_FOR (struct note_t*, curr_note, rt->notes) {
-                    str_put_printf (&html_path, end, "%s", curr_note->id);
-                    full_file_write (str_data(&curr_note->html), str_len(&curr_note->html), str_data(&html_path));
-                }
-
-
-                if (str_len(&error_msg) > 0) {
-                    if (has_output) {
-                        printf ("\n");
-                    }
-
-                    printf ("%s", str_data(&error_msg));
+        if (command == CLI_COMMAND_GENERATE) {
+            if (output_type == CLI_OUTPUT_TYPE_STATIC_SITE) {
+                bool has_output = false;
+                if (!has_js) {
+                    printf (ECMA_YELLOW("warning: ") "generating static site without javascript engine\n");
                     has_output = true;
                 }
 
-                str_free (&html_path);
+                if (!require_target_dir || output_dir != NULL) {
+                    string_t html_path = {0};
+                    if (output_dir != NULL) {
+                        str_set_path (&html_path, output_dir);
+                        path_ensure_dir (str_data(&html_path));
+                    } else {
+                        str_set (&html_path, str_data(&cfg->target_path));
+                    }
+                    str_cat_path (&html_path, ""); // Ensure path ends in '/'
 
-            } else {
-                // TODO: I thought this was useful to avoid rewriting the full
-                // static site with a version that contains some single note
-                // that was used for testing. I'm not sure anymore, seems a bit
-                // pointless too because we can just regerate everything as the
-                // sources didn't change.
-                printf (ECMA_RED("error: ") "refusing to generate static site. Using command line input but output directory is missing as parameter, use --output-dir\n");
+                    size_t end = str_len (&html_path);
+                    LINKED_LIST_FOR (struct note_t*, curr_note, rt->notes) {
+                        str_put_printf (&html_path, end, "%s", curr_note->id);
+                        full_file_write (str_data(&curr_note->html), str_len(&curr_note->html), str_data(&html_path));
+                    }
+
+
+                    if (str_len(&error_msg) > 0) {
+                        if (has_output) {
+                            printf ("\n");
+                        }
+
+                        printf ("%s", str_data(&error_msg));
+                        has_output = true;
+                    }
+
+                    str_free (&html_path);
+
+                } else {
+                    // TODO: I thought this was useful to avoid rewriting the full
+                    // static site with a version that contains some single note
+                    // that was used for testing. I'm not sure anymore, seems a bit
+                    // pointless too because we can just regerate everything as the
+                    // sources didn't change.
+                    printf (ECMA_RED("error: ") "refusing to generate static site. Using command line input but output directory is missing as parameter, use --output-dir\n");
+                }
+
+            } else if (output_type == CLI_OUTPUT_TYPE_HTML && rt->notes_len == 1) {
+                // Even though multi note processing should also work in the single
+                // note case, I want to have at least one code path where we use the
+                // base signle-file PSPLX to HTML implementation. To avoid rotting
+                // of this code and increase usage of it.
+                char *html = markup_to_html (NULL, &rt->vlt, str_data(&rt->notes->path), str_data(&rt->notes->psplx), str_data(&rt->notes->path), &error_msg);
+                if (html != NULL) {
+                    printf ("%s", html);
+                }
+                free (html);
+
+                // TODO: Show same output as psplx tests.
+
+                if (str_len(&error_msg) > 0) {
+                    printf ("%s", str_data(&error_msg));
+                }
             }
 
-        } else if (output_type == CLI_OUTPUT_TYPE_HTML && rt->notes_len == 1) {
-            // Even though multi note processing should also work in the single
-            // note case, I want to have at least one code path where we use the
-            // base signle-file PSPLX to HTML implementation. To avoid rotting
-            // of this code and increase usage of it.
-            char *html = markup_to_html (NULL, &rt->vlt, str_data(&rt->notes->path), str_data(&rt->notes->psplx), str_data(&rt->notes->path), &error_msg);
-            if (html != NULL) {
-                printf ("%s", html);
-            }
-            free (html);
+        } else if (command == CLI_COMMAND_LOOKUP) {
+            char *query = no_opt;
 
-            // TODO: Show same output as psplx tests.
+            uint64_t id = 0;
+            if (is_canonical_id(query)) {
+                id = canonical_id_parse (query, 0);
 
-            if (str_len(&error_msg) > 0) {
-                printf ("%s", str_data(&error_msg));
+                if (id != 0) {
+                   struct vlt_file_t *file = file_id_lookup (&rt->vlt, id);
+
+
+                   string_t result = str_new(rt->vlt.base_dir);
+                   path_cat(&result, str_data(&file->path));
+
+                   if (output_type == CLI_OUTPUT_TYPE_CSV) {
+                       printf ("%s\n", str_data(&result));
+                   } else {
+                       printf ("'%s'\n", str_data(&result));
+                   }
+
+                } else {
+                    printf (ECMA_RED("error:") " Invalid identifier.\n");
+                }
             }
         }
 
