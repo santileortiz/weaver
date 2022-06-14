@@ -63,14 +63,11 @@ def download_photos():
                 # Use the message's datetime to set the EXIF timestamp which is
                 # usually the local time. 
                 exif_dict = piexif.load(fpath)
-                exif_dict["0th"][piexif.ImageIFD.DateTime] = message.date.strftime("%Y:%m:%d %H:%M:%S")
 
-                # Now make a timezone aware version of the timestamp, read it
-                # as UTC, then store that as the GPS date and time.
                 timezone_aware_date = message.date.replace(tzinfo=datetime.utcnow().astimezone().tzinfo)
-                utc_datetime = timezone_aware_date.astimezone(pytz.UTC)
-                exif_dict["GPS"][piexif.GPSIFD.GPSDateStamp] = utc_datetime.strftime("%Y:%m:%d")
-                exif_dict["GPS"][piexif.GPSIFD.GPSTimeStamp] = ((utc_datetime.hour, 1), (utc_datetime.minute, 1), (utc_datetime.second, 1))
+                exif_dict["0th"][piexif.ImageIFD.DateTime] = timezone_aware_date.strftime("%Y:%m:%d %H:%M:%S")
+                no_colon = timezone_aware_date.strftime("%z")
+                exif_dict["Exif"][piexif.ExifIFD.OffsetTime] = no_colon[:3] + ":" + no_colon[3:]
 
                 exif_bytes = piexif.dump(exif_dict)
                 piexif.insert(exif_bytes, fpath)
