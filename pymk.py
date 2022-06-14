@@ -578,6 +578,9 @@ def default_serializer(v):
     elif isinstance(v, list):
         return '[' + ','.join([default_serializer(x) for x in v]) + ']'
 
+    elif isinstance(v, set):
+        return ' ; '.join([default_serializer(x) for x in v])
+
     elif isinstance(v, Query):
         return 'q(' + as_string_literal(v.s) + ')'
 
@@ -627,9 +630,10 @@ def write_constructor_parameters(constructors, properties, properties_left,
 
         constructor_parameters += ']'
 
-    elif name_predicate in properties.keys() and isinstance(properties[name_predicate], str) and '\n' not in properties[name_predicate]:
-        constructor_parameters = f"[{properties_serialized_values[name_predicate]}]"
-        properties_left.remove(name_predicate)
+    elif name_predicate in properties.keys() and '\n' not in properties[name_predicate]:
+        if isinstance(properties[name_predicate], str) or isinstance(properties[name_predicate], set) or isinstance(properties[name_predicate], list):
+            constructor_parameters = f"[{properties_serialized_values[name_predicate]}]"
+            properties_left.remove(name_predicate)
 
     return constructor_parameters
 
@@ -663,7 +667,7 @@ def node_to_object_string(floating, properties, constructors=None, value_seriali
     if len(properties_left) > 0 or len(floating) > 0:
         res += ' '*indent + '{\n'
         for node in floating:
-            res += node_to_object_string([], node, constructors, value_serializers, indent=indent+default_indent) + '\n'
+            res += node_to_object_string([], node, constructors, value_serializers, indent=indent+default_indent)
 
         for prop in properties_left:
             res += ' '*(indent+default_indent) + f'{prop} ' + properties_serialized_values[prop] + ' ;\n'
@@ -671,7 +675,125 @@ def node_to_object_string(floating, properties, constructors=None, value_seriali
     else:
         res += ';\n'
 
-    return res;
+    return res
+
+def process_json_data_dump_2():
+    from io import StringIO
+    import vobject
+
+    path = ex("./bin/weaver lookup --csv XRXC6R5F4W", ret_stdout=True, echo=False)
+
+    property_map = [
+        ("fn", "name"),
+        ("tel", "telephone"),
+        ("email", "email")
+    ]
+
+    def org_values(vcard):
+        # This feels like a bug in vobject, why do ORG properties have nested
+        # lists?, I expected them to just be a string with the company name.
+        return {v.value[0] for v in vcard.contents["org"]}
+
+    res = ''
+    with ZipFile(path) as zip_file:
+        res = 'q(this-file statements ?s) @ {from santileortiz-google-contacts};\n\n'
+
+        f = StringIO(zip_file.read("Takeout/Contacts/My Contacts/My Contacts.vcf").decode('utf-8'))
+        for vcard in vobject.readComponents(f):
+            if ("kind" in vcard.contents.keys() and "org" in vcard.contents["kind"]) or ("org" in vcard.contents.keys() and "fn" not in vcard.contents.keys()):
+                vcard_properties = {
+                    "a": "company",
+                    "name": org_values(vcard),
+                }
+            else:
+                vcard_properties = {"a": "person"}
+                if "org" in vcard.contents.keys():
+                    vcard_properties["works-for"] = org_values(vcard)
+
+            for source_prop, target_prop in property_map:
+                if source_prop in vcard.contents.keys():
+                    values = {v.value for v in vcard.contents[source_prop]}
+
+                    if target_prop in vcard_properties.keys():
+                        vcard_properties[target_prop] |= values
+                    else:
+                        vcard_properties[target_prop] = values
+
+            if len(vcard_properties) > 1:
+                res += node_to_object_string([], vcard_properties)
+
+    with open(path_cat(data_dir, 'person.tsplx'), 'w+') as target:
+        target.write(res)
+
+def process_json_data_dump_1():
+    import io
+    import json
+
+    path = ex("./bin/weaver lookup --csv 365FV4GMW8", ret_stdout=True, echo=False)
+
+    type_map = {
+        1: "account",
+        2: "note",
+        3: "card",
+    }
+
+    mapping = {
+        "account" : [
+            ("id", "foreign-identifier"),
+            (["login", "username"], "username"),
+            (["login", "password"], "password"),
+            ("name", "name")
+        ],
+
+        "note" : [
+            ("id", "foreign-identifier"),
+            ("notes", "content"),
+            ("name", "name")
+        ],
+
+        "card" : [
+            ("id", "foreign-identifier"),
+            ("name", "name"),
+            (["card", "cardholderName"], "card-holder"),
+            (["card", "number"], "number"),
+            (["card", "expMonth"], "expiration-month"),
+            (["card", "expYear"], "expiration-year"),
+            (["card", "code"], "code"),
+        ],
+    }
+
+    res = ''
+    with open(path, 'r') as f:
+        json_data = json.loads(f.read())
+        for item in json_data['items']:
+            source_type = item['type']
+            if source_type in type_map.keys() and type_map[source_type] in mapping.keys():
+                target_type = type_map[source_type]
+                item_properties = {
+                    'a': target_type,
+                }
+
+                for source_prop, target_prop in mapping[target_type]:
+                    if isinstance(source_prop, list):
+                        value = item
+                        for p in source_prop:
+                            value = value[p]
+                    else:
+                        value = item[source_prop]
+
+                    if value != None:
+                        item_properties[target_prop] = value
+
+                if 'login' in item.keys() and 'uris' in item['login'].keys():
+                    for uri in item['login']['uris']:
+                        if 'url' not in item_properties.keys():
+                            item_properties['url'] = set()
+                        item_properties['url'].add(urlparse(uri['uri']))
+
+                res += node_to_object_string([], item_properties)
+
+    with open(path_cat(data_dir, 'secure.tsplx'), 'w+') as target:
+        target.write(res)
 
 def process_json_data_dump():
     import io
@@ -680,7 +802,7 @@ def process_json_data_dump():
     # Right now this is based on a dump of all my playlists, done with Soundiiz
     path = ex("./bin/weaver lookup --csv H6XH3JGJFW ", ret_stdout=True, echo=False)
 
-    track_constructor = ["name", "artist", "foreign-identifier","platform"]
+    track_constructor = ["name", "artist", "foreign-identifier"]
     constructors = {
         # Useful test, uncomment the playlist constructor. Nothing should
         # break, data output should be equivalent.
@@ -695,14 +817,11 @@ def process_json_data_dump():
     # porting the code to C.
     res = ''
     with ZipFile(path) as zip_file:
-        print (path)
         res = 'q(this-file statements ?s) @ {from santileortiz-soundiiz};\n\n'
 
         for path in zip_file.namelist():
             dirname, fname, extension = path_parse(path)
             if extension == '.json':
-                res += ensure_single_empty_line(res)
-
                 m = re.search('(.*) \((.*)\)', fname)
                 dump_date = m.group(2)
                 playlist_properties = {
@@ -735,7 +854,6 @@ def process_csv_data_dump():
     # Currently this is an example of a data dump from my Fibery workspace
     path = ex("./bin/weaver lookup --csv G5RJR34J49", ret_stdout=True, echo=False)
 
-    remote_fnames = []
     type_map = {
         "Musical Artist": "musician",
         "Concert": "concert",
