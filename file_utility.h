@@ -22,6 +22,33 @@ struct vlt_file_t {
 };
 BINARY_TREE_NEW (id_to_vlt_file, uint64_t, struct vlt_file_t*, (a==b) ? 0 : (a<b ? -1 : 1));
 
+int vlt_file_compare (struct vlt_file_t *a, struct vlt_file_t *b)
+{
+    int result = 0;
+
+    if (a->location_len == b->location_len) {
+        for (int i=0; i<a->location_len; i++) {
+            if (a->location[i] < b->location[i]) {
+                result = -1;
+            } else if (a->location[i] > b->location[i]) {
+                result = 1;
+            }
+        }
+
+        if (result == 0) {
+            printf (ECMA_RED("error:") " compared distinct files with identical location:\n");
+            printf ("  %s\n", str_data(&a->path));
+            printf ("  %s\n", str_data(&a->path));
+        }
+
+    } else {
+        printf (ECMA_RED("error:") " could not compare files because locations differ in size.\n");
+    }
+
+    return result;
+}
+templ_sort_ll(vlt_file_sort,struct vlt_file_t, vlt_file_compare(a,b) < 0);
+
 // TODO: A vault should be composed of file_repo_t which represent a single
 // directory whose file structure is controlled by weaver and derived from
 // metadata associated with the file IDs.
@@ -142,7 +169,13 @@ ITERATE_DIR_CB (maybe_process_canonical_file)
         struct vlt_file_t *file = canonical_fname_parse (&vlt->pool, basename, 0);
         if (file != NULL) {
             str_set (&file->path, fname + strlen(vlt->base_dir));
-            id_to_vlt_file_insert (&vlt->files, file->id, file);
+
+            struct id_to_vlt_file_node_t *node = NULL;
+            if (id_to_vlt_file_lookup (&vlt->files, file->id, &node)) {
+                LINKED_LIST_PUSH(node->value, file);
+            } else {
+                id_to_vlt_file_insert (&vlt->files, file->id, file);
+            }
         }
     }
 }
@@ -164,13 +197,18 @@ bool is_canonical_id (char *s)
     return result;
 }
 
-struct vlt_file_t* file_id_lookup (struct file_vault_t *vlt, uint64_t id)
+#define file_id_lookup(vlt,id) file_id_lookup_full(vlt,id,true)
+struct vlt_file_t* file_id_lookup_full (struct file_vault_t *vlt, uint64_t id, bool sorted)
 {
     struct vlt_file_t *file = NULL;
 
     struct id_to_vlt_file_node_t *node = NULL;
     if (id_to_vlt_file_lookup (&vlt->files, id, &node)) {
         file = node->value;
+    }
+
+    if (sorted) {
+        vlt_file_sort (&file, -1);
     }
 
     return file;

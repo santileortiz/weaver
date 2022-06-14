@@ -68,6 +68,57 @@ def server_stop ():
     else:
         print ('Server is not running.')
 
+viewer_pid_pname = 'viewer_pid'
+def view():
+    if len(sys.argv) < 3:
+        print (f"usage: ./pymk.py {get_function_name()} QUERY")
+        return
+
+    last_pid = store_get (viewer_pid_pname, default=None)
+    if last_pid != None and psutil.pid_exists(int(last_pid)):
+        ex (f'kill {last_pid}')
+
+    # Wasted quite a bit of time attempting these alternative implementations:
+    #
+    # 1. Tried using the following command to watch a file-view directory, then
+    #    used python to clear it and populate it with symbolic links to the
+    #    files we wanted to see.
+    #
+    #    - Requires an additional directory that needs to be managed.
+    #    - Was quite slow, when invoking it from vim reloading felt like it
+    #      took about 1 second. This seems to be on the pqiv side because
+    #      calling it from Python was also slow.
+    #    - I was scared of invoking a remove command that would follow links
+    #      and remove the original files. Wasted time adding checks to ensure I
+    #      was only deleting symbolic links.
+    #
+    # 2. Tried using pqiv's commands by sending them through a pipe to stdin as
+    #    described here https://github.com/phillipberndt/pqiv/issues/183
+    #
+    #    - Requires a special fifo resource that needs to be managed.
+    #    - Commands are quite limited. There is no "remove_all()" so we need to
+    #      remove all files one by one.
+    #    - Execution order of commands doesn't seem to be guaranteed, probably
+    #      piqv tries to be clever and uses multithreading?.
+    #    - Some commands seemed to get lost?.
+    #    - I ended up in broken states, should have removed all old images
+    #      loaded new ones, but I ended up with a mix.
+    #    - The fifo got into a broken state at least once, I had to remove it
+    #      and recreate it.
+    #    - A single error stopped further command execution.
+    #    - Even though I never set /home/santiago/weaver as input directory
+    #      (but it was the WD), got lots of errors like
+    #           Failed to load image /home/santiago/.weaver/files/book-photos/2QGW64VPQ9.1.jpg: Error opening file /home/santiago/weaver: Is a directory
+    #
+    # All of this to realize that just closing and reopening pqiv is the
+    # simplest, fastest and most reliable mechanism. Don't know how I went all
+    # other routes even after knowing of the window positioning and sizing
+    # actions from the very beginning.
+
+    files = ex(f"./bin/weaver lookup --csv {sys.argv[2]}", ret_stdout=True, echo=False).split('\n')
+    pid = ex_bg('pqiv --sort --allow-empty-window --wait-for-images-to-appear --lazy-load --window-position=0,0 --scale-mode-screen-fraction=1 --hide-info-box ' + ' '.join(files))
+    store (viewer_pid_pname, pid)
+
 def new_note ():
     is_vim_mode = get_cli_bool_opt('--vim')
     ensure_dir(source_notes_dir)

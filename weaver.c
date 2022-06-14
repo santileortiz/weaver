@@ -298,14 +298,15 @@ int main(int argc, char** argv)
                 if (id != 0) {
                    struct vlt_file_t *file = file_id_lookup (&rt->vlt, id);
 
+                   LINKED_LIST_FOR(struct vlt_file_t *, f, file) {
+                       string_t result = str_new(rt->vlt.base_dir);
+                       path_cat(&result, str_data(&f->path));
 
-                   string_t result = str_new(rt->vlt.base_dir);
-                   path_cat(&result, str_data(&file->path));
-
-                   if (output_type == CLI_OUTPUT_TYPE_CSV) {
-                       printf ("%s\n", str_data(&result));
-                   } else {
-                       printf ("'%s'\n", str_data(&result));
+                       if (output_type == CLI_OUTPUT_TYPE_CSV) {
+                           printf ("%s\n", str_data(&result));
+                       } else {
+                           printf ("'%s'\n", str_data(&result));
+                       }
                    }
 
                 } else {
