@@ -291,6 +291,15 @@ int main(int argc, char** argv)
         } else if (command == CLI_COMMAND_LOOKUP) {
             char *query = no_opt;
 
+            // One off code to list all canonicaly named files, later this
+            // should be possible to do using a query.
+            //string_t id = {0};
+            //BINARY_TREE_FOR(id_to_vlt_file, &rt->vlt.files, node) {
+            //    str_set(&id, "");
+            //    canonical_id_cat (node->value->id, &id);
+            //    printf ("%s - '%s'\n", str_data(&id), str_data(&node->value->path));
+            //}
+
             uint64_t id = 0;
             if (is_canonical_id(query)) {
                 id = canonical_id_parse (query, 0);

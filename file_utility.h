@@ -105,6 +105,23 @@ uint64_t canonical_id_parse (char *s, size_t len)
     return id;
 }
 
+char id_value_to_digit['X' - '0' + 1] = {'X','W','V','R','Q','P','M','J','H','G','F','C','9','8','7','6','5','4','3','2'};
+
+void canonical_id_cat (uint64_t id, string_t *s)
+{
+    string_t buff = {0};
+    while (id > 0) {
+        str_cat_char(&buff, id_value_to_digit[id%20], 1);
+        id /= 20;
+    }
+
+    char *reverse_id = str_data(&buff);
+    str_cat_char(s, 'X', MAX(0, 10 - str_len(&buff)));
+    for (int i=str_len(&buff)-1; i>=0; i--) {
+        str_cat_char(s, reverse_id[i], 1);
+    }
+}
+
 static inline
 sstring_t r_group (Resub m, int i)
 {

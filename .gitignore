@@ -2,6 +2,7 @@ note_data.js
 notes
 build
 mkpy/chrome_data
+my_telegram_account.session
 
 *.swp
 *.log

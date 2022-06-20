@@ -4,6 +4,7 @@ import common_note_graph as gn
 import file_utility as fu
 import file_utility_tests
 
+from datetime import datetime
 import curses, time
 from natsort import natsorted
 import random
@@ -70,9 +71,14 @@ def server_stop ():
 
 viewer_pid_pname = 'viewer_pid'
 def view():
+    import screeninfo
+
     if len(sys.argv) < 3:
         print (f"usage: ./pymk.py {get_function_name()} QUERY")
         return
+
+    is_vim_mode = get_cli_bool_opt('--vim')
+    query = get_cli_no_opt ()[0]
 
     last_pid = store_get (viewer_pid_pname, default=None)
     if last_pid != None and psutil.pid_exists(int(last_pid)):
@@ -115,8 +121,16 @@ def view():
     # other routes even after knowing of the window positioning and sizing
     # actions from the very beginning.
 
-    files = ex(f"./bin/weaver lookup --csv {sys.argv[2]}", ret_stdout=True, echo=False).split('\n')
-    pid = ex_bg('pqiv --sort --allow-empty-window --wait-for-images-to-appear --lazy-load --window-position=0,0 --scale-mode-screen-fraction=1 --hide-info-box ' + ' '.join(files))
+    # Find leftmost coordinate of primary monitor
+    x_pos = next(filter(lambda m: m.is_primary, screeninfo.get_monitors())).x
+
+    files = ex(f"./bin/weaver lookup --csv {query}", ret_stdout=True, echo=False).split('\n')
+    pid = ex_bg(f'pqiv --sort --allow-empty-window --wait-for-images-to-appear --lazy-load --window-position=0,{x_pos} --scale-mode-screen-fraction=1 --hide-info-box ' + ' '.join(files))
+    if is_vim_mode:
+        vim_window_id = ex("wmctrl -l -p | awk -v pid=$PPID '$5~/splx/ {print $1}'", ret_stdout=True, echo=False)
+        if vim_window_id != "":
+            time.sleep(0.2)
+            ex(f"wmctrl -i -a {vim_window_id}", echo=False)
     store (viewer_pid_pname, pid)
 
 def new_note ():
@@ -555,6 +569,155 @@ def id():
         _, name = fu.new_canonical_name(idx=idx)
         ids.append(name)
     print (" ".join(ids))
+
+telegram_api_id_pname = 'telegram_api_id'
+telegram_api_hash_pname = 'telegram_api_hash'
+def telegram_setup():
+    if len(sys.argv) != 4:
+        print (f"usage: ./pymk.py {get_function_name()} API_ID API_HASH")
+        return
+
+    store (telegram_api_id_pname, int(sys.argv[2]))
+    store (telegram_api_hash_pname, sys.argv[3])
+
+# How to use:
+#  - Send a sequence of photo albums to the saved messages chat.
+#  - Reply to the start message of the sequence with START
+#  - Download all pictures with a command like
+#     ./pymk.py telegram_download_photos print-book
+def telegram_download_photos():
+    """
+    This downloads all media groups assuming they are all photos. It assigns a
+    single identifier to each photo album and sequentialy number pictures in
+    it.
+
+    To specify where to stop, it looks for a message with START as content,
+    which should be a reply to the oldest message that should be included in
+    the full download.
+    """
+
+    target_file_dir = get_cli_arg_opt ("--target-dir")
+    target_data_path = get_cli_arg_opt ("--target-data-file")
+    rest_args = get_cli_no_opt()
+    tsplx_stub = None
+
+    if len(rest_args) == 1:
+        target_type = rest_args[0]
+
+    if rest_args == None or len(rest_args) != 1:
+        print (f"usage: ./pymk.py {get_function_name()} [--target-dir] [--target-data-file] TARGET_TYPE")
+
+    # TODO: Add tests for usage of these conditions
+    #
+    # $ ./pymk.py telegram_download_photos --target-dir my_custom_target_dir --target-data-file my_custom_data_file.tsplx print-book
+    # Storing photos in: /home/santiago/.weaver/files/book-photos
+    # Appending data stubs to: /home/santiago/.weaver/data/book_library.tsplx
+    #
+    # $ ./pymk.py telegram_download_photos my-data-type
+    # Storing photos in: /home/santiago/.weaver/files/my-data-type
+    # Appending data stubs to: /home/santiago/.weaver/data/my-data-type.tsplx
+    #
+    # $ ./pymk.py telegram_download_photos print-book
+    # Storing photos in: /home/santiago/.weaver/files/book-photos
+    # Appending data stubs to: /home/santiago/.weaver/data/book_library.tsplx
+    if target_type != None:
+        # TODO: This should be part of a configuration for the print-book type,
+        # most likely coming from some .tsplx file. This configuration will
+        # describe details of how this type is handled, where is the data in
+        # TSPLX notation appended to and where are its related files stored
+        # into.
+        if target_type == "print-book":
+            target_file_dir = "book-photos"
+            target_data_path = "book_library_santiago.tsplx"
+            tsplx_stub = 'print-book["<++>", q("<++>")];\n'
+
+        if target_data_path == None and target_type != None:
+            target_data_path = target_type + ".tsplx"
+
+        if target_file_dir == None:
+            target_file_dir = target_type
+
+        if not target_file_dir.startswith(os.sep):
+            target_file_dir = path_cat(source_files_dir, target_file_dir)
+
+        if not target_data_path.startswith(os.sep):
+            target_data_path = path_cat(data_dir, target_data_path)
+
+    if target_file_dir == None:
+        target_file_dir = data_dir
+
+    print (f'Storing photos in: {target_file_dir}')
+    if target_data_path != None:
+        print (f'Appending data to: {target_data_path}')
+    print()
+
+
+    # Uses Pyrogram (https://docs.pyrogram.org/) as the Telegram library
+    from pyrogram import Client
+    import piexif
+
+    api_id = store_get(telegram_api_id_pname)
+    api_hash = store_get(telegram_api_hash_pname)
+
+    if api_id == None or api_hash == None:
+        print(ecma_red("error:") + " Missing telegram setup use: ./pymk.py telegram_setup")
+        return
+
+
+    final_message_id = None
+
+    tsplx_data = ''
+    group_id_to_messages = {}
+    with Client("my_telegram_account", api_id, api_hash) as app:
+        for message in app.get_chat_history("me"):
+            if message.media != None:
+                if message.media_group_id not in group_id_to_messages.keys():
+                    group_id_to_messages[message.media_group_id] = []
+                group_id_to_messages[message.media_group_id].append(message)
+
+                # TODO: Whenever there's a picture that's a reply to another
+                # one, assume it's in the same media group. This is useful for
+                # cases where the user forgets a picture, before submitting the
+                # album. Users can still "add into the album", even though
+                # Telegram doesn't allow this.
+
+            elif message.text == "START":
+                final_message_id = message.reply_to_message_id;
+
+            if message.id == final_message_id:
+                break
+
+        for messages in group_id_to_messages.values():
+            identifier = fu.new_identifier()
+            for i, message in enumerate(reversed(messages), 1):
+                _, new_fname = fu.new_canonical_name(identifier=identifier, location=[i], extension="jpg")
+                fpath = path_cat(target_file_dir, new_fname)
+                app.download_media(message, fpath)
+                print(fpath)
+
+                # Images returned by Telegram don't have any Exif data. We
+                # embed the message's timestamp into it.
+
+                # Use the message's datetime to set the EXIF timestamp which is
+                # usually the local time. Even though Telegram stores message
+                # timestamps as in UNIX epoch format, pyrogram translates that
+                # using the system's timezone but returns a timezone unaware
+                # object, we make it timezone aware ourselves.
+                exif_dict = piexif.load(fpath)
+
+                timezone_aware_date = message.date.replace(tzinfo=datetime.utcnow().astimezone().tzinfo)
+                exif_dict["0th"][piexif.ImageIFD.DateTime] = timezone_aware_date.strftime("%Y:%m:%d %H:%M:%S")
+                no_colon = timezone_aware_date.strftime("%z")
+                exif_dict["Exif"][piexif.ExifIFD.OffsetTime] = no_colon[:3] + ":" + no_colon[3:]
+
+                exif_bytes = piexif.dump(exif_dict)
+                piexif.insert(exif_bytes, fpath)
+
+            tsplx_data += identifier + " = " + tsplx_stub
+
+    with open(target_data_path, "+a") as data_file:
+        data_file.write('\n')
+        data_file.write(tsplx_data)
 
 name_predicate = 'name'
 type_predicate = 'a'

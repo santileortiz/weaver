@@ -13,7 +13,7 @@ set cole=1
 :command! Image :exe ':normal a\image{' . system('./pymk.py file_store --vim') . '}'
 
 " Automatic query for ID under cursor to view associated files
-:command! View silent! :exe system('./pymk.py view ' . expand("<cword>"))
+:command! View silent! :exe system('./pymk.py view --vim ' . expand("<cword>"))
 :noremap <leader>v :View<CR>
 
 :vnoremap ` c`<ESC>pa`<ESC>
