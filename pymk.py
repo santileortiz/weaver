@@ -125,7 +125,7 @@ def view():
     x_pos = next(filter(lambda m: m.is_primary, screeninfo.get_monitors())).x
 
     files = ex(f"./bin/weaver lookup --csv {query}", ret_stdout=True, echo=False).split('\n')
-    pid = ex_bg(f'pqiv --sort --allow-empty-window --wait-for-images-to-appear --lazy-load --window-position=0,{x_pos} --scale-mode-screen-fraction=1 --hide-info-box ' + ' '.join(files))
+    pid = ex_bg(f'pqiv --sort --allow-empty-window --wait-for-images-to-appear --lazy-load --window-position=0,{x_pos} --scale-mode-screen-fraction=1 --hide-info-box ' + ' '.join([f"'{fname}'" for fname in files]))
     if is_vim_mode:
         vim_window_id = ex("wmctrl -l -p | awk -v pid=$PPID '$5~/splx/ {print $1}'", ret_stdout=True, echo=False)
         if vim_window_id != "":
@@ -392,6 +392,7 @@ def file_move ():
         print ('Dry run by default, to perform changes use --execute')
 
 def file_store():
+    is_group = get_cli_bool_opt('--group')
     is_vim_mode = get_cli_bool_opt('--vim')
     args = get_cli_no_opt()
 
@@ -404,11 +405,20 @@ def file_store():
     else:
         files = args
 
+
+    identifier = None
+    if is_group:
+        identifier = fu.new_identifier()
+
+    location = []
     original_paths = []
     new_basenames = []
-    for path in files:
+    for i,path in enumerate(files,1):
+        if is_group and len(files) > 1:
+            location = [i]
+
         error, new_path = fu.file_canonical_rename(path, source_files_dir,
-            None, None, None, [], None,
+            None, None, identifier, location, None,
             False, False, keep_name=True, original_names=file_original_name_path)
 
         if error == None:
@@ -418,14 +428,15 @@ def file_store():
             print(error)
 
     if len(new_basenames) > 0:
-        result = []
         if is_vim_mode:
+            result = set()
             for new_basename in new_basenames:
                 canonical_name = fu.canonical_parse(new_basename)
-                result.append(f'{canonical_name.identifier}')
+                result.add(f'{canonical_name.identifier}')
             print(', '.join(result))
 
         else:
+            result = []
             for i, new_basename in enumerate(new_basenames):
                 canonical_name = fu.canonical_parse(new_basename)
                 result.append(f'{original_paths[i]} -> {new_basename}')
@@ -472,16 +483,132 @@ def new_scan(path):
 
     return error, cmd
 
-def interactive_scan():
+@automatic_test_function
+def get_target(target_type, target_file_dir, target_data_file, silent=False):
+    """
+    This function handles the computation of the target file directory and the
+    TSPLX data file. These can be automatically set to defaults if a type is
+    passed but are overridden if the other parameters are passed explicitly.
+
+    The output paths guarantee the following:
+     - Are resolved absolute paths or None.
+     - Input can be relative
+     - Input can use ~ for user's home.
+     - Relative input paths are resolved with respect to Weaver's file structucture.
+        - For file directory, source_files_dir is the base.
+        - For the data file, target_data_file is the base.
+     - Absolute input paths (starting with ~, /, ./, ../, ../../, etc.) are resolved. They remain
+       pointing to the same absolute location.
+    """
+
+    # NOTE: Even though I had envisioned this to be very simple behavior,
+    # implementation of this took surprisingly longer than expected. There's
+    # lots of subtelties here and edge cases. I feel like I'm reaching CSS
+    # levels of default-resolution complexity here...
+
+    # TODO: Maybe the target_data_file should also be possible to be set to a
+    # directory, in which case we just compute the default file name based on
+    # the type, then place it in there. Call the variable target_data_path
+    # then?. This isn't supported right now. It will probably cause even more
+    # edge cases, how do we distinguish the parameter is intended as a
+    # directory as opposed to a file without extension? probably user needs to
+    # pass a trailing slash... even if the user passes a trailing slash, what
+    # if the path already exists, but as a file?.
+
+    original_target_file_dir = target_file_dir
+
+    if target_file_dir != None and \
+        (target_file_dir.startswith('~') or target_file_dir.startswith('.'+os.sep) or target_file_dir.startswith('..')):
+        target_file_dir = os.path.abspath(path_resolve(target_file_dir))
+
+    if target_data_file != None and \
+        (target_data_file.startswith('~') or target_data_file.startswith('.'+os.sep) or target_data_file.startswith('..')):
+        target_data_file = os.path.abspath(path_resolve(target_data_file))
+
+    if target_data_file == None and target_type != None:
+        target_data_file = target_type + ".tsplx"
+
+    if target_file_dir == None and target_type != None:
+        target_file_dir = target_type
+
+    if target_file_dir != None and not target_file_dir.startswith(os.sep):
+        target_file_dir = path_cat(source_files_dir, target_file_dir)
+
+    if target_data_file != None and not target_data_file.startswith(os.sep):
+        target_data_file = path_cat(data_dir, target_data_file)
+
+    if target_file_dir == None:
+        target_file_dir = data_dir
+
+    if target_file_dir.endswith('/'):
+        target_file_dir = target_file_dir[:-1]
+
+    success = True
+    if target_file_dir != None and path_exists(target_file_dir) and path_isfile(target_file_dir):
+        if not silent:
+            print (ecma_red("error:") + " Target file directory exists but as a file.")
+        success = False
+    if target_data_file != None and path_exists(target_data_file) and path_isdir(target_data_file):
+        if not silent:
+            print (ecma_red("error:") + " Target data file exists but as a directory.")
+        success = False
+    if not success:
+        return None, None
+
+    if target_type == None:
+        if target_file_dir == None or original_target_file_dir == None:
+            if not silent:
+                print (ecma_red("error:") + " No type specified and no explicit targets set.")
+
+            # TODO: There is a case for passing None type and a directory, then
+            # wanting the directory to be left alone and not return the error
+            # condition of setting both to None. The case is for scanning when
+            # we just want to scan into a directory, without generating data
+            # stubs. Is there a case for the opposite?, meaning, wanting to
+            # pass None type and a data file path, then wanting the file path
+            # to be left alone?. I have a feeling right now that this should
+            # always be an error condition.
+
+            if original_target_file_dir == None:
+                return None, None
+
+            if target_data_file == None:
+                return target_file_dir, None
+
+    return target_file_dir, target_data_file
+
+def get_target_test_w(*args):
+    expected = tuple(None if p==None else os.path.abspath(path_resolve(p)) for p in args[-1])
+
+    new_args = list(args[:-1])
+    new_args.append(expected)
+
+    #print(new_args[:-1])
+    #print (expected)
+    get_target_test(*new_args, silent=True)
+    #print()
+
+def scan():
+    show_help = get_cli_bool_opt ("--help")
+    target_file_dir = get_cli_arg_opt ("--directory")
+    target_data_file = get_cli_arg_opt ("--data-file")
     rest_args = get_cli_no_opt()
 
-    if rest_args == None:
-        print (f"usage: ./pymk.py {get_function_name()} TARGET_DIRECTORY")
+    target_type = None
+    if rest_args != None and len(rest_args) == 1:
+        target_type = rest_args[0]
+
+    if show_help or (target_type == None and target_file_dir == None):
+        print ("usage:")
+        print (f"  ./pymk.py {get_function_name()} TARGET_TYPE")
+        print (f"  ./pymk.py {get_function_name()} --directory TARGET_DIRECTORY")
         return
 
-    target = os.path.abspath (rest_args[0])
+    target_file_dir, target_data_file = get_target (target_type, target_file_dir, target_data_file)
 
-    help_str = textwrap.dedent("""
+    print (f'Storing scans in: {target_file_dir}')
+
+    help_str = textwrap.dedent("""\
         Commands:
           n new scan
           p scan next page
@@ -489,9 +616,9 @@ def interactive_scan():
 
           h help
           q quit
-        """).strip() + '\n'
+        """)
 
-    mfd = fu.MultiFileDocument(target)
+    mfd = fu.MultiFileDocument(target_file_dir)
 
     win = curses.initscr()
     curses.start_color()
@@ -509,6 +636,11 @@ def interactive_scan():
         if c.lower() == 'n':
             path_to_scan = fu.mfd_new(mfd)
             error, output = new_scan (path_to_scan)
+
+            if target_type != None:
+                assert target_data_file != None
+                ensure_dir(target_data_file)
+                # TODO: Continue to implement this...
 
             win.addstr(f'{output}\n')
             win.refresh()
@@ -550,8 +682,82 @@ def interactive_scan():
 
     curses.endwin()
 
+def tests():
+    # TODO: I'm pretty sure all these tests can be compressed into much more
+    # smaller code, but at least for now this is exhaustive and easy to debug
+    # when one of them fails.
+    get_target_test_w(None, None, None, (None, None))
+    get_target_test_w(None, None, "anything", (None, None))
+
+    get_target_test_w(None, ".hidden-folder",        None, ('~/.weaver/files/.hidden-folder',        None))
+    get_target_test_w(None, "subdir/my-data-folder", None, ('~/.weaver/files/subdir/my-data-folder', None))
+    get_target_test_w(None, "~/.app/files/",         None, ('~/.app/files',                          None))
+    get_target_test_w(None, "/opt/app/files/",       None, ('/opt/app/files',                        None))
+    get_target_test_w(None, "./subdir/files/",       None, ('./subdir/files',                        None))
+    get_target_test_w(None, "../../subdir/files/",   None, ('../../subdir/files',                    None))
+
+    get_target_test_w("my-data-type", None, None, ('~/.weaver/files/my-data-type', '~/.weaver/data/my-data-type.tsplx'))
+
+    get_target_test_w("my-data-type", None, ".hidden_file.tsplx",                     ('~/.weaver/files/my-data-type', '~/.weaver/data/.hidden_file.tsplx'))
+    get_target_test_w("my-data-type", None, "subdir/my_custom_data_file.tsplx",       ('~/.weaver/files/my-data-type', '~/.weaver/data/subdir/my_custom_data_file.tsplx'))
+    get_target_test_w("my-data-type", None, "/opt/my-app/app-type/somename.tsplx",    ('~/.weaver/files/my-data-type', '/opt/my-app/app-type/somename.tsplx'))
+    get_target_test_w("my-data-type", None, "~/.app-dir/app-type/somename.tsplx",     ('~/.weaver/files/my-data-type', '~/.app-dir/app-type/somename.tsplx'))
+    get_target_test_w("my-data-type", None, "./.app-dir/app-type/somename.tsplx",     ('~/.weaver/files/my-data-type', './.app-dir/app-type/somename.tsplx'))
+    get_target_test_w("my-data-type", None, "../../.app-dir/app-type/somename.tsplx", ('~/.weaver/files/my-data-type', '../../.app-dir/app-type/somename.tsplx'))
+
+    get_target_test_w("my-data-type", ".hidden-folder",        None, ('~/.weaver/files/.hidden-folder',        '~/.weaver/data/my-data-type.tsplx'))
+    get_target_test_w("my-data-type", "subdir/my-data-folder", None, ('~/.weaver/files/subdir/my-data-folder', '~/.weaver/data/my-data-type.tsplx'))
+    get_target_test_w("my-data-type", "~/.app/files/",         None, ('~/.app/files',                          '~/.weaver/data/my-data-type.tsplx'))
+    get_target_test_w("my-data-type", "/opt/app/files/",       None, ('/opt/app/files',                        '~/.weaver/data/my-data-type.tsplx'))
+    get_target_test_w("my-data-type", "./subdir/files/",       None, ('./subdir/files',                        '~/.weaver/data/my-data-type.tsplx'))
+    get_target_test_w("my-data-type", "../../subdir/files/",   None, ('../../subdir/files',                    '~/.weaver/data/my-data-type.tsplx'))
+
+    get_target_test_w("my-data-type", ".hidden-folder", ".hidden_file.tsplx",                     ('~/.weaver/files/.hidden-folder', '~/.weaver/data/.hidden_file.tsplx'))
+    get_target_test_w("my-data-type", ".hidden-folder", "subdir/my_custom_data_file.tsplx",       ('~/.weaver/files/.hidden-folder', '~/.weaver/data/subdir/my_custom_data_file.tsplx'))
+    get_target_test_w("my-data-type", ".hidden-folder", "/opt/my-app/app-type/somename.tsplx",    ('~/.weaver/files/.hidden-folder', '/opt/my-app/app-type/somename.tsplx'))
+    get_target_test_w("my-data-type", ".hidden-folder", "~/.app-dir/app-type/somename.tsplx",     ('~/.weaver/files/.hidden-folder', '~/.app-dir/app-type/somename.tsplx'))
+    get_target_test_w("my-data-type", ".hidden-folder", "./.app-dir/app-type/somename.tsplx",     ('~/.weaver/files/.hidden-folder', './.app-dir/app-type/somename.tsplx'))
+    get_target_test_w("my-data-type", ".hidden-folder", "../../.app-dir/app-type/somename.tsplx", ('~/.weaver/files/.hidden-folder', '../../.app-dir/app-type/somename.tsplx'))
+
+    get_target_test_w("my-data-type", "subdir/my-data-folder", ".hidden_file.tsplx",                     ('~/.weaver/files/subdir/my-data-folder', '~/.weaver/data/.hidden_file.tsplx'))
+    get_target_test_w("my-data-type", "subdir/my-data-folder", "subdir/my_custom_data_file.tsplx",       ('~/.weaver/files/subdir/my-data-folder', '~/.weaver/data/subdir/my_custom_data_file.tsplx'))
+    get_target_test_w("my-data-type", "subdir/my-data-folder", "/opt/my-app/app-type/somename.tsplx",    ('~/.weaver/files/subdir/my-data-folder', '/opt/my-app/app-type/somename.tsplx'))
+    get_target_test_w("my-data-type", "subdir/my-data-folder", "~/.app-dir/app-type/somename.tsplx",     ('~/.weaver/files/subdir/my-data-folder', '~/.app-dir/app-type/somename.tsplx'))
+    get_target_test_w("my-data-type", "subdir/my-data-folder", "./.app-dir/app-type/somename.tsplx",     ('~/.weaver/files/subdir/my-data-folder', './.app-dir/app-type/somename.tsplx'))
+    get_target_test_w("my-data-type", "subdir/my-data-folder", "../../.app-dir/app-type/somename.tsplx", ('~/.weaver/files/subdir/my-data-folder', '../../.app-dir/app-type/somename.tsplx'))
+
+    get_target_test_w("my-data-type", "~/.app/files/", ".hidden_file.tsplx",                     ('~/.app/files', '~/.weaver/data/.hidden_file.tsplx'))
+    get_target_test_w("my-data-type", "~/.app/files/", "subdir/my_custom_data_file.tsplx",       ('~/.app/files', '~/.weaver/data/subdir/my_custom_data_file.tsplx'))
+    get_target_test_w("my-data-type", "~/.app/files/", "/opt/my-app/app-type/somename.tsplx",    ('~/.app/files', '/opt/my-app/app-type/somename.tsplx'))
+    get_target_test_w("my-data-type", "~/.app/files/", "~/.app-dir/app-type/somename.tsplx",     ('~/.app/files', '~/.app-dir/app-type/somename.tsplx'))
+    get_target_test_w("my-data-type", "~/.app/files/", "./.app-dir/app-type/somename.tsplx",     ('~/.app/files', './.app-dir/app-type/somename.tsplx'))
+    get_target_test_w("my-data-type", "~/.app/files/", "../../.app-dir/app-type/somename.tsplx", ('~/.app/files', '../../.app-dir/app-type/somename.tsplx'))
+
+    get_target_test_w("my-data-type", "/opt/app/files/", ".hidden_file.tsplx",                     ('/opt/app/files', '~/.weaver/data/.hidden_file.tsplx'))
+    get_target_test_w("my-data-type", "/opt/app/files/", "subdir/my_custom_data_file.tsplx",       ('/opt/app/files', '~/.weaver/data/subdir/my_custom_data_file.tsplx'))
+    get_target_test_w("my-data-type", "/opt/app/files/", "/opt/my-app/app-type/somename.tsplx",    ('/opt/app/files', '/opt/my-app/app-type/somename.tsplx'))
+    get_target_test_w("my-data-type", "/opt/app/files/", "~/.app-dir/app-type/somename.tsplx",     ('/opt/app/files', '~/.app-dir/app-type/somename.tsplx'))
+    get_target_test_w("my-data-type", "/opt/app/files/", "./.app-dir/app-type/somename.tsplx",     ('/opt/app/files', './.app-dir/app-type/somename.tsplx'))
+    get_target_test_w("my-data-type", "/opt/app/files/", "../../.app-dir/app-type/somename.tsplx", ('/opt/app/files', '../../.app-dir/app-type/somename.tsplx'))
+
+    get_target_test_w("my-data-type", "./subdir/files/", ".hidden_file.tsplx",                     ('./subdir/files', '~/.weaver/data/.hidden_file.tsplx'))
+    get_target_test_w("my-data-type", "./subdir/files/", "subdir/my_custom_data_file.tsplx",       ('./subdir/files', '~/.weaver/data/subdir/my_custom_data_file.tsplx'))
+    get_target_test_w("my-data-type", "./subdir/files/", "/opt/my-app/app-type/somename.tsplx",    ('./subdir/files', '/opt/my-app/app-type/somename.tsplx'))
+    get_target_test_w("my-data-type", "./subdir/files/", "~/.app-dir/app-type/somename.tsplx",     ('./subdir/files', '~/.app-dir/app-type/somename.tsplx'))
+    get_target_test_w("my-data-type", "./subdir/files/", "./.app-dir/app-type/somename.tsplx",     ('./subdir/files', './.app-dir/app-type/somename.tsplx'))
+    get_target_test_w("my-data-type", "./subdir/files/", "../../.app-dir/app-type/somename.tsplx", ('./subdir/files', '../../.app-dir/app-type/somename.tsplx'))
+
+    get_target_test_w("my-data-type", "../../subdir/files/", ".hidden_file.tsplx",                     ('../../subdir/files', '~/.weaver/data/.hidden_file.tsplx'))
+    get_target_test_w("my-data-type", "../../subdir/files/", "subdir/my_custom_data_file.tsplx",       ('../../subdir/files', '~/.weaver/data/subdir/my_custom_data_file.tsplx'))
+    get_target_test_w("my-data-type", "../../subdir/files/", "/opt/my-app/app-type/somename.tsplx",    ('../../subdir/files', '/opt/my-app/app-type/somename.tsplx'))
+    get_target_test_w("my-data-type", "../../subdir/files/", "~/.app-dir/app-type/somename.tsplx",     ('../../subdir/files', '~/.app-dir/app-type/somename.tsplx'))
+    get_target_test_w("my-data-type", "../../subdir/files/", "./.app-dir/app-type/somename.tsplx",     ('../../subdir/files', './.app-dir/app-type/somename.tsplx'))
+    get_target_test_w("my-data-type", "../../subdir/files/", "../../.app-dir/app-type/somename.tsplx", ('../../subdir/files', '../../.app-dir/app-type/somename.tsplx'))
+
+
 def test_file_utility():
     file_utility_tests.tests()
+
 
 def id():
     args = get_cli_no_opt()
@@ -596,30 +802,20 @@ def telegram_download_photos():
     the full download.
     """
 
-    target_file_dir = get_cli_arg_opt ("--target-dir")
-    target_data_path = get_cli_arg_opt ("--target-data-file")
-    rest_args = get_cli_no_opt()
-    tsplx_stub = None
+    prefix = get_cli_arg_opt ("--prefix")
+    group_by_album = get_cli_bool_opt ("--group-by-album")
 
-    if len(rest_args) == 1:
+    target_file_dir = get_cli_arg_opt ("--directory")
+    target_data_path = get_cli_arg_opt ("--data-file")
+    rest_args = get_cli_no_opt()
+    if rest_args != None and len(rest_args) == 1:
         target_type = rest_args[0]
 
-    if rest_args == None or len(rest_args) != 1:
-        print (f"usage: ./pymk.py {get_function_name()} [--target-dir] [--target-data-file] TARGET_TYPE")
+    if target_type == None:
+        print (f"usage: ./pymk.py {get_function_name()} [--directory DIRECTORY] [--data-file PATH] TARGET_TYPE")
 
-    # TODO: Add tests for usage of these conditions
-    #
-    # $ ./pymk.py telegram_download_photos --target-dir my_custom_target_dir --target-data-file my_custom_data_file.tsplx print-book
-    # Storing photos in: /home/santiago/.weaver/files/book-photos
-    # Appending data stubs to: /home/santiago/.weaver/data/book_library.tsplx
-    #
-    # $ ./pymk.py telegram_download_photos my-data-type
-    # Storing photos in: /home/santiago/.weaver/files/my-data-type
-    # Appending data stubs to: /home/santiago/.weaver/data/my-data-type.tsplx
-    #
-    # $ ./pymk.py telegram_download_photos print-book
-    # Storing photos in: /home/santiago/.weaver/files/book-photos
-    # Appending data stubs to: /home/santiago/.weaver/data/book_library.tsplx
+    tsplx_stub = None
+
     if target_type != None:
         # TODO: This should be part of a configuration for the print-book type,
         # most likely coming from some .tsplx file. This configuration will
@@ -630,6 +826,26 @@ def telegram_download_photos():
             target_file_dir = "book-photos"
             target_data_path = "book_library_santiago.tsplx"
             tsplx_stub = 'print-book["<++>", q("<++>")];\n'
+
+        elif target_type == "transaction":
+            group_by_album = True
+            target_file_dir = 'invoices'
+            target_data_path = "digitized_invoices.tsplx"
+            prefix = "photo"
+            tsplx_stub = textwrap.dedent('''\
+                transaction["<++>",<++>,"MXN",q("<++>"),q("<++>")]{
+                  file <+ids+>;
+                };\n
+                ''')
+
+        elif target_type == "menu":
+            group_by_album = True
+            target_data_path = "establishments.tsplx"
+            tsplx_stub = textwrap.dedent('''\
+                menu{
+                  file <+ids+>;
+                };\n
+                ''')
 
         if target_data_path == None and target_type != None:
             target_data_path = target_type + ".tsplx"
@@ -667,19 +883,37 @@ def telegram_download_photos():
     final_message_id = None
 
     tsplx_data = ''
-    group_id_to_messages = {}
+    media_group_id_to_messages = {}
+    parent_message_id_to_media_group_ids = {}
     with Client("my_telegram_account", api_id, api_hash) as app:
         for message in app.get_chat_history("me"):
             if message.media != None:
-                if message.media_group_id not in group_id_to_messages.keys():
-                    group_id_to_messages[message.media_group_id] = []
-                group_id_to_messages[message.media_group_id].append(message)
+                if message.media_group_id == None:
+                    media_group_id_to_messages["msg" + str(message.id)] = [message]
+
+                else:
+                    if message.media_group_id not in media_group_id_to_messages.keys():
+                        media_group_id_to_messages[message.media_group_id] = []
+                    media_group_id_to_messages[message.media_group_id].append(message)
 
                 # TODO: Whenever there's a picture that's a reply to another
                 # one, assume it's in the same media group. This is useful for
                 # cases where the user forgets a picture, before submitting the
                 # album. Users can still "add into the album", even though
                 # Telegram doesn't allow this.
+                next_reply = message
+                next_reply_id = message.reply_to_message_id
+                while next_reply_id != None:
+                    next_reply = app.get_messages("me", next_reply_id)
+                    next_reply_id = next_reply.reply_to_message_id
+
+                if next_reply.id not in parent_message_id_to_media_group_ids.keys():
+                    parent_message_id_to_media_group_ids[next_reply.id] = []
+
+                custom_id = message.media_group_id
+                if message.media_group_id == None:
+                    custom_id = "msg" + str(message.id)
+                parent_message_id_to_media_group_ids[next_reply.id].append(custom_id)
 
             elif message.text == "START":
                 final_message_id = message.reply_to_message_id;
@@ -687,33 +921,88 @@ def telegram_download_photos():
             if message.id == final_message_id:
                 break
 
-        for messages in group_id_to_messages.values():
-            identifier = fu.new_identifier()
-            for i, message in enumerate(reversed(messages), 1):
-                _, new_fname = fu.new_canonical_name(identifier=identifier, location=[i], extension="jpg")
-                fpath = path_cat(target_file_dir, new_fname)
-                app.download_media(message, fpath)
-                print(fpath)
+        # All messages repreenting elements inside an album are parents in that
+        # they are not a reply to other message, but they are already included
+        # in the media group so we remove them from the dictionary of parent
+        # messages. In Telegram, all replies to messages inside a media group
+        # actually reply to the first message in the media group.
+        for _, messages in media_group_id_to_messages.items():
+            minimum_id = None
+            for message in reversed(messages):
+                if message.id in parent_message_id_to_media_group_ids.keys():
+                    minimum_id = message.id
+                    break
 
-                # Images returned by Telegram don't have any Exif data. We
-                # embed the message's timestamp into it.
+            for message in messages:
+                if message.id != minimum_id:
+                    parent_message_id_to_media_group_ids.pop(message.id, None)
 
-                # Use the message's datetime to set the EXIF timestamp which is
-                # usually the local time. Even though Telegram stores message
-                # timestamps as in UNIX epoch format, pyrogram translates that
-                # using the system's timezone but returns a timezone unaware
-                # object, we make it timezone aware ourselves.
-                exif_dict = piexif.load(fpath)
+        #print (media_group_id_to_messages.keys())
+        #print (parent_message_id_to_media_group_ids)
 
-                timezone_aware_date = message.date.replace(tzinfo=datetime.utcnow().astimezone().tzinfo)
-                exif_dict["0th"][piexif.ImageIFD.DateTime] = timezone_aware_date.strftime("%Y:%m:%d %H:%M:%S")
-                no_colon = timezone_aware_date.strftime("%z")
-                exif_dict["Exif"][piexif.ExifIFD.OffsetTime] = no_colon[:3] + ":" + no_colon[3:]
+        # If we don't group by album, this takes all images in a reply tree and
+        # merges them together into the same message group.
+        message_groups = []
+        for _, custom_ids in parent_message_id_to_media_group_ids.items():
+            instance_file_groups = []
+            for custom_id in custom_ids:
+                if group_by_album:
+                    instance_file_groups.append(media_group_id_to_messages[custom_id])
+                else:
+                    instance_file_groups += media_group_id_to_messages[custom_id]
 
-                exif_bytes = piexif.dump(exif_dict)
-                piexif.insert(exif_bytes, fpath)
+            if group_by_album:
+                message_groups.append(instance_file_groups)
+            else:
+                message_groups.append([instance_file_groups])
 
-            tsplx_data += identifier + " = " + tsplx_stub
+        for message_group in message_groups:
+            thing_identifiers = []
+            if not group_by_album:
+                identifier = fu.new_identifier()
+                thing_identifiers.append(identifier)
+
+            for messages in message_group:
+                if group_by_album:
+                    identifier = fu.new_identifier()
+                    thing_identifiers.append(identifier)
+
+                for i, message in enumerate(reversed(messages), 1):
+
+                    location = [i] if len(messages) > 1 else []
+
+                    _, new_fname = fu.new_canonical_name(identifier=identifier, location=location, extension="jpg", prefix=prefix)
+                    fpath = path_cat(target_file_dir, new_fname)
+                    app.download_media(message, fpath)
+                    print(fpath)
+
+                    # Images returned by Telegram don't have any Exif data. We
+                    # embed the message's timestamp into it.
+
+                    # Use the message's datetime to set the EXIF timestamp which is
+                    # usually the local time. Even though Telegram stores message
+                    # timestamps as in UNIX epoch format, pyrogram translates that
+                    # using the system's timezone but returns a timezone unaware
+                    # object, we make it timezone aware ourselves.
+                    exif_dict = piexif.load(fpath)
+
+                    timezone_aware_date = message.date.replace(tzinfo=datetime.utcnow().astimezone().tzinfo)
+                    exif_dict["0th"][piexif.ImageIFD.DateTime] = timezone_aware_date.strftime("%Y:%m:%d %H:%M:%S")
+                    no_colon = timezone_aware_date.strftime("%z")
+                    exif_dict["Exif"][piexif.ExifIFD.OffsetTime] = no_colon[:3] + ":" + no_colon[3:]
+
+                    exif_bytes = piexif.dump(exif_dict)
+                    piexif.insert(exif_bytes, fpath)
+
+            if tsplx_stub.find("<+ids+>") >= 0:
+                tsplx_data += tsplx_stub.replace("<+ids+>", "; ".join(thing_identifiers))
+            elif not group_by_album:
+                tsplx_data += identifier + " = " + tsplx_stub
+            else:
+                # TODO: Here the default should be to add it to the "file"
+                # property. We don't do it right now because we're using string
+                # replacement instead of a node representation.
+                print(ecma_red("error:") + " Default multiple id setting is not implemented.")
 
     with open(target_data_path, "+a") as data_file:
         data_file.write('\n')
