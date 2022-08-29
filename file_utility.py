@@ -29,6 +29,16 @@ class CanonicalName():
     def __repr__(self):
         return f'({repr(self.is_canonical)}, {repr(self.idx)}, {repr(self.prefix)}, {repr(self.identifier)}, {repr(self.location)}, {repr(self.name)}, {repr(self.extension)})'
 
+    def fname(self):
+        _, fname = new_canonical_name(prefix=self.prefix,
+                idx=self.idx,
+                identifier=self.identifier,
+                location=self.location,
+                name=self.name,
+                extension=self.extension)
+        return fname
+
+
 @automatic_test_function
 def canonical_parse (path):
     fname = path_basename (path)
@@ -79,7 +89,7 @@ def collect_canonical_fnames (path):
                 non_canonical.append(fname)
             else:
                 canonical_files.append (canonical_fname)
-    result = sorted (canonical_files, key = lambda f: f.idx)
+    result = natsorted (canonical_files, key = lambda f: (f.idx, '.'.join([str(l) for l in f.location]), f.name))
 
     if has_non_canonical:
         print (f"Some file names are not in canonical form, they will be ignored:")
@@ -97,13 +107,15 @@ def new_canonical_name (prefix=None,
         path=None):
     error = None
 
+    idx_str = ''
+    if idx != None and idx < 0:
+        idx_str = f'0_'
+    elif idx != None:
+        idx_str = f'{idx}_'
+
     prefix_str = ''
     if prefix != None:
         prefix_str = f'{prefix}_'
-
-    idx_str = ''
-    if idx != None:
-        idx_str = f'{idx}_'
 
     if identifier == None:
         identifier = new_identifier()
@@ -123,7 +135,7 @@ def new_canonical_name (prefix=None,
         else:
             extension_str = extension
 
-    new_fname = f"{prefix_str}{idx_str}{identifier}{location_str}{name_str}{extension_str}"
+    new_fname = f"{idx_str}{prefix_str}{identifier}{location_str}{name_str}{extension_str}"
 
     if path != None:
         tgt_path = f'{path_cat(path, new_fname)}'
@@ -271,31 +283,50 @@ def canonical_renumber (path_or_file_list, new_id_order, verbose=False, dry_run=
     file_list = collect (path_or_file_list)
 
     canonical_files = {}
-    canonical_idx = {}
-    canonical_full_path = {}
     for path in file_list:
         basename = path_basename (path)
         canonical_fname = canonical_parse(basename)
         if not canonical_fname.is_canonical:
             non_canonical.append(path)
         else:
-            canonical_files[canonical_fname.identifier] = canonical_fname
-            canonical_idx[canonical_fname.identifier] = 0
-            canonical_full_path[canonical_fname.identifier] = path
+            if canonical_fname.identifier not in canonical_files.keys():
+                canonical_files[canonical_fname.identifier] = []
+            canonical_files[canonical_fname.identifier].append((path, canonical_fname))
+
+    files_left = canonical_files.copy()
 
     for i, identifier in enumerate(new_id_order, 1):
-        path = canonical_full_path[identifier]
-        rename_error, new_path = file_canonical_rename (path, None,
-                canonical_fname.prefix, i, identifier, canonical_fname.location, None,
-                verbose, dry_run)
+        del files_left[identifier]
 
-        if rename_error != None:
-            error = '' if error == None else error
-            error += '{rename_error}\n'
-        else:
-            result.append ([path, new_path])
-            if verbose:
-                print (f'{path} -> {new_path}')
+        for path,cn in canonical_files[identifier]:
+            rename_error, new_path = file_canonical_rename (path, None,
+                    cn.prefix, i, identifier, cn.location, cn.name,
+                    verbose, dry_run)
+
+            if rename_error != None:
+                error = '' if error == None else error
+                error += '{rename_error}\n'
+            else:
+                result.append ([path, new_path])
+                if verbose:
+                    print (f'{path} -> {new_path}')
+
+    # Non specified files are assigned index 0.
+    # TODO: Another behavior could be just to sort them by name somewhere,
+    # could be at the end, at the start, or inside an "unsortable" directory.
+    for identifier,file_info in files_left.items():
+        for path,cn in file_info:
+            rename_error, new_path = file_canonical_rename (path, None,
+                    cn.prefix, -1, identifier, cn.location, cn.name,
+                    verbose, dry_run)
+
+            if rename_error != None:
+                error = '' if error == None else error
+                error += '{rename_error}\n'
+            else:
+                result.append ([path, new_path])
+                if verbose:
+                    print (f'{path} -> {new_path}')
 
     if len(non_canonical):
         error = '' if error == None else error

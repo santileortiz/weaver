@@ -173,6 +173,27 @@ def canonical_move_at_position_test(file_map, initial_copy_amount, position):
 
     shutil.rmtree (test_base)
 
+def canonical_renumber_test(file_map, ordered_ids):
+    create_files_from_map(test_base, file_map)
+    result_dict = create_result_map(test_base, file_map)
+
+    dir_path = path_cat(test_base, 'directory')
+
+    test_push(f'canonical_renumber()')
+
+    reset_id_generator()
+    canonical_renumber (dir_path, ordered_ids)
+
+    success = test (path_to_dict(dir_path), result_dict, 'Resulting file tree is correct')
+    if success == False:
+        # TODO: Get better debugging output for errors
+        test_error (pretty_dict(result_dict))
+        test_error (pretty_dict(path_to_dict(dir_path)))
+
+    test_pop()
+
+    shutil.rmtree (test_base)
+
 def mfd_test_create_page_file(path):
     error = None
     mfd_test_create_page_file.cnt += 1
@@ -522,6 +543,65 @@ def canonical_move_tests():
     #  - Test dry_run mode when moving and renumbering, check that the verbose
     #    output is correct.
 
+def canonical_renumber_tests():
+    #test_push ('canonical_renumber()')
+
+    renumber_test = {
+        'directory/V24J2XQG9G.jpg':  'directory/1_V24J2XQG9G.jpg',
+        'directory/X6F54GQV5H.jpg':  'directory/2_X6F54GQV5H.jpg',
+        'directory/MGX8VQPRC3.jpg':  'directory/3_MGX8VQPRC3.jpg',
+        'directory/W8R6F65XCV.jpg':  'directory/4_W8R6F65XCV.jpg',
+        'directory/JM3CRQJFQH.jpg':  'directory/5_JM3CRQJFQH.jpg',
+        'directory/48W996VP44.jpg':  'directory/6_48W996VP44.jpg',
+    }
+    canonical_renumber_test(renumber_test, ["V24J2XQG9G", "X6F54GQV5H", "MGX8VQPRC3", "W8R6F65XCV", "JM3CRQJFQH", "48W996VP44"])
+
+    renumber_test = {
+        'directory/5_V24J2XQG9G.jpg':  'directory/1_V24J2XQG9G.jpg',
+        'directory/3_X6F54GQV5H.jpg':  'directory/2_X6F54GQV5H.jpg',
+        'directory/4_MGX8VQPRC3.jpg':  'directory/3_MGX8VQPRC3.jpg',
+        'directory/2_W8R6F65XCV.jpg':  'directory/4_W8R6F65XCV.jpg',
+        'directory/1_JM3CRQJFQH.jpg':  'directory/5_JM3CRQJFQH.jpg',
+        'directory/6_48W996VP44.jpg':  'directory/6_48W996VP44.jpg',
+    }
+    canonical_renumber_test(renumber_test, ["V24J2XQG9G", "X6F54GQV5H", "MGX8VQPRC3", "W8R6F65XCV", "JM3CRQJFQH", "48W996VP44"])
+
+    renumber_test = {
+        'directory/5_V24J2XQG9G.jpg':  'directory/0_V24J2XQG9G.jpg',
+        'directory/3_X6F54GQV5H.jpg':  'directory/0_X6F54GQV5H.jpg',
+        'directory/4_MGX8VQPRC3.jpg':  'directory/0_MGX8VQPRC3.jpg',
+        'directory/2_W8R6F65XCV.jpg':  'directory/1_W8R6F65XCV.jpg',
+        'directory/1_JM3CRQJFQH.jpg':  'directory/2_JM3CRQJFQH.jpg',
+        'directory/6_48W996VP44.jpg':  'directory/3_48W996VP44.jpg',
+    }
+    canonical_renumber_test(renumber_test, ["W8R6F65XCV", "JM3CRQJFQH", "48W996VP44"])
+
+    renumber_test = {
+        'directory/5_prfxa_V24J2XQG9G.6 My E Name.jpg':  'directory/1_prfxa_V24J2XQG9G.6 My E Name.jpg',
+        'directory/3_prfxb_X6F54GQV5H.5 My F Name.jpg':  'directory/2_prfxb_X6F54GQV5H.5 My F Name.jpg',
+        'directory/4_prfxc_MGX8VQPRC3.4 My A Name.jpg':  'directory/3_prfxc_MGX8VQPRC3.4 My A Name.jpg',
+        'directory/2_prfxd_W8R6F65XCV.3 My C Name.jpg':  'directory/4_prfxd_W8R6F65XCV.3 My C Name.jpg',
+        'directory/1_prfxe_JM3CRQJFQH.2 My B Name.jpg':  'directory/5_prfxe_JM3CRQJFQH.2 My B Name.jpg',
+        'directory/6_prfxf_48W996VP44.1 My D Name.jpg':  'directory/6_prfxf_48W996VP44.1 My D Name.jpg',
+    }
+    canonical_renumber_test(renumber_test, ["V24J2XQG9G", "X6F54GQV5H", "MGX8VQPRC3", "W8R6F65XCV", "JM3CRQJFQH", "48W996VP44"])
+
+    renumber_test = {
+        'directory/V24J2XQG9G.jpg':          'directory/0_V24J2XQG9G.jpg',
+        'directory/48W996VP44.jpg':          'directory/0_48W996VP44.jpg',
+        'directory/X6F54GQV5H.1.jpg':        'directory/1_X6F54GQV5H.1.jpg',
+        'directory/X6F54GQV5H.2.jpg':        'directory/1_X6F54GQV5H.2.jpg',
+        'directory/MGX8VQPRC3.1.jpg':        'directory/2_MGX8VQPRC3.1.jpg',
+        'directory/MGX8VQPRC3.2.jpg':        'directory/2_MGX8VQPRC3.2.jpg',
+        'directory/W8R6F65XCV.jpg':          'directory/3_W8R6F65XCV.jpg',
+        'directory/JM3CRQJFQH.3.1.1.99.jpg': 'directory/4_JM3CRQJFQH.3.1.1.99.jpg',
+        'directory/JM3CRQJFQH.1.5.1.1.jpg':  'directory/4_JM3CRQJFQH.1.5.1.1.jpg',
+        'directory/JM3CRQJFQH.1.1.7.1.jpg':  'directory/4_JM3CRQJFQH.1.1.7.1.jpg',
+    }
+    canonical_renumber_test(renumber_test, ["X6F54GQV5H", "MGX8VQPRC3", "W8R6F65XCV", "JM3CRQJFQH"])
+
+    #test_pop()
+
 def mfd_multiple_new_test():
     reset_id_generator()
 
@@ -765,3 +845,5 @@ def tests():
     canonical_move_tests()
 
     mfd_tests()
+
+    canonical_renumber_tests()

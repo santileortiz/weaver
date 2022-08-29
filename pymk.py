@@ -4,6 +4,7 @@ import common_note_graph as gn
 import file_utility as fu
 import file_utility_tests
 
+import tempfile
 from datetime import datetime
 import curses, time
 from natsort import natsorted
@@ -125,7 +126,7 @@ def view():
     x_pos = next(filter(lambda m: m.is_primary, screeninfo.get_monitors())).x
 
     files = ex(f"./bin/weaver lookup --csv {query}", ret_stdout=True, echo=False).split('\n')
-    pid = ex_bg(f'pqiv --sort --allow-empty-window --wait-for-images-to-appear --lazy-load --window-position=0,{x_pos} --scale-mode-screen-fraction=1 --hide-info-box ' + ' '.join([f"'{fname}'" for fname in files]))
+    pid = ex_bg(f'pqiv --sort --allow-empty-window --wait-for-images-to-appear --lazy-load --window-position=0,{x_pos} --scale-mode-screen-fraction=0.95 --hide-info-box ' + ' '.join([f"'{fname}'" for fname in files]))
     if is_vim_mode:
         vim_window_id = ex("wmctrl -l -p | awk -v pid=$PPID '$5~/splx/ {print $1}'", ret_stdout=True, echo=False)
         if vim_window_id != "":
@@ -465,6 +466,18 @@ def create_test_dir():
     file_utility_tests.create_files_from_map('bin/test', file_map)
 
 
+def input_str(win):
+    s = ''
+    ch = None
+    while True:
+        ch = chr(win.getch())
+
+        if ch == '\n':
+            break
+
+        s += ch
+    return s
+
 def input_char(win):
     while True:
         ch = win.getch()
@@ -473,9 +486,21 @@ def input_char(win):
         time.sleep(0.05)
     return chr(ch)
 
-def new_scan(path):
+def get_scanner_names():
+    s = ex("scanimage -f '%d'", echo=False, quiet=True, ret_stdout=True)
+
+    if s:
+        return s.split('\n')
+    else:
+        return []
+
+def new_scan(path, resolution=300, device=None):
+    device_arg = ''
+    if device != None:
+        device_arg = f"-d '{device}'"
+
     error = None
-    cmd = f"scanimage --resolution 300 --format jpeg --output-file '{path}'"
+    cmd = f"scanimage {device_arg} --resolution {resolution} --format jpeg --output-file '{path}'"
 
     status = ex(cmd, echo=False, quiet=True)
     if status != 0:
@@ -492,6 +517,8 @@ def get_target(target_type, target_file_dir, target_data_file, silent=False):
 
     The output paths guarantee the following:
      - Are resolved absolute paths or None.
+     - If a file directory is returned, then it's guaranteed to either not exist or already exist as a directory.
+     - If a data file is returned, then it's guaranteed to either not exist or already exist as a file.
      - Input can be relative
      - Input can use ~ for user's home.
      - Relative input paths are resolved with respect to Weaver's file structucture.
@@ -546,11 +573,11 @@ def get_target(target_type, target_file_dir, target_data_file, silent=False):
     success = True
     if target_file_dir != None and path_exists(target_file_dir) and path_isfile(target_file_dir):
         if not silent:
-            print (ecma_red("error:") + " Target file directory exists but as a file.")
+            print (ecma_red("error:") + f" Target file directory '{target_file_dir}' exists but as a file.")
         success = False
     if target_data_file != None and path_exists(target_data_file) and path_isdir(target_data_file):
         if not silent:
-            print (ecma_red("error:") + " Target data file exists but as a directory.")
+            print (ecma_red("error:") + f" Target data file '{target_data_file}' exists but as a directory.")
         success = False
     if not success:
         return None, None
@@ -588,10 +615,50 @@ def get_target_test_w(*args):
     get_target_test(*new_args, silent=True)
     #print()
 
+def get_data_stub(target_type, files=None):
+    # TODO: I'm still not sure how useful this kind of stub would be.
+    # Semantically, it binds a single ID of the file to the ID of the entity.
+    # It may be used when there is one possible file for a thing, or all files
+    # of the thing are always refered to as a group. But there are some
+    # problems
+    #
+    #  - Can only be used if there is a single file ID (maybe multiple files,
+    #    but all under the same ID (different extensions, names, prefixes or
+    #    locations).
+    #
+    #  - If the user later wants to add another file, that would leave one of
+    #    the bound files as being special because it's also the entity's
+    #    identity. Because most likely another file is on the same level as the
+    #    existing one, we would need to refactor this, probably create a new id
+    #    of the preexisting file and rename it.
+    #
+    #  - We now have to expose a setting to use this kind of stub. Currently I'm
+    #    leaning towards just not doing this, using always the explicit file
+    #    predicate.
+    #
+    #  - It hardly saves any space for the data. Ignoring non meaningful spaces
+    #    and line break characters, it only saves 5 characters per entity.
+    #
+    # How does the number of cases where these semantics are useful, vs the
+    # potential that later it actually becomes a multi file entity?.
+    #
+    #default_stub_single_file = textwrap.dedent(f"""\
+    #        {files[0]} = {target_type} {{}};
+    #        """)
+
+    default_stub = textwrap.dedent(f"""\
+            {target_type} {{
+              file {', '.join(files)};
+            }};
+            """)
+
+    return default_stub
+
 def scan():
     show_help = get_cli_bool_opt ("--help")
     target_file_dir = get_cli_arg_opt ("--directory")
     target_data_file = get_cli_arg_opt ("--data-file")
+    resolution = int(get_cli_arg_opt ("--resolution", default="300"))
     rest_args = get_cli_no_opt()
 
     target_type = None
@@ -604,9 +671,18 @@ def scan():
         print (f"  ./pymk.py {get_function_name()} --directory TARGET_DIRECTORY")
         return
 
-    target_file_dir, target_data_file = get_target (target_type, target_file_dir, target_data_file)
+    # If we don't pass a device to 'scanimage' and leave it to figure it out,
+    # scanning takes significantly longer (10s per scan). To make things faster
+    # we list all devices, choose one, then pass in all subsequent commands.
+    scanner_name = None
+    scanner_names = get_scanner_names()
+    if len(scanner_names) == 0:
+        print(ecma_red("error:") + " No scanners detected.")
+        return
+    elif len(scanner_names) == 1:
+        scanner_name = scanner_names[0]
 
-    print (f'Storing scans in: {target_file_dir}')
+    target_file_dir, target_data_file = get_target (target_type, target_file_dir, target_data_file)
 
     help_str = textwrap.dedent("""\
         Commands:
@@ -619,14 +695,35 @@ def scan():
         """)
 
     mfd = fu.MultiFileDocument(target_file_dir)
+    ensure_dir(target_file_dir)
 
     win = curses.initscr()
     curses.start_color()
     win.scrollok(1)
-    win.addstr(help_str)
-
     curses.use_default_colors()
     curses.init_pair(1, curses.COLOR_RED, -1)
+
+    win.addstr(f'Storing scans in: {target_file_dir}\n')
+    win.addstr(f'Appending data stubs to: {target_data_file}\n')
+
+    # There are multiple devices, prompt the user to choose one.
+    if scanner_name == None:
+        win.addstr(f'\nAvailable devices:\n')
+        devices_list = [win.addstr(f'  {i}) {d}\n') for i,d in enumerate(scanner_names,1)]
+        while scanner_name == None:
+            win.addstr('> ')
+
+            idx_str = input_str(win)
+            if idx_str.isnumeric():
+                idx = int(idx_str) - 1
+                if idx >= 0 and idx < len(scanner_names):
+                    scanner_name = scanner_names[idx]
+
+            if scanner_name == None:
+                win.addstr(f'Invalid device index.\n')
+
+    win.addstr(f'Using device: {scanner_name}\n\n')
+    win.addstr(help_str)
 
     while True:
         win.addstr('> ')
@@ -635,12 +732,19 @@ def scan():
 
         if c.lower() == 'n':
             path_to_scan = fu.mfd_new(mfd)
-            error, output = new_scan (path_to_scan)
+            error, output = new_scan (path_to_scan, resolution, device=scanner_name)
 
-            if target_type != None:
+            if not error and target_type != None:
                 assert target_data_file != None
-                ensure_dir(target_data_file)
-                # TODO: Continue to implement this...
+                ensure_dir(path_basename(target_data_file))
+
+                file_existed = True if path_exists(target_data_file) else False
+
+                tsplx_stub = get_data_stub(target_type, [mfd.identifier])
+                with open(target_data_file, "+a") as data_file:
+                    if file_existed:
+                        data_file.write('\n')
+                    data_file.write(tsplx_stub)
 
             win.addstr(f'{output}\n')
             win.refresh()
@@ -653,7 +757,7 @@ def scan():
 
         elif c.lower() == 'p':
             path_to_scan = fu.mfd_new_page (mfd)
-            error, output = new_scan (path_to_scan)
+            error, output = new_scan (path_to_scan, device=scanner_name)
 
             win.addstr(f'{output}\n')
             win.refresh()
@@ -681,6 +785,344 @@ def scan():
             break
 
     curses.endwin()
+
+def files_sort():
+    """
+    The --ids option expects a comma separated list of identifiers, as a single
+    argument.
+
+    If no ids are passed, we open a temporary file with canonical names of the
+    passed directory, one per line. The ordering of files should be edited in
+    it, then after saving and closing, the new ordering will be applied.
+
+    Numbering starts with 1. If a line is deleted from the file, the
+    correspoding file will be assigned index 0. Which essentially marks it as
+    unsortable and places at the beginning of the directory.
+    """
+
+    # TODO: This interface is not idempotent. Calling this on a directory then
+    # closing without changing anything, may trigger changes. This is because
+    # initially 0 index files are shown, but we require them to be deleted to
+    # get 0 index again. I don't really like this...
+    #
+    # Probably a better behavior is to leave all 0-index files _at the
+    # beginning_ be left unsorted. We can NOT have 0-index files always be
+    # unsorted because the point of this is to fix the ordering of unsortable
+    # files, which are 0-indexed. The simplest behavior is to cut a 0-index
+    # file form the start, then paste it in it's position. Having to remove the
+    # leading 0_ for it to work, is hard to teach, and hard to remember. Also,
+    # not all editors have column editing/multi-cursors (or users don't know
+    # about this) which may slow them down.
+
+    dry_run = get_cli_bool_opt ("--dry-run")
+    ids = get_cli_arg_opt ("--ids")
+    rest_args = get_cli_no_opt()
+
+    directory = None
+    if rest_args != None and len(rest_args) == 1:
+        directory = os.path.abspath(path_resolve(rest_args[0]))
+
+    if directory == None:
+        print ("usage:")
+        print (f"  ./pymk.py {get_function_name()} [--ids 'ID1,ID2,...'] DIRECTORY")
+        return
+
+    if ids == None:
+        file_list = fu.collect_canonical_fnames(directory)
+
+        temp = tempfile.NamedTemporaryFile(mode='w', delete=False)
+        name = temp.name
+        temp.write('\n'.join([f.fname() for f in file_list]))
+        temp.close()
+
+        ex(f'gvim -f {name}')
+
+        maybe_dup_ids = []
+        new_order = open(name, 'r')
+        for line in new_order:
+            cn = fu.canonical_parse(line)
+            maybe_dup_ids.append(cn.identifier)
+
+        ids = []
+        seen = set()
+        for identifier in maybe_dup_ids:
+            if identifier not in seen:
+                ids.append(identifier)
+                seen.add(identifier)
+    else:
+        ids = [i.strip() for i in ids.split(',')]
+
+    fu.canonical_renumber(directory, ids, verbose=False, dry_run=dry_run);
+    print (json.dumps(ids))
+
+def files_date_sort():
+    """
+    Tries to figure out the chronological order of files, using the file's
+    metadata to retrieve the actual creation date.
+
+    This doesn't use the file system's file creation date, this looks _into_
+    the file's metadata.
+    """
+
+    dry_run = get_cli_bool_opt ("--dry-run")
+    default_utc_offset = get_cli_arg_opt ("--default-utc-offset")
+    rest_args = get_cli_no_opt()
+
+    directory = None
+    if rest_args != None and len(rest_args) == 1:
+        directory = os.path.abspath(path_resolve(rest_args[0]))
+
+    if directory == None:
+        print ("usage:")
+        print (f"  ./pymk.py {get_function_name()} DIRECTORY")
+        return
+
+    unsortable = []
+    assumed_utc = []
+    assumed_default_utc_offset = []
+    timestamped_paths = []
+    for dirpath, dirnames, filenames in os.walk(directory):
+        for fname in filenames:
+            path = path_cat(dirpath, fname)
+            if path.lower().endswith(".jpg") or path.lower().endswith(".jpeg") or path.lower().endswith(".heic") or path.lower().endswith(".heif"):
+                output = ex(f"exiftool -s -H -u -DateTimeOriginal -OffsetTimeOriginal -GPSDateStamp -GPSTimeStamp '{path}'", ret_stdout=True, echo=False)
+
+                if len(output) > 0:
+                    lines = [x for x in output.split('\n')]
+                    fields = {x[1]:x[3:] for x in map(lambda x: x.split(), lines)}
+
+                    timestamp = None
+                    if 'OffsetTimeOriginal' in fields.keys() and 'DateTimeOriginal' in fields.keys():
+                        datetime_value = fields['DateTimeOriginal']
+                        offset = fields['OffsetTimeOriginal'][0]
+                        timestamp = f"{datetime_value[0].replace(':','-')}T{datetime_value[1]}{offset}"
+
+                    elif 'GPSTimeStamp' in fields.keys() and 'GPSDateStamp' in fields.keys():
+                        date_value = fields['GPSDateStamp'][0]
+                        time_value = fields['GPSTimeStamp'][0]
+                        timestamp = f"{date_value.replace(':','-')}T{time_value}+00:00"
+
+                    elif 'DateTimeOriginal' in fields.keys() and default_utc_offset != None:
+                        datetime_value = fields['DateTimeOriginal']
+                        timestamp = f"{datetime_value[0].replace(':','-')}T{datetime_value[1]}{default_utc_offset}"
+                        assumed_default_utc_offset.append(path)
+
+                    else:
+                        unsortable.append(path)
+
+                    if timestamp != None:
+                        timestamped_paths.append((datetime.fromisoformat(timestamp), path))
+                        print(timestamp, fname)
+
+                else:
+                    unsortable.append(path)
+
+            elif path.lower().endswith(".mov"):
+                output = ex(f"exiftool -s -H -u -CreateDate -api quicktimeutc '{path}'", ret_stdout=True, echo=False)
+
+                if len(output) > 0:
+                    lines = [x for x in output.split('\n')]
+                    fields = {x[1]:x[3:] for x in map(lambda x: x.split(), lines)}
+                    datetime_value = fields['CreateDate']
+                    timestamp = f"{datetime_value[0].replace(':','-')}T{datetime_value[1]}"
+                    timestamped_paths.append((datetime.fromisoformat(timestamp),path))
+                    print(timestamp, fname)
+                    assumed_utc.append(path)
+
+                else:
+                    unsortable.append(path)
+
+            elif path.lower().endswith(".mp4") and default_utc_offset != None:
+                output = ex(f"exiftool -s -H -u -CreateDate -api quicktimeutc '{path}'", ret_stdout=True, echo=False)
+
+                if len(output) > 0:
+                    lines = [x for x in output.split('\n')]
+                    fields = {x[1]:x[3:] for x in map(lambda x: x.split(), lines)}
+                    datetime_value = fields['CreateDate']
+                    timestamp = f"{datetime_value[0].replace(':','-')}T{datetime_value[1]}"
+                    timestamped_paths.append((datetime.fromisoformat(timestamp),path))
+                    print(timestamp, fname)
+                    assumed_default_utc_offset.append(path)
+
+                else:
+                    unsortable.append(path)
+
+            else:
+                unsortable.append(path)
+
+            # At some point I thought getting the file system's creation date
+            # could be better than nothing. I'm now almost convinced that's not
+            # a good default. It mixes files we are very highly confident are
+            # correctly sorted, together with files where we are hoping the
+            # file creation date to have survived across moving of the file
+            # from different places.
+            #
+            # The better solution is to mark them as unsortable, then if the
+            # user wants, they can go ahead and fix it by hand using
+            # files_sort().
+
+    if not dry_run:
+        identifier_idx = {}
+        for i, (dt, path) in enumerate(sorted(timestamped_paths, key=lambda x: x[0]), 1):
+            cn = fu.canonical_parse(path_basename(path))
+            identifier_idx[cn.identifier] = i
+            rename_error, new_path = fu.file_canonical_rename (path,
+                None,
+                cn.prefix,
+                i,
+                cn.identifier,
+                cn.location,
+                cn.name,
+                True, dry_run,
+                error_if_target_exists=True)
+
+        sidecar_paths = []
+        for path in unsortable:
+            cn = fu.canonical_parse(path_basename(path))
+
+            # It's possible that there are sidecar files that are not sortable
+            # but have the same identifier as a file that is sortable. For
+            # example Apple's .AAE files, or JSON files containing image
+            # annotations. In such case, we copy the same index that was
+            # assigned to the file that is sortable.
+            idx = -1 if cn.identifier not in identifier_idx.keys() else identifier_idx[cn.identifier]
+
+            rename_error, new_path = fu.file_canonical_rename (path,
+                None,
+                cn.prefix,
+                idx,
+                cn.identifier,
+                cn.location,
+                cn.name,
+                True, dry_run,
+                error_if_target_exists=True)
+
+            if idx != -1:
+                sidecar_paths.append(path)
+
+    if len(assumed_utc) > 0:
+        print()
+        print (ecma_yellow('warning:') + ' assuming dates are UTC for:')
+        print ('  ' + '\n  '.join(map(lambda x: f"'{x}'", assumed_utc)))
+
+    if len(assumed_default_utc_offset) > 0:
+        print()
+        print (ecma_yellow('warning:') + ' assume the following files have local dates, using passed UTC offset:')
+        print ('  ' + '\n  '.join(map(lambda x: f"'{x}'", assumed_default_utc_offset)))
+
+    # Remove sidecar files that were sortable in the end so we don't warn about
+    # those.
+    unsortable = [p for p in unsortable if p not in sidecar_paths]
+
+    if len(unsortable) > 0:
+        print()
+        print (ecma_red('error:') + ' could not sort:')
+        print ('  ' + '\n  '.join(map(lambda x: f"'{x}'", unsortable)))
+
+
+def dir_import():
+    """
+    Recursively iterates into a directory, takes any fine with a non canonical
+    name and renames it.
+    """
+    dry_run = get_cli_bool_opt ("--dry-run")
+    rest_args = get_cli_no_opt()
+
+    directory = None
+    if rest_args != None and len(rest_args) == 1:
+        directory = os.path.abspath(path_resolve(rest_args[0]))
+
+    if directory == None:
+        print ("usage:")
+        print (f"  ./pymk.py {get_function_name()} DIRECTORY")
+        return
+
+    dir_len = len(directory)+1
+
+    paths = []
+    for dirpath, dirnames, filenames in os.walk(directory):
+        for fname in filenames:
+            path = path_cat(dirpath, fname)
+
+            canonical_name = fu.canonical_parse(fname)
+            if not canonical_name.is_canonical:
+                paths.append(path)
+
+    if len(paths)>0:
+        errors = ''
+        fu.append_empty_line (file_original_name_path)
+
+        for path in paths:
+            rename_error, new_path = fu.file_canonical_rename (path,
+                    None,
+                    None,
+                    None,
+                    None,
+                    [],
+                    None,
+                    True, dry_run,
+                    keep_name=True,
+                    original_names=file_original_name_path, error_if_target_exists=True)
+
+            if not rename_error:
+                print(path[dir_len:], '->', new_path[dir_len:])
+            else:
+                errors += rename_error
+
+        if len(errors) > 0:
+            print(errors)
+
+def dir_flatten():
+    dry_run = get_cli_bool_opt ("--dry-run")
+    properties = get_cli_arg_opt ("--properties")
+    rest_args = get_cli_no_opt()
+
+    directory = None
+    if rest_args != None and len(rest_args) == 1:
+        directory = os.path.abspath(path_resolve(rest_args[0]))
+
+    if directory == None:
+        print ("usage:")
+        print (f"  ./pymk.py {get_function_name()} DIRECTORY")
+        return
+
+    dir_len = len(directory)+1
+
+    # Only collect files already in canonical name. This ensures we have an ID
+    # to use when building the metadata.
+    paths = []
+    for dirpath, dirnames, filenames in os.walk(directory):
+        for fname in filenames:
+            path = path_cat(dirpath, fname)
+
+            canonical_name = fu.canonical_parse(fname)
+            if canonical_name.is_canonical:
+                paths.append(path)
+
+    property_names = [p.strip() for p in properties.split(',')]
+    property_file_content = {p:[] for p in property_names}
+    if len(paths)>0:
+        for path in paths:
+            fname = path_basename(path)
+            canonical_name = fu.canonical_parse(fname)
+            values = path_dirname(path)[dir_len:].split(os.sep)
+
+            for i,v in enumerate(values):
+                property_file_content[property_names[i]].append(f'{canonical_name.identifier} "{v}";')
+
+            if not dry_run:
+                os.rename(path, path_cat(directory,fname))
+
+    if not dry_run:
+        for key,content in property_file_content.items():
+            property_file_path = path_cat(data_dir, key + '.tsplx')
+
+            file_existed = True if path_exists(property_file_path) else False
+            with open(property_file_path, "+a") as data_file:
+                if file_existed:
+                    data_file.write('\n')
+                data_file.write('\n'.join(content))
+                data_file.write('\n')
 
 def tests():
     # TODO: I'm pretty sure all these tests can be compressed into much more
