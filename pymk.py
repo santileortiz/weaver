@@ -696,6 +696,15 @@ def resolve_stub(target_type, tsplx_stub=None, identifier=None, files=None):
 
     return tsplx_stub
 
+def append_instance(target_data_file, tsplx_data):
+    ensure_dir(path_basename(target_data_file))
+
+    file_existed = True if path_exists(target_data_file) else False
+    with open(target_data_file, "+a") as data_file:
+        if file_existed:
+            data_file.write('\n')
+        data_file.write(tsplx_data)
+
 def scan():
     show_help = get_cli_bool_opt ("--help")
     target_file_dir = get_cli_arg_opt ("--directory")
@@ -729,9 +738,12 @@ def scan():
 
     help_str = textwrap.dedent("""\
         Commands:
-          n new scan
-          p scan next page
-          e end section
+          n new scan (new instance)
+          d new document (in same instance)
+          p scan next page in document
+
+          e end document section
+          w end instance (optional, n and q imply this)
 
           h help
           q quit
@@ -768,6 +780,10 @@ def scan():
     win.addstr(f'Using device: {scanner_name}\n\n')
     win.addstr(help_str)
 
+    if target_type != None:
+        instance_files = None
+        tsplx_data = None
+
     while True:
         win.addstr('> ')
         c = input_char(win)
@@ -779,24 +795,23 @@ def scan():
 
             if not error and target_type != None:
                 assert target_data_file != None
-                ensure_dir(path_basename(target_data_file))
 
-                file_existed = True if path_exists(target_data_file) else False
+                # If there was a tsplx data to be written, write it out. This
+                # writes out the OLD tsplx data, because we're going to be
+                # createing a new one, we know this one is done.
+                if tsplx_data != None:
+                    append_instance(target_data_file, tsplx_data)
 
+                # Initialize a the new tsplx data
+                instance_files = [mfd.identifier]
                 tsplx_data = resolve_stub(target_type,
                         tsplx_stub=tsplx_stub,
                         identifier=None,
-                        files=[mfd.identifier])
-
-                with open(target_data_file, "+a") as data_file:
-                    if file_existed:
-                        data_file.write('\n')
-                    data_file.write(tsplx_data)
+                        files=instance_files)
 
                 win.addstr(f'TSPLX:\n{tsplx_data}')
 
             win.addstr(f'{output}\n')
-
             win.refresh()
 
             if error == None:
@@ -804,6 +819,26 @@ def scan():
             else:
                 win.addstr('error:', curses.color_pair(1))
                 win.addstr(' could not scan page\n')
+
+        elif c.lower() == 'd':
+            if target_type != None:
+                path_to_scan = fu.mfd_new(mfd)
+                error, output = new_scan (path_to_scan, resolution, device=scanner_name)
+
+                if not error:
+                    instance_files.append(mfd.identifier)
+                    tsplx_data = resolve_stub(target_type,
+                            tsplx_stub=tsplx_stub,
+                            identifier=None,
+                            files=instance_files)
+
+                    win.addstr(f'TSPLX:\n{tsplx_data}')
+
+                win.addstr(f'{output}\n')
+                win.refresh()
+
+            else:
+                win.addstr('error: new document in instance only makes sense when specifying a type, right now no stubs are being generated.')
 
         elif c.lower() == 'p':
             path_to_scan = fu.mfd_new_page (mfd)
@@ -813,7 +848,7 @@ def scan():
                 tsplx_data = resolve_stub(target_type,
                         tsplx_stub=tsplx_stub,
                         identifier=None,
-                        files=[mfd.identifier])
+                        files=instance_files)
 
                 win.addstr(f'TSPLX:\n')
                 win.addstr(f'{tsplx_data}\n')
@@ -837,10 +872,27 @@ def scan():
             for p in mfd.document_files:
                 win.addstr (f'  {p}\n')
 
+        elif c.lower() == 'w':
+            if target_type != None:
+                if tsplx_data != None:
+                    append_instance(target_data_file, tsplx_data)
+
+                    win.addstr(f'TSPLX:\n')
+                    win.addstr(f'{tsplx_data}\n')
+                    tsplx_data = None
+
+                else:
+                    win.addstr('error: no instance data to be written out, did nothing.')
+
+            else:
+                win.addstr('error: new document in instance only makes sense when specifying a type, right now no stubs are being generated.')
+
         elif c.lower() == 'h':
             win.addstr(help_str)
 
         elif c.lower() == 'q':
+            if tsplx_data != None:
+                append_instance(target_data_file, tsplx_data)
             break
 
     curses.endwin()
