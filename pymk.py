@@ -508,6 +508,45 @@ def new_scan(path, resolution=300, device=None):
 
     return error, cmd
 
+def get_type_config(target_type):
+    # TODO: This should be part of a configuration for each type, most likely
+    # coming from some .tsplx file. This configuration will describe details of
+    # how types are handled.
+    target_file_dir = None
+    target_data_file = None
+
+    # The TSPLX stub must not include the identifier assignment portion as it
+    # may be filled later when resolving it.
+    # :identifier_stub_resolution
+    tsplx_stub = None
+
+    if target_type == "print-book":
+        target_file_dir = "book-photos"
+        target_data_file = "book_library_santiago.tsplx"
+        tsplx_stub = 'print-book["<++>", q("<++>")];\n'
+
+    elif target_type == "transaction":
+        target_file_dir = 'invoices'
+        target_data_file = "digitized_invoices.tsplx"
+        tsplx_stub = textwrap.dedent('''\
+            transaction["<++>",<++>,"MXN",q("<++>"),q("<++>")]{
+              file <+files+>;
+            };\n
+            ''')
+
+    elif target_type == "menu":
+        target_data_file = "establishments.tsplx"
+
+
+    if tsplx_stub == None:
+        tsplx_stub = textwrap.dedent(f"""\
+            {target_type} {{
+              file <+files+>;
+            }};
+            """)
+
+    return target_file_dir, target_data_file, tsplx_stub
+
 @automatic_test_function
 def get_target(target_type, target_file_dir, target_data_file, silent=False):
     """
@@ -615,44 +654,47 @@ def get_target_test_w(*args):
     get_target_test(*new_args, silent=True)
     #print()
 
-def get_data_stub(target_type, files=None):
-    # TODO: I'm still not sure how useful this kind of stub would be.
-    # Semantically, it binds a single ID of the file to the ID of the entity.
-    # It may be used when there is one possible file for a thing, or all files
-    # of the thing are always refered to as a group. But there are some
-    # problems
-    #
-    #  - Can only be used if there is a single file ID (maybe multiple files,
-    #    but all under the same ID (different extensions, names, prefixes or
-    #    locations).
-    #
-    #  - If the user later wants to add another file, that would leave one of
-    #    the bound files as being special because it's also the entity's
-    #    identity. Because most likely another file is on the same level as the
-    #    existing one, we would need to refactor this, probably create a new id
-    #    of the preexisting file and rename it.
-    #
-    #  - We now have to expose a setting to use this kind of stub. Currently I'm
-    #    leaning towards just not doing this, using always the explicit file
-    #    predicate.
-    #
-    #  - It hardly saves any space for the data. Ignoring non meaningful spaces
-    #    and line break characters, it only saves 5 characters per entity.
-    #
-    # How does the number of cases where these semantics are useful, vs the
-    # potential that later it actually becomes a multi file entity?.
-    #
-    #default_stub_single_file = textwrap.dedent(f"""\
-    #        {files[0]} = {target_type} {{}};
-    #        """)
+def resolve_stub(target_type, tsplx_stub=None, identifier=None, files=None):
+    # TODO: Don't pass the stubs as a string template. Should better pass them
+    # in a format that node_to_object_string() understands, and use that as
+    # serialization mechanism.
 
-    default_stub = textwrap.dedent(f"""\
-            {target_type} {{
-              file {', '.join(files)};
-            }};
-            """)
+    if tsplx_stub.find("<+files+>") > 0:
+        tsplx_stub = tsplx_stub.replace("<+files+>", "; ".join(files))
 
-    return default_stub
+    # I've been tempted to using a shorthand notation where apply the following
+    # default
+    #
+    # if identifier==None and len(files) == 1:
+    #     identifier = files[0]
+    #     files = []
+    #
+    # But I'm still not 100% sold on it. I've been currently using it for the
+    # "print-book" type but doing so binds the unique entity ID with a single
+    # flie ID. Which is fine when there is one possible file for a thing, or
+    # all files of the thing are always refered to as a group (maybe multiple
+    # files, but all under the same ID (different extensions, names, prefixes
+    # or locations).
+    #
+    # The problem comes when we use this notation, and then at a later point we
+    # decide we really want to associate multiple files to the entity. At this
+    # point this ID can be referenced from a note with the [[]] notation. There
+    # are 2 resolution strategies:
+    #
+    # - Leave the entity's ID and all note references unchanged. Then rename
+    #   the preexisting file (or file group) to a new ID then add this new ID
+    #   together with the ID for the incoming file to the "files" property.
+    #
+    # - Leave all file names unchanged. Then create a new ID for the entity and
+    #   replace all note references to point to the new entity ID. Add the old
+    #   entity ID together with the ID for the incoming file to the "files"
+    #   property.
+    #
+    # :identifier_stub_resolution
+    if identifier != None and isinstance(identifier, str):
+        tsplx_stub = f'{identifier} = {tsplx_stub}'
+
+    return tsplx_stub
 
 def scan():
     show_help = get_cli_bool_opt ("--help")
@@ -682,7 +724,8 @@ def scan():
     elif len(scanner_names) == 1:
         scanner_name = scanner_names[0]
 
-    target_file_dir, target_data_file = get_target (target_type, target_file_dir, target_data_file)
+    target_file_dir, target_data_file, tsplx_stub = get_type_config(target_type)
+    target_file_dir, target_data_file = get_target(target_type, target_file_dir, target_data_file)
 
     help_str = textwrap.dedent("""\
         Commands:
@@ -740,13 +783,20 @@ def scan():
 
                 file_existed = True if path_exists(target_data_file) else False
 
-                tsplx_stub = get_data_stub(target_type, [mfd.identifier])
+                tsplx_data = resolve_stub(target_type,
+                        tsplx_stub=tsplx_stub,
+                        identifier=None,
+                        files=[mfd.identifier])
+
                 with open(target_data_file, "+a") as data_file:
                     if file_existed:
                         data_file.write('\n')
-                    data_file.write(tsplx_stub)
+                    data_file.write(tsplx_data)
+
+                win.addstr(f'TSPLX:\n{tsplx_data}')
 
             win.addstr(f'{output}\n')
+
             win.refresh()
 
             if error == None:
@@ -758,6 +808,15 @@ def scan():
         elif c.lower() == 'p':
             path_to_scan = fu.mfd_new_page (mfd)
             error, output = new_scan (path_to_scan, device=scanner_name)
+
+            if target_type != None:
+                tsplx_data = resolve_stub(target_type,
+                        tsplx_stub=tsplx_stub,
+                        identifier=None,
+                        files=[mfd.identifier])
+
+                win.addstr(f'TSPLX:\n')
+                win.addstr(f'{tsplx_data}\n')
 
             win.addstr(f'{output}\n')
             win.refresh()
@@ -1259,11 +1318,6 @@ def telegram_download_photos():
     tsplx_stub = None
 
     if target_type != None:
-        # TODO: This should be part of a configuration for the print-book type,
-        # most likely coming from some .tsplx file. This configuration will
-        # describe details of how this type is handled, where is the data in
-        # TSPLX notation appended to and where are its related files stored
-        # into.
         if target_type == "print-book":
             target_file_dir = "book-photos"
             target_data_path = "book_library_santiago.tsplx"
