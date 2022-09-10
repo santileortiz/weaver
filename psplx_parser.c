@@ -1115,6 +1115,20 @@ void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html
                 if (is_canonical_id(str_data(&tag->content))) {
                     uint64_t id = canonical_id_parse(str_data(&tag->content), 0);
                     struct vlt_file_t *file = file_id_lookup (ctx->vlt, id);
+
+                    // TODO: Put image extensions into an array, don't duplicate
+                    // upper and lower case cases.
+                    while (strncmp(str_data(&file->extension), "png", 3) != 0 &&
+                           strncmp(str_data(&file->extension), "PNG", 3) != 0 &&
+                           strncmp(str_data(&file->extension), "jpg", 3) != 0 &&
+                           strncmp(str_data(&file->extension), "JPG", 3) != 0 &&
+                           strncmp(str_data(&file->extension), "jpeg", 4) != 0 &&
+                           strncmp(str_data(&file->extension), "JPEG", 4) != 0 &&
+                           strncmp(str_data(&file->extension), "svg", 3) != 0 &&
+                           strncmp(str_data(&file->extension), "SVG", 3) != 0) {
+                        file = file->next;
+                    }
+
                     str_set_printf (&buff, "files/%s", str_data(&file->path));
 
                 } else {
