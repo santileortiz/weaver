@@ -534,8 +534,15 @@ def get_type_config(target_type):
             };\n
             ''')
 
+    elif target_type in ["person", "establishment"]:
+        tsplx_stub = textwrap.dedent(f'''\
+            {target_type}["<++>"]{{
+              file <+files+>;
+            }};\n
+            ''')
+
     elif target_type == "menu":
-        target_data_file = "establishments.tsplx"
+        target_data_file = "menu.tsplx"
 
 
     if tsplx_stub == None:
@@ -838,7 +845,7 @@ def scan():
                 win.refresh()
 
             else:
-                win.addstr('error: new document in instance only makes sense when specifying a type, right now no stubs are being generated.')
+                win.addstr('error: new document in instance only makes sense when specifying a type, right now no stubs are being generated.\n')
 
         elif c.lower() == 'p':
             path_to_scan = fu.mfd_new_page (mfd)
@@ -882,10 +889,10 @@ def scan():
                     tsplx_data = None
 
                 else:
-                    win.addstr('error: no instance data to be written out, did nothing.')
+                    win.addstr('error: no instance data to be written out, did nothing.\n')
 
             else:
-                win.addstr('error: new document in instance only makes sense when specifying a type, right now no stubs are being generated.')
+                win.addstr('error: new document in instance only makes sense when specifying a type, right now no stubs are being generated.\n')
 
         elif c.lower() == 'h':
             win.addstr(help_str)
@@ -1072,6 +1079,7 @@ def files_date_sort():
             # user wants, they can go ahead and fix it by hand using
             # files_sort().
 
+    sidecar_paths = None
     if not dry_run:
         identifier_idx = {}
         for i, (dt, path) in enumerate(sorted(timestamped_paths, key=lambda x: x[0]), 1):
@@ -1121,9 +1129,10 @@ def files_date_sort():
         print (ecma_yellow('warning:') + ' assume the following files have local dates, using passed UTC offset:')
         print ('  ' + '\n  '.join(map(lambda x: f"'{x}'", assumed_default_utc_offset)))
 
-    # Remove sidecar files that were sortable in the end so we don't warn about
-    # those.
-    unsortable = [p for p in unsortable if p not in sidecar_paths]
+    if sidecar_paths != None:
+        # Remove sidecar files that were sortable in the end so we don't warn about
+        # those.
+        unsortable = [p for p in unsortable if p not in sidecar_paths]
 
     if len(unsortable) > 0:
         print()
