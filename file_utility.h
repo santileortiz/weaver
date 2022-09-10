@@ -26,23 +26,42 @@ int vlt_file_compare (struct vlt_file_t *a, struct vlt_file_t *b)
 {
     int result = 0;
 
-    if (a->location_len == b->location_len) {
-        for (int i=0; i<a->location_len; i++) {
-            if (a->location[i] < b->location[i]) {
-                result = -1;
-            } else if (a->location[i] > b->location[i]) {
-                result = 1;
-            }
+    if (a->idx != b->idx) {
+        if (a->idx < b->idx) {
+            result = -1;
+        } else {
+            result = 1;
         }
 
-        if (result == 0) {
-            printf (ECMA_RED("error:") " compared distinct files with identical location:\n");
-            printf ("  %s\n", str_data(&a->path));
-            printf ("  %s\n", str_data(&a->path));
+    } else if (a->id != b->id) {
+        if (a->id < b->id) {
+            result = -1;
+        } else {
+            result = 1;
         }
 
     } else {
-        printf (ECMA_RED("error:") " could not compare files because locations differ in size.\n");
+        if (a->location_len == b->location_len) {
+            for (int i=0; i<a->location_len; i++) {
+                if (a->location[i] < b->location[i]) {
+                    result = -1;
+                } else if (a->location[i] > b->location[i]) {
+                    result = 1;
+                }
+            }
+
+        } else {
+            printf (ECMA_RED("error:") " could not compare files because locations differ in size.\n");
+        }
+    }
+
+    if (result == 0) {
+        if (str_len(&a->name) < str_len(&b->name)) {
+            result = -1;
+
+        } else {
+            result = strncmp (str_data(&a->name), str_data(&b->name), str_len(&a->name));
+        }
     }
 
     return result;
