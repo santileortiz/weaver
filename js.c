@@ -21,8 +21,17 @@ void str_cat_math_strn (string_t *str, bool is_display_mode, int len, char *expr
 {
     mem_pool_t pool = {0};
     string_t buff = {0};
-    str_cat_printf (&buff, "\nkatex.renderToString(\"%.*s\", {throwOnError: false, displayMode: %s});", len, expression, is_display_mode ? "true" : "false");
+    strn_set (&buff, expression, len);
+
+    // Double escape backslashes.
     str_replace (&buff, "\\", "\\\\", NULL);
+
+    // Escape the string literal terminator we're using to built the javascript
+    // code. Needs to happen _after_ backlash escape because it's not LaTeX but
+    // Javascript.
+    str_replace (&buff, "\"", "\\\"", NULL);
+
+    str_set_printf (&buff, "\nkatex.renderToString(\"%.*s\", {throwOnError: false, displayMode: %s});", str_len(&buff), str_data(&buff), is_display_mode ? "true" : "false");
 
     if (katex_ctx == NULL) {
         // TODO: Put this in an embedded resource so we don't depend on the location

@@ -484,7 +484,8 @@ bool ps_match(struct psx_parser_state_t *ps, enum psx_token_type_t type, char *v
     return match;
 }
 
-struct psx_token_t ps_inline_next(struct psx_parser_state_t *ps)
+#define ps_inline_next(ps) ps_inline_next_full(ps,true)
+struct psx_token_t ps_inline_next_full(struct psx_parser_state_t *ps, bool escape_operators)
 {
     struct psx_token_t tok = {0};
 
@@ -504,11 +505,17 @@ struct psx_token_t ps_inline_next(struct psx_parser_state_t *ps)
             tok.type = TOKEN_TYPE_TAG;
 
         } else {
-            // Escaped operator
-            tok.value = SSTRING(ps->pos, 1);
-            tok.type = TOKEN_TYPE_TEXT;
+            if (escape_operators) {
+                // Escaped operator
+                tok.value = SSTRING(ps->pos, 1);
+                tok.type = TOKEN_TYPE_TEXT;
 
-            pps_advance_char (ps);
+                pps_advance_char (ps);
+
+            } else {
+                tok.value = SSTRING("\\", 1);
+                tok.type = TOKEN_TYPE_TEXT;
+            }
         }
 
     } else if (pps_is_operator(ps)) {
@@ -646,7 +653,7 @@ bool psx_cat_tag_content (struct psx_parser_state_t *ps, string_t *str, bool exp
             int brace_level = 1;
 
             while (!ps->is_eof && brace_level != 0) {
-                ps_inline_next (ps);
+                ps_inline_next_full (ps, false);
                 if (ps_match (ps, TOKEN_TYPE_OPERATOR, "{")) {
                     brace_level++;
                 } else if (ps_match (ps, TOKEN_TYPE_OPERATOR, "}")) {

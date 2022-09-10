@@ -1,0 +1,5 @@
+# Test escaping inside math expressions
+
+\math{A=\{20,"John Doe"\}}
+
+\math{A=\{20,\text{“John Doe”}\}}
