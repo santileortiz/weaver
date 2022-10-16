@@ -531,14 +531,14 @@ def get_type_config(target_type):
         tsplx_stub = textwrap.dedent('''\
             transaction["<++>",<++>,"MXN",q("<++>"),q("<++>")]{
               file <+files+>;
-            };\n
+            };
             ''')
 
     elif target_type in ["person", "establishment"]:
         tsplx_stub = textwrap.dedent(f'''\
             {target_type}["<++>"]{{
               file <+files+>;
-            }};\n
+            }};
             ''')
 
     elif target_type == "menu":
@@ -973,6 +973,19 @@ def files_sort():
     fu.canonical_renumber(directory, ids, verbose=False, dry_run=dry_run);
     print (json.dumps(ids))
 
+def parse_timestamp(timestamp, min_date):
+    # NOTE: There are cases where I've seen exiftool report an
+    # invalid timestamp of 0000:00:00 00:00:00
+    try:
+        result = datetime.fromisoformat(timestamp)
+    except:
+        result = None
+
+    if result != None and min_date != None and min_date > result:
+        result = None
+
+    return result
+
 def files_date_sort():
     """
     Tries to figure out the chronological order of files, using the file's
@@ -984,7 +997,11 @@ def files_date_sort():
 
     dry_run = get_cli_bool_opt ("--dry-run")
     default_utc_offset = get_cli_arg_opt ("--default-utc-offset")
+    min_date = get_cli_arg_opt ("--minimum-date")
     rest_args = get_cli_no_opt()
+
+    if min_date != None:
+        min_date = datetime.fromisoformat(min_date)
 
     directory = None
     if rest_args != None and len(rest_args) == 1:
@@ -992,7 +1009,8 @@ def files_date_sort():
 
     if directory == None:
         print ("usage:")
-        print (f"  ./pymk.py {get_function_name()} DIRECTORY")
+        print (f"  ./pymk.py {get_function_name()} [--dry-run] [--default-utc-offset +hh:mm] [--minimum-date yyyy-mm-ddThh:mm:ss+hh:mm] DIRECTORY")
+
         return
 
     unsortable = []
@@ -1029,8 +1047,12 @@ def files_date_sort():
                         unsortable.append(path)
 
                     if timestamp != None:
-                        timestamped_paths.append((datetime.fromisoformat(timestamp), path))
-                        print(timestamp, fname)
+                        parsed_timestamp = parse_timestamp(timestamp, min_date)
+                        if parsed_timestamp:
+                            timestamped_paths.append((parsed_timestamp, path))
+                            print(timestamp, fname)
+                        else:
+                            unsortable.append(path)
 
                 else:
                     unsortable.append(path)
@@ -1043,9 +1065,14 @@ def files_date_sort():
                     fields = {x[1]:x[3:] for x in map(lambda x: x.split(), lines)}
                     datetime_value = fields['CreateDate']
                     timestamp = f"{datetime_value[0].replace(':','-')}T{datetime_value[1]}"
-                    timestamped_paths.append((datetime.fromisoformat(timestamp),path))
                     print(timestamp, fname)
-                    assumed_utc.append(path)
+
+                    parsed_timestamp = parse_timestamp(timestamp, min_date)
+                    if parsed_timestamp:
+                        timestamped_paths.append((parsed_timestamp,path))
+                        assumed_utc.append(path)
+                    else:
+                        unsortable.append(path)
 
                 else:
                     unsortable.append(path)
@@ -1058,9 +1085,14 @@ def files_date_sort():
                     fields = {x[1]:x[3:] for x in map(lambda x: x.split(), lines)}
                     datetime_value = fields['CreateDate']
                     timestamp = f"{datetime_value[0].replace(':','-')}T{datetime_value[1]}"
-                    timestamped_paths.append((datetime.fromisoformat(timestamp),path))
                     print(timestamp, fname)
-                    assumed_default_utc_offset.append(path)
+
+                    parsed_timestamp = parse_timestamp(timestamp, min_date)
+                    if parsed_timestamp:
+                        timestamped_paths.append((parsed_timestamp,path))
+                        assumed_default_utc_offset.append(path)
+                    else:
+                        unsortable.append(path)
 
                 else:
                     unsortable.append(path)
@@ -1142,7 +1174,7 @@ def files_date_sort():
 
 def dir_import():
     """
-    Recursively iterates into a directory, takes any fine with a non canonical
+    Recursively iterates into a directory, takes any file with a non canonical
     name and renames it.
     """
     dry_run = get_cli_bool_opt ("--dry-run")
@@ -1208,13 +1240,18 @@ def dir_flatten():
 
     dir_len = len(directory)+1
 
-    # Only collect files already in canonical name. This ensures we have an ID
-    # to use when building the metadata.
+    # Collect files to be flattened
     paths = []
     for dirpath, dirnames, filenames in os.walk(directory):
+        # Don't collect top level files as they are already flat.
+        if dirpath == directory:
+            continue
+
         for fname in filenames:
             path = path_cat(dirpath, fname)
 
+            # Only collect files already in canonical name. This ensures we
+            # have an ID to use when building the metadata.
             canonical_name = fu.canonical_parse(fname)
             if canonical_name.is_canonical:
                 paths.append(path)
@@ -1228,10 +1265,18 @@ def dir_flatten():
             values = path_dirname(path)[dir_len:].split(os.sep)
 
             for i,v in enumerate(values):
-                property_file_content[property_names[i]].append(f'{canonical_name.identifier} "{v}";')
+                if v != '_':
+                    property_file_content[property_names[i]].append(f'{canonical_name.identifier} "{v}";')
 
             if not dry_run:
                 os.rename(path, path_cat(directory,fname))
+            else:
+                print(f'{canonical_name.identifier} = {{')
+                for i,v in enumerate(values):
+                    if v != '_':
+                        print(f'  {property_names[i]} "{v}";')
+                print(f'  file-path "{path_cat(directory,fname)}";')
+                print('};\n')
 
     if not dry_run:
         for key,content in property_file_content.items():
