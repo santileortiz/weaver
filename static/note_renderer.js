@@ -1,16 +1,11 @@
-let screen_height = document.documentElement.clientHeight;
-let header_height = document.getElementById("header").offsetHeight;
-css_property_set ("--note-container-height", screen_height - header_height + "px");
-
-let collapsed_note_width = 40 // px
-css_property_set ("--collapsed-note-width", collapsed_note_width + "px");
-
-let expanded_note_width = 620 // px
-css_property_set ("--expanded-note-width", expanded_note_width + "px");
-
-let content_width = 588 // px
+let content_width = 708 // px
 css_property_set ("--content-width", content_width + "px");
-css_property_set ("--content-padding", (expanded_note_width - content_width)/2 + "px");
+
+let sidebar_width = 240 // px
+css_property_set ("--sidebar-width", sidebar_width + "px");
+
+let topbar_height = 45 // px
+css_property_set ("--topbar-height", topbar_height + "px");
 
 let note_link_color = "#0D52BF"
 css_property_set ("--note-link-color", note_link_color);
@@ -28,92 +23,40 @@ css_property_set ("--note-button-width", note_button_width + "px");
 let code_block_padding = 12 // px
 css_property_set ("--code-block-padding", code_block_padding + "px");
 
-// There doesn't seem to be a way to get the scrollbar's width in all cases. If
-// the browser has hidden scrollbars we can't use the trick of creating hidden
-// divs that force scrollbars and compute the difference between the client and
-// offsed widths. So... we just set a fixed value of what we think should be
-// the maximum width of a scrollbar.
-//
-// TODO: Probably a better approach will be to have our own scrollbar style
-// with a known width.
-let max_scrollbar_width = 15 // px
-
 let opened_notes = [];
 
-function append_collapsed_note_element(note_container, id, x)
+function toggle_sidebar()
 {
-    let note_element = document.createElement("div")
-    note_element.id = id
-    note_element.classList.add("note")
-    note_element.style.left = x + "px"
+    var sidebar = document.getElementById("sidebar");
+    
+    if (sidebar.classList.contains("hidden")) {
+        sidebar.setAttribute("style", "transform: translate(0); width: 240px;")
+        sidebar.classList.remove ("hidden");
 
-    note_element.classList.add("collapsed")
-    note_element.classList.add("right-shadow")
-    let collapsed_title = collapsed_element_new(id)
-    note_element.appendChild(collapsed_title)
-
-    note_container.appendChild(note_element)
+    } else {
+        sidebar.setAttribute("style", "transform: translate(-240px); width: 0;")
+        sidebar.classList.add("hidden")
+    }
 }
 
-function note_text_to_element (container, id, note_html, x)
+function note_text_to_element (container, id, note_html)
 {
     container.insertAdjacentHTML ('beforeend', note_html);
 
     let new_expanded_note = document.getElementById(id);
     new_expanded_note.id = id
     new_expanded_note.classList.add("note")
-    new_expanded_note.style.left = x + "px"
-    new_expanded_note.classList.add("expanded");
-
-    // Create button to start editing the note
-    {
-        let margin = 5
-
-        let new_edit_button_icon = document.createElement("img")
-        new_edit_button_icon.src = "edit.svg"
-
-        let new_edit_button = document.createElement("button")
-        new_edit_button.style.position = "absolute"
-        new_edit_button.style.top = margin + "px"
-        new_edit_button.setAttribute("onclick", "copy_note_cmd('" + id + "');")
-
-        new_edit_button.style.left = expanded_note_width - margin - note_button_width + "px";
-
-        new_edit_button.appendChild(new_edit_button_icon)
-
-        // Insert at the start
-        new_expanded_note.insertBefore(new_edit_button, new_expanded_note.firstChild)
-    }
-
-    // The width of the note element contains the width of the scrollbar. If
-    // there is a scrollbar make the note element wider to compensate. This way
-    // the "content" (never including the scrollbar's width), will be
-    // expanded_note_width.
-    //
-    // TODO: What I now thing would be better is to put all the remaining space
-    // allocated to the note, so that we can have a big editor UI like Notion
-    // does. Then the additional spacing added by the scrollbar won't be
-    // noticeable.
-    {
-        // :element_size_computation
-        if (new_expanded_note.scrollHeight != new_expanded_note.clientHeight) {
-            //// If the note has a scrollbar then move the button to the left.
-            css_property_set ("--expanded-note-width", expanded_note_width + max_scrollbar_width + "px");
-        } else {
-            css_property_set ("--expanded-note-width", expanded_note_width + "px");
-        }
-    }
 
     return new_expanded_note;
 }
 
-function copy_note_cmd (id)
+function copy_note_cmd ()
 {
     let dummy_input = document.createElement("input");
     // Is this necessary?...
     document.body.appendChild(dummy_input);
 
-    dummy_input.value = "gvim ~/.weaver/notes/" + id
+    dummy_input.value = "gvim ~/.weaver/notes/" + opened_notes[opened_notes.length-1]
     dummy_input.select();
     dummy_input.setSelectionRange(0, 99999);
 
@@ -133,6 +76,30 @@ function get_note_and_run (note_id, callback)
     )
 }
 
+function set_breadcrumbs()
+{
+    var breadcrumbs = document.getElementById("breadcrumbs");
+
+    breadcrumbs.innerHTML = "";
+    let i = 0
+    for (; i<opened_notes.length; i++) {
+        var note_id = opened_notes[i];
+
+        if (i>0) {
+            let sep = document.createElement("span");
+            sep.classList.add("crumb-separator")
+            sep.innerHTML = '/';
+            breadcrumbs.appendChild(sep);
+        }
+
+        let crumb = document.createElement("div");
+        crumb.classList.add("crumb")
+        crumb.innerHTML = id_to_note_title[note_id];
+        crumb.setAttribute("onclick", "open_note('" + note_id + "');")
+        breadcrumbs.appendChild(crumb);
+    }
+}
+
 // NOTE: This pushes a new state. Intended for use in places where we handle
 // user interaction that causes navigation to a new note.
 // :pushes_state
@@ -140,11 +107,14 @@ function reset_and_open_note(note_id)
 {
     get_note_and_run (note_id,
         function(response) {
+            opened_notes = []
+            opened_notes.push(note_id)
+
             let note_container = document.getElementById("note-container")
             note_container.innerHTML = ''
-            opened_notes = []
-            note_text_to_element(note_container, note_id, response, opened_notes.length*collapsed_note_width)
-            opened_notes.push(note_id)
+            note_text_to_element(note_container, note_id, response)
+            set_breadcrumbs();
+
             history.pushState(null, "", "?n=" + opened_notes.join("&n="))
         }
     )
@@ -152,41 +122,31 @@ function reset_and_open_note(note_id)
     return false
 }
 
-function collapsed_element_new (note_id)
-{
-    let collapsed_title = document.createElement("h3")
-    collapsed_title.classList.add("collapsed-label")
-    collapsed_title.innerHTML = id_to_note_title[note_id]
-
-    return collapsed_title
-}
-
 // :pushes_state
 function open_note(note_id)
 {
     if (opened_notes.includes(note_id)) {
         let params = url_parameters();
-        open_notes (params["n"], note_id);
+        var idx = opened_notes.findIndex(e => e == note_id);
+        opened_notes.length = idx + 1;
 
     } else {
-        let expanded_note = document.querySelector(".expanded");
-        expanded_note.classList.remove ("expanded");
-        expanded_note.classList.add("collapsed");
-        expanded_note.classList.add("right-shadow");
-        expanded_note.innerHTML = '';
-
-        let collapsed_title = collapsed_element_new (expanded_note.id);
-        expanded_note.appendChild(collapsed_title);
-
-        get_note_and_run (note_id,
-            function(response) {
-                let note_container = document.getElementById("note-container");
-                note_text_to_element(note_container, note_id, response, opened_notes.length*collapsed_note_width);
-                opened_notes.push(note_id);
-                history.pushState(null, "", "?n=" + opened_notes.join("&n="));
-            }
-        );
+        opened_notes.push(note_id);
     }
+
+    let expanded_note = document.querySelector(".note");
+    expanded_note.innerHTML = '';
+
+    get_note_and_run (note_id,
+        function(response) {
+            let note_container = document.getElementById("note-container");
+            note_container.innerHTML = ''
+            note_text_to_element(note_container, note_id, response);
+            set_breadcrumbs();
+
+            history.pushState(null, "", "?n=" + opened_notes.join("&n="));
+        }
+    );
 
     return false;
 }
@@ -194,30 +154,18 @@ function open_note(note_id)
 // Unlike reset_and_open_note() and open_note(), this one doesn't push a state.
 // It's intended to be used in handlers for events that need to change the
 // openened notes.
-function open_notes(note_ids, expanded_note_id)
+function open_notes(note_ids)
 {
     opened_notes = note_ids
 
-    if (expanded_note_id === undefined) {
-        expanded_note_id = note_ids[note_ids.length - 1] 
-    }
+    let note_id = note_ids[note_ids.length - 1] 
 
-    get_note_and_run (expanded_note_id,
+    get_note_and_run (note_id,
         function(response) {
             let note_container = document.getElementById("note-container")
             note_container.innerHTML = ''
-
-            let i = 0
-            for (; note_ids[i] !== expanded_note_id; i++) {
-                append_collapsed_note_element(note_container, note_ids[i], i*collapsed_note_width)
-            }
-
-            note_text_to_element(note_container, expanded_note_id, response, i*collapsed_note_width)
-            i++
-
-            for (; i<note_ids.length; i++) {
-                append_collapsed_note_element(note_container, note_ids[i], (i-1)*collapsed_note_width + expanded_note_width)
-            }
+            note_text_to_element(note_container, note_id, response)
+            set_breadcrumbs();
         }
     )
 }
