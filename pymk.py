@@ -529,20 +529,53 @@ def get_type_config(target_type):
         target_file_dir = 'invoices'
         target_data_file = "digitized_invoices.tsplx"
         tsplx_stub = textwrap.dedent('''\
-            transaction["<++>",<++>,"MXN",q("<++>"),q("<++>")]{
+            transaction["<+date+>",<+value+>,"MXN",q("<+from+>"),q("<+to+>")]{
+              file <+files+>;
+            };
+            ''')
+
+    elif target_type == "exchange":
+        target_file_dir = 'invoices'
+        target_data_file = "digitized_invoices.tsplx"
+        tsplx_stub = textwrap.dedent('''\
+            exchange["<+date+>","<+exchanger+>",<+from-value+>,"<+from-currency+>",q("<+from+>"),<+to-value+>,"USD",q("<+to+>")]{
+              "San Francisco 2022";
+              file <+files+>;
+            };
+            ''')
+
+    elif target_type == "bus-ticket":
+        target_file_dir = 'ticket'
+        target_data_file = "ticket.tsplx"
+        tsplx_stub = textwrap.dedent('''\
+            ticket {
+              transport-means "bus";
+              file <+files+>;
+            };
+            ''')
+
+    elif target_type == "plane-ticket":
+        target_file_dir = 'ticket'
+        target_data_file = "ticket.tsplx"
+        tsplx_stub = textwrap.dedent('''\
+            ticket {
+              from "<++>";
+              to "<++>";
+              transport-means "airplane";
               file <+files+>;
             };
             ''')
 
     elif target_type in ["person", "establishment"]:
         tsplx_stub = textwrap.dedent(f'''\
-            {target_type}["<++>"]{{
+            {target_type}["<+name+>"]{{
               file <+files+>;
             }};
             ''')
 
-    elif target_type == "menu":
-        target_data_file = "menu.tsplx"
+
+    if target_data_file == None:
+        target_data_file = f"{target_type}.tsplx"
 
 
     if tsplx_stub == None:
@@ -740,7 +773,8 @@ def scan():
     elif len(scanner_names) == 1:
         scanner_name = scanner_names[0]
 
-    target_file_dir, target_data_file, tsplx_stub = get_type_config(target_type)
+    if target_type != None:
+        target_file_dir, target_data_file, tsplx_stub = get_type_config(target_type)
     target_file_dir, target_data_file = get_target(target_type, target_file_dir, target_data_file)
 
     help_str = textwrap.dedent("""\
@@ -898,7 +932,7 @@ def scan():
             win.addstr(help_str)
 
         elif c.lower() == 'q':
-            if tsplx_data != None:
+            if target_type != None and tsplx_data != None:
                 append_instance(target_data_file, tsplx_data)
             break
 

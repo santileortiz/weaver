@@ -81,6 +81,8 @@ struct psx_block_t {
     struct psx_block_t *block_content;
     struct psx_block_t *block_content_end;
 
+    struct splx_node_t *data;
+
     struct psx_block_t *next;
 };
 

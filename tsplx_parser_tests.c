@@ -116,7 +116,6 @@ int main(int argc, char** argv)
                 }
 
                 test_push (t, "%s " ECMA_YELLOW("(%s)"), test_name->v, str_data(&missing_info));
-
                 str_free (&missing_info);
             } else {
                 test_push (t, "%s", test_name->v);

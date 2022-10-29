@@ -2,6 +2,8 @@
  * Copyright (C) 2021 Santiago León O.
  */
 
+#include "tsplx_parser.h"
+
 BINARY_TREE_NEW (id_to_note, char*, struct note_t*, strcmp(a,b));
 
 BINARY_TREE_NEW (title_to_note, string_t*, struct note_t*, strcmp(str_data(a),str_data(b)));
@@ -20,6 +22,7 @@ struct note_runtime_t {
     struct title_to_note_t notes_by_title;
 
     struct file_vault_t vlt;
+    struct splx_data_t sd;
 } __g_note_runtime;
 
 struct note_t* rt_new_note (struct note_runtime_t *rt, char *id, size_t id_len);

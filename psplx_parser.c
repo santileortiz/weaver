@@ -3,11 +3,13 @@
  */
 
 #include <limits.h>
+#include "tsplx_parser.h"
 #include "html_builder.h"
 #include "lib/regexp.h"
 #include "lib/regexp.c"
 
 #include "js.c"
+#include "tsplx_parser.c"
 
 struct note_t;
 
@@ -44,6 +46,7 @@ struct psx_parser_ctx_t {
     char *id;
     char *path;
     struct file_vault_t *vlt;
+    struct splx_data_t *sd;
 
     string_t *error_msg;
 };
@@ -422,6 +425,7 @@ struct psx_token_t ps_next_peek(struct psx_parser_state_t *ps)
 
         } else {
             // False alarm, this was an inline code block, restore position.
+            // :restore_pos
             ps->pos = backup_pos;
             ps->column_number = backup_column_number;
         }
@@ -1475,8 +1479,21 @@ void block_tree_to_html (struct psx_parser_ctx_t *ctx, struct html_t *html, stru
         //}
 
     } else if (block->type == BLOCK_TYPE_ROOT) {
+        bool is_first = true;
         LINKED_LIST_FOR (struct psx_block_t*, sub_block, block->block_content) {
             block_tree_to_html(ctx, html, sub_block, parent);
+
+            // If there are note attributes in the root block, print them after
+            // the first block whoch sould've been the title (heading).
+            // TODO: We don't always want to use this HTML mapping for
+            // attributes, we should probably recieve the HTML used for note
+            // attributes from the caller. Then just attach it here.
+            if (block->data != NULL && is_first) {
+                struct html_element_t *attributes = html_new_element (html, "div");
+                html_element_attribute_set (html, attributes, "id", "__attributes");
+                html_element_append_child (html, parent, attributes);
+                is_first = false;
+            }
         }
 
     } else if (block->type == BLOCK_TYPE_LIST) {
@@ -1502,28 +1519,97 @@ void block_tree_to_html (struct psx_parser_ctx_t *ctx, struct html_t *html, stru
     str_free (&buff);
 }
 
-void psx_parse_note_title (struct psx_parser_state_t *ps)
+void psx_parse_block_attributes (struct psx_parser_state_t *ps, struct psx_block_t *block)
+{
+    // TODO: When does this happen?... it didn't happen in tests but did happen
+    // with my actual note data.
+    if (block == NULL) return;
+
+    char *backup_pos = ps->pos;
+    int backup_column_number = ps->column_number;
+
+    // TODO: Support multiple tags types
+    struct psx_token_t tok = ps_inline_next (ps);
+    if (ps_match(ps, TOKEN_TYPE_TAG, NULL)) {
+        assert(ps->ctx.sd != NULL);
+
+        string_t tsplx_data = {0};
+        psx_cat_tag_content (ps, &tsplx_data, true);
+
+        if (ps->ctx.id != NULL) {
+            block->data = splx_node_get_or_create(ps->ctx.sd, ps->ctx.id, SPLX_NODE_TYPE_OBJECT);
+        } else {
+            block->data = splx_node_new(ps->ctx.sd);
+        }
+        tsplx_parse_str_name_full(ps->ctx.sd, str_data(&tsplx_data), block->data, NULL);
+
+        str_free (&tsplx_data);
+
+        string_t s = {0};
+        strn_set(&s, tok.value.s, tok.value.len);
+        struct splx_node_t *type = splx_node_get_or_create (ps->ctx.sd, str_data(&s), SPLX_NODE_TYPE_OBJECT);
+        splx_node_attribute_append (
+            ps->ctx.sd,
+            block->data,
+            "a", type);
+        str_free (&s);
+
+    } else {
+        // :restore_pos
+        ps->pos = backup_pos;
+        ps->column_number = backup_column_number;
+    }
+}
+
+void psx_parse_note_title (struct psx_parser_state_t *ps, sstring_t *title, bool parse_attributes)
 {
     struct psx_token_t tok = ps_next (ps);
     if (tok.type != TOKEN_TYPE_TITLE) {
         psx_error (ps, "note has no title");
     }
 
+    if (tok.heading_number != 1) {
+        psx_warning (ps, "Note's title doesn't use single #. Will behave as if it was.");
+    }
+
+    if (title != NULL) {
+        *title = SSTRING(ps->token.value.s, ps->token.value.len);
+    }
+
+    if (parse_attributes) {
+        // Note attributes are stored in the root block not in the heading
+        // block.
+        struct psx_block_t *root_block = ps->block_stack[0];
+        psx_parse_block_attributes(ps, root_block);
+
+        if (ps->ctx.sd != NULL && root_block->data != NULL) {
+            string_t s = {0};
+            strn_set(&s, title->s, title->len);
+            splx_node_attribute_add (
+                ps->ctx.sd,
+                root_block->data,
+                "name", str_data(&s), SPLX_NODE_TYPE_STRING);
+            str_free (&s);
+        }
+    }
+
     // TODO: Validate that the title has no inline tags.
 }
 
-bool parse_note_title (char *path, char *note_text, string_t *title, string_t *error_msg)
+bool parse_note_title (char *path, char *note_text, string_t *title, struct splx_data_t *sd, string_t *error_msg)
 {
     bool success = true;
 
     struct psx_parser_state_t _ps = {0};
     struct psx_parser_state_t *ps = &_ps;
     ps->ctx.path = path;
+    ps->ctx.sd = sd;
     ps_init (ps, note_text);
 
-    psx_parse_note_title (ps);
+    sstring_t title_s = {0};
+    psx_parse_note_title (ps, &title_s, false);
     if (!ps->error) {
-        strn_set (title, ps->token.value.s, ps->token.value.len);
+        strn_set (title, title_s.s, title_s.len);
     } else {
         success = false;
     }
@@ -1715,14 +1801,11 @@ struct psx_block_t* parse_note_text (mem_pool_t *pool, struct psx_parser_ctx_t *
     struct psx_block_t *root_block = psx_container_block_new(ps, BLOCK_TYPE_ROOT, 0);
     DYNAMIC_ARRAY_APPEND (ps->block_stack, root_block);
 
-    psx_parse_note_title (ps);
+    sstring_t title = {0};
+    psx_parse_note_title (ps, &title, true);
     if (!ps->error) {
-        struct psx_block_t *title_block = psx_push_block (ps, psx_leaf_block_new(ps, BLOCK_TYPE_HEADING, ps->token.margin, ps->token.value));
+        struct psx_block_t *title_block = psx_push_block (ps, psx_leaf_block_new(ps, BLOCK_TYPE_HEADING, ps->token.margin, title));
         title_block->heading_number = 1;
-
-        if (ps->token.heading_number != 1) {
-            psx_warning (ps, "forcing note title to heading level 1, this note starts with different level");
-        }
 
         // :pop_leaf_blocks
         ps->block_stack_len--;
@@ -1775,6 +1858,13 @@ void _str_cat_block_tree (string_t *str, struct psx_block_t *block, int indent, 
     str_cat_indented_printf (str, curr_indent, "list_type: %s\n", psx_token_type_names[block->list_type]);
     str_cat_indented_printf (str, curr_indent, "content_start: %d\n", block->content_start);
 
+    str_cat_indented_printf (str, curr_indent, "data: ");
+    if (block->data == NULL) {
+        str_cat_debugstr (str, curr_indent, 0, "");
+    } else {
+        str_cat_splx_node_full (str, block->data, curr_indent);
+    }
+
     if (block->block_content == NULL) {
         str_cat_indented_printf (str, curr_indent, "inline_content:\n");
         str_cat_debugstr (str, curr_indent, ESC_COLOR_YELLOW, str_data(&block->inline_content));
@@ -1802,7 +1892,10 @@ void printf_block_tree (struct psx_block_t *root, int indent)
 }
 
 // @AUTO_MACRO_PREFIX(PROCESS_NOTE_)
-char* markup_to_html (mem_pool_t *pool_out, struct file_vault_t *vlt, char *path, char *markup, char *id, string_t *error_msg)
+char* markup_to_html (
+    mem_pool_t *pool_out, struct file_vault_t *vlt, struct splx_data_t *sd,
+    char *path, char *markup, char *id,
+    string_t *error_msg)
 {
     STACK_ALLOCATE (mem_pool_t, pool_l);
 
@@ -1813,6 +1906,7 @@ char* markup_to_html (mem_pool_t *pool_out, struct file_vault_t *vlt, char *path
     ctx->id = id;
     ctx->path = path;
     ctx->vlt = vlt;
+    ctx->sd = sd;
     ctx->error_msg = error_msg;
 
     STACK_ALLOCATE (struct block_allocation_t, ba);

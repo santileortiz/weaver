@@ -1,5 +1,8 @@
 /* Stub for 'PROCESS_NOTE_'
-char* markup_to_html (mem_pool_t *pool_out, struct file_vault_t *vlt, char *path, char *markup, char *id, string_t *error_msg)
+char* markup_to_html (
+    mem_pool_t *pool_out, struct file_vault_t *vlt, struct splx_data_t *sd,
+    char *path, char *markup, char *id,
+    string_t *error_msg)
 {
     STACK_ALLOCATE (mem_pool_t, pool_l);
 
@@ -10,6 +13,7 @@ char* markup_to_html (mem_pool_t *pool_out, struct file_vault_t *vlt, char *path
     ctx->id = id;
     ctx->path = path;
     ctx->vlt = vlt;
+    ctx->sd = sd;
     ctx->error_msg = error_msg;
 
     STACK_ALLOCATE (struct block_allocation_t, ba);

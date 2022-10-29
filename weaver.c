@@ -13,7 +13,6 @@
 #include "note_runtime.h"
 
 #include "psplx_parser.c"
-#include "tsplx_parser.c"
 #include "note_runtime.c"
 
 //////////////////////////////////////
@@ -41,7 +40,7 @@ void rt_init_push_file (struct note_runtime_t *rt, char *fname)
     free (source);
 
     str_pool (&rt->pool, &new_note->title);
-    if (!parse_note_title (fname, str_data(&new_note->psplx), &new_note->title, &new_note->error_msg)) {
+    if (!parse_note_title (fname, str_data(&new_note->psplx), &new_note->title, &rt->sd, &new_note->error_msg)) {
         new_note->error = true;
 
     } else {
@@ -275,7 +274,7 @@ int main(int argc, char** argv)
                 // note case, I want to have at least one code path where we use the
                 // base signle-file PSPLX to HTML implementation. To avoid rotting
                 // of this code and increase usage of it.
-                char *html = markup_to_html (NULL, &rt->vlt, str_data(&rt->notes->path), str_data(&rt->notes->psplx), str_data(&rt->notes->path), &error_msg);
+                char *html = markup_to_html (NULL, &rt->vlt, &rt->sd, str_data(&rt->notes->path), str_data(&rt->notes->psplx), str_data(&rt->notes->path), &error_msg);
                 if (html != NULL) {
                     printf ("%s", html);
                 }

@@ -87,6 +87,8 @@ void rt_process_notes (struct note_runtime_t *rt, string_t *error_msg_out)
 {
     STACK_ALLOCATE (struct psx_parser_ctx_t, ctx);
     ctx->vlt = &rt->vlt;
+    ctx->sd = &rt->sd;
+
 
     {
         LINKED_LIST_FOR (struct note_t*, curr_note, rt->notes) {
@@ -94,6 +96,8 @@ void rt_process_notes (struct note_runtime_t *rt, string_t *error_msg_out)
             ctx->id = curr_note->id;
             ctx->path = str_data(&curr_note->path);
             ctx->error_msg = &curr_note->error_msg;
+
+            //printf ("%s\n", str_data(&curr_note->path));
 
             mem_pool_t *pool_l = &rt->pool;
             char *markup = str_data(&curr_note->psplx);

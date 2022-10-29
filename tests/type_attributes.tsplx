@@ -1,0 +1,5 @@
+type_attributes a my-type ;
+  my-number 0 ;
+  my-str "" ;
+  my-url "http://example.com" ;
+  name "Type Attributes" ;

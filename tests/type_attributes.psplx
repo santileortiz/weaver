@@ -1,0 +1,12 @@
+# Type Attributes
+\my-type{
+
+  my-number 0;
+
+  my-str "";
+
+  my-url "http://example.com";
+
+}
+
+Some paragraph with text.

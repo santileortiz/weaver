@@ -2,51 +2,7 @@
  * Copyright (C) 2021 Santiago León O.
  */
 
-BINARY_TREE_NEW (ptr_set, void*, void*, (a==b) ? 0 : (a<b ? -1 : 1))
-BINARY_TREE_NEW (cstr_to_splx_node_map, char*, struct splx_node_t*, strcmp(a, b))
-BINARY_TREE_NEW (cstr_to_splx_node_list_map, char*, struct splx_node_list_t*, strcmp(a, b))
-
-#define SPLX_NODE_TYPES_TABLE                   \
-    SPLX_NODE_TYPE_ROW(SPLX_NODE_TYPE_UNKNOWN)  \
-    SPLX_NODE_TYPE_ROW(SPLX_NODE_TYPE_STRING)   \
-    SPLX_NODE_TYPE_ROW(SPLX_NODE_TYPE_DOUBLE)   \
-    SPLX_NODE_TYPE_ROW(SPLX_NODE_TYPE_INTEGER)  \
-    SPLX_NODE_TYPE_ROW(SPLX_NODE_TYPE_URI)      \
-    SPLX_NODE_TYPE_ROW(SPLX_NODE_TYPE_OBJECT)   \
-
-#define SPLX_NODE_TYPE_ROW(value) value,
-enum splx_node_type_t {
-    SPLX_NODE_TYPES_TABLE
-};
-#undef SPLX_NODE_TYPE_ROW
-
-#define SPLX_NODE_TYPE_ROW(value) #value,
-char* splx_node_type_names[] = {
-    SPLX_NODE_TYPES_TABLE
-};
-#undef SPLX_NODE_TYPE_ROW
-
-struct splx_node_t {
-    enum splx_node_type_t type;
-    string_t str;
-
-    struct cstr_to_splx_node_list_map_t attributes;
-
-    struct splx_node_list_t *floating_values;
-    struct splx_node_list_t *floating_values_end;
-};
-
-struct splx_node_list_t {
-    struct splx_node_t *node;
-    struct splx_node_list_t *next;
-};
-
-struct splx_data_t {
-    mem_pool_t pool;
-
-    struct cstr_to_splx_node_map_t nodes;
-    struct splx_node_t *root;
-};
+#include "tsplx_parser.h"
 
 void splx_destroy (struct splx_data_t *sd)
 {
@@ -498,8 +454,8 @@ struct splx_node_t* splx_node_dup (struct splx_data_t *sd, struct splx_node_t *o
 
 #define SPLX_STR_INDENT 2
 
-#define str_cat_splx_node(str,sd,node) str_cat_splx_node_full(str,sd,node,0)
-void str_cat_splx_node_full (string_t *str, struct splx_data_t *sd, struct splx_node_t *node, int curr_indent)
+#define str_cat_splx_node(str,node) str_cat_splx_node_full(str,node,0)
+void str_cat_splx_node_full (string_t *str, struct splx_node_t *node, int curr_indent)
 {
     str_cat_debugstr (str, curr_indent, ESC_COLOR_DEFAULT, str_data(&node->str));
 
@@ -513,10 +469,10 @@ void str_cat_splx_node_full (string_t *str, struct splx_data_t *sd, struct splx_
     }
 }
 
-void print_splx_node (struct splx_data_t *sd, struct splx_node_t *node)
+void print_splx_node (struct splx_node_t *node)
 {
     string_t buff = {0};
-    str_cat_splx_node (&buff, sd, node);
+    str_cat_splx_node (&buff, node);
     printf ("%s", str_data(&buff));
     str_free (&buff);
 }
@@ -1433,17 +1389,21 @@ bool tps_parse_node (struct tsplx_parser_state_t *tps, struct splx_node_t *root_
     return !tps->error;
 }
 
-bool tsplx_parse_str_name (struct splx_data_t *sd, char *str, string_t *error_msg)
+#define tsplx_parse_str_name(sd,str,error_msg) tsplx_parse_str_name_full(sd,str,NULL,error_msg)
+bool tsplx_parse_str_name_full (struct splx_data_t *sd, char *str, struct splx_node_t *anchor, string_t *error_msg)
 {
     struct tsplx_parser_state_t _tps = {0};
     struct tsplx_parser_state_t *tps = &_tps;
     tps_init (tps, str, error_msg);
 
-    assert (sd->root == NULL);
-    sd->root = splx_node_new (sd);
+    if (anchor == NULL) {
+        assert (sd->root == NULL);
+        sd->root = splx_node_new (sd);
+        anchor = sd->root;
+    }
 
     struct tsplx_scope_t scope = {0};
-    bool success = tps_parse_node (tps, sd->root, sd, &scope);
+    bool success = tps_parse_node (tps, anchor, sd, &scope);
     cstr_to_splx_node_map_destroy (&scope.variables);
     cstr_to_splx_node_map_destroy (&scope.used_variables);
 

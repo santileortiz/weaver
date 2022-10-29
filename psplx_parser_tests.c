@@ -28,7 +28,7 @@ struct note_t* push_test_note (struct note_runtime_t *rt, char *source, size_t s
     strn_set (&new_note->psplx, source, source_len);
 
     str_pool (&rt->pool, &new_note->title);
-    if (!parse_note_title (path, str_data(&new_note->psplx), &new_note->title, &new_note->error_msg)) {
+    if (!parse_note_title (path, str_data(&new_note->psplx), &new_note->title, &rt->sd, &new_note->error_msg)) {
         new_note->error = true;
         printf ("%s", str_data(&new_note->error_msg));
 
@@ -167,9 +167,14 @@ void negative_tests (struct test_ctx_t *t, struct note_runtime_t *rt)
     negative_programmatic_test (t, rt, test_id, source);
 }
 
+void set_expected_path (string_t *str, char *note_id, char *extension)
+{
+    str_set_printf (str, TESTS_DIR "/%s.%s", note_id, extension);
+}
+
 void set_expected_html_path (string_t *str, char *note_id)
 {
-    str_set_printf (str, TESTS_DIR "/%s.html", note_id);
+    set_expected_path (str, note_id, "html");
 }
 
 int main(int argc, char** argv)
@@ -213,8 +218,30 @@ int main(int argc, char** argv)
                 expected_html = full_file_read (NULL, str_data(&buff), NULL);
             }
 
-            if (expected_html == NULL) {
-                test_push (t, "%s " ECMA_YELLOW("(No HTML)"), note->id);
+            set_expected_path (&buff, note->id, "tsplx");
+            char *expected_tsplx = NULL;
+            if (path_exists (str_data(&buff))) {
+                expected_tsplx = full_file_read (NULL, str_data(&buff), NULL);
+            }
+            bool missing_tsplx = (expected_tsplx == NULL && note->tree->data != NULL);
+
+            if (expected_html == NULL || missing_tsplx) {
+                string_t missing_info = {0};
+
+                if (expected_html == NULL) {
+                    str_cat_c (&missing_info, "!html");
+                }
+
+                if (missing_tsplx) {
+                    if (str_len (&missing_info) && str_last (&missing_info) != ' ') {
+                        str_cat_c (&missing_info, " ");
+                    }
+
+                    str_cat_c (&missing_info, "!tsplx");
+                }
+
+                test_push (t, "%s " ECMA_YELLOW("(%s)"), note->id, str_data(&missing_info));
+                str_free (&missing_info);
             } else {
                 test_push (t, "%s", note->id);
             }
@@ -230,6 +257,20 @@ int main(int argc, char** argv)
                 free (expected_html);
             }
 
+
+
+            if (path_exists (str_data(&buff)) && note->tree->data != NULL) {
+                string_t tsplx_str = {0};
+                str_cat_splx_canonical (&tsplx_str, &rt->sd, note->tree->data);
+
+                test_push (t, "Matches expected TSPLX");
+                test_str (t, str_data(&tsplx_str), expected_tsplx);
+
+                free (expected_tsplx);
+                str_free (&tsplx_str);
+            }
+
+
             test_pop_parent(t);
         }
 
@@ -244,6 +285,9 @@ int main(int argc, char** argv)
                 } else if (blocks_out) {
                     STACK_ALLOCATE(struct psx_parser_ctx_t, ctx);
                     ctx->path = str_data(&note->path);
+                    ctx->error_msg = &note->error_msg;
+                    ctx->sd = &rt->sd;
+
                     struct psx_block_t *root_block = parse_note_text (&pool, ctx, str_data(&note->psplx));
                     printf_block_tree (root_block, 4);
 
@@ -257,15 +301,33 @@ int main(int argc, char** argv)
 
                     printf (ECMA_MAGENTA("HTML") "\n");
                     prnt_debug_string (str_data(&note->html));
-
-                    if (str_len(&note->error_msg) > 0) {
-                        printf (ECMA_MAGENTA("\nERRORS") "\n");
-                        printf ("%s", str_data (&note->error_msg));
-                    }
-
                     set_expected_html_path (&buff, note->id);
                     print_diff_str_to_expected_file (&note->html, str_data (&buff));
+
+                    if (note->tree->data != NULL) {
+                        string_t tsplx_str = {0};
+                        str_cat_splx_canonical (&tsplx_str, &rt->sd, note->tree->data);
+
+                        printf ("\n");
+                        printf (ECMA_MAGENTA("TSPLX") "\n");
+                        prnt_debug_string (str_data(&tsplx_str));
+                        set_expected_path (&buff, note->id, "tsplx");
+                        print_diff_str_to_expected_file (&tsplx_str, str_data (&buff));
+
+                        str_free (&tsplx_str);
+                    }
+
+                    printf ("\n");
                 }
+
+                if (str_len(&note->error_msg) > 0) {
+                    // FIXME: Why using --blocks flag duplicates error printing
+                    // here?...
+                    printf (ECMA_MAGENTA("\nERRORS") "\n");
+                    printf ("%s", str_data (&note->error_msg));
+                    printf ("\n");
+                }
+
             }
 
         } else {

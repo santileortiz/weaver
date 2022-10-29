@@ -25,7 +25,17 @@ css_property_set ("--code-block-padding", code_block_padding + "px");
 
 let opened_notes = [];
 
-function toggle_sidebar()
+function note_has_scroll()
+{
+    // NOTE: Probably breaks [1] if for some reason overflow is set to visible. But
+    // I don't think we will eve set visible overflow for notes.
+    //
+    // [1]: https://stackoverflow.com/questions/143815/determine-if-an-html-elements-content-overflows
+    let note_container = document.getElementById("note-container");
+    return note_container.clientHeight < note_container.scrollHeight;
+}
+
+function toggle_sidebar ()
 {
     var sidebar = document.getElementById("sidebar");
     
@@ -41,11 +51,15 @@ function toggle_sidebar()
 
 function note_text_to_element (container, id, note_html)
 {
-    container.insertAdjacentHTML ('beforeend', note_html);
+    container.insertAdjacentHTML('beforeend', note_html);
 
     let new_expanded_note = document.getElementById(id);
     new_expanded_note.id = id
     new_expanded_note.classList.add("note")
+
+    if (note_has_scroll()) {
+        new_expanded_note.style.paddingBottom = "50vh";
+    }
 
     return new_expanded_note;
 }
