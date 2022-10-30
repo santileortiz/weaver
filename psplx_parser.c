@@ -500,11 +500,12 @@ struct psx_token_t ps_inline_next_full(struct psx_parser_state_t *ps, bool escap
         // :tag_parsing
         pps_advance_char (ps);
 
-        if (!pps_is_operator(ps) || pps_curr_char(ps) == '\\') {
+        if (!pps_is_operator(ps) || pps_curr_char(ps) == '\\' || pps_curr_char(ps) == '{') {
             char *start = ps->pos;
             while (!pps_is_eof(ps) && !pps_is_operator(ps) && !pps_is_space(ps)) {
                 pps_advance_char (ps);
             }
+
             tok.value = SSTRING(start, ps->pos - start);
             tok.type = TOKEN_TYPE_TAG;
 
@@ -1615,14 +1616,16 @@ void psx_parse_block_attributes (struct psx_parser_state_t *ps, struct psx_block
 
         str_free (&tsplx_data);
 
-        string_t s = {0};
-        strn_set(&s, tok.value.s, tok.value.len);
-        struct splx_node_t *type = splx_node_get_or_create (ps->ctx.sd, str_data(&s), SPLX_NODE_TYPE_OBJECT);
-        splx_node_attribute_append (
-            ps->ctx.sd,
-            block->data,
-            "a", type);
-        str_free (&s);
+        if (tok.value.len > 0) {
+            string_t s = {0};
+            strn_set(&s, tok.value.s, tok.value.len);
+            struct splx_node_t *type = splx_node_get_or_create (ps->ctx.sd, str_data(&s), SPLX_NODE_TYPE_OBJECT);
+            splx_node_attribute_append (
+                ps->ctx.sd,
+                block->data,
+                "a", type);
+            str_free (&s);
+        }
 
     } else {
         // :restore_pos
