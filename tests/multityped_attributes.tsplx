@@ -1,0 +1,6 @@
+multityped_attributes a my-type1 ;
+    my-type2 ;
+  my-number 0 ;
+  my-str "" ;
+  my-url "http://example.com" ;
+  name "Multityped Attributes" ;

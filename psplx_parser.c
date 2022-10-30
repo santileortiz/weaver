@@ -1592,40 +1592,49 @@ void block_tree_to_html (struct psx_parser_ctx_t *ctx, struct html_t *html, stru
 
 void psx_parse_block_attributes (struct psx_parser_state_t *ps, struct psx_block_t *block)
 {
-    // TODO: When does this happen?... it didn't happen in tests but did happen
-    // with my actual note data.
-    if (block == NULL) return;
+    assert (block != NULL);
 
     char *backup_pos = ps->pos;
     int backup_column_number = ps->column_number;
 
-    // TODO: Support multiple tags types
     struct psx_token_t tok = ps_inline_next (ps);
     if (ps_match(ps, TOKEN_TYPE_TAG, NULL)) {
         assert(ps->ctx.sd != NULL);
-
-        string_t tsplx_data = {0};
-        psx_cat_tag_content (ps, &tsplx_data, true);
 
         if (ps->ctx.id != NULL) {
             block->data = splx_node_get_or_create(ps->ctx.sd, ps->ctx.id, SPLX_NODE_TYPE_OBJECT);
         } else {
             block->data = splx_node_new(ps->ctx.sd);
         }
-        tsplx_parse_str_name_full(ps->ctx.sd, str_data(&tsplx_data), block->data, NULL);
-
-        str_free (&tsplx_data);
 
         if (tok.value.len > 0) {
-            string_t s = {0};
-            strn_set(&s, tok.value.s, tok.value.len);
-            struct splx_node_t *type = splx_node_get_or_create (ps->ctx.sd, str_data(&s), SPLX_NODE_TYPE_OBJECT);
-            splx_node_attribute_append (
-                ps->ctx.sd,
-                block->data,
-                "a", type);
-            str_free (&s);
+            char *internal_backup_pos;
+            int internal_backup_column_number;
+
+            do {
+                internal_backup_pos = ps->pos;
+                internal_backup_column_number = ps->column_number;
+
+                string_t s = {0};
+                strn_set(&s, tok.value.s, tok.value.len);
+                struct splx_node_t *type = splx_node_get_or_create (ps->ctx.sd, str_data(&s), SPLX_NODE_TYPE_OBJECT);
+                splx_node_attribute_append (
+                    ps->ctx.sd,
+                    block->data,
+                    "a", type);
+                str_free (&s);
+
+                tok = ps_inline_next (ps);
+            } while (ps_match(ps, TOKEN_TYPE_TAG, NULL));
+
+            ps->pos = internal_backup_pos;
+            ps->column_number = internal_backup_column_number;
         }
+
+        string_t tsplx_data = {0};
+        psx_cat_tag_content (ps, &tsplx_data, true);
+        tsplx_parse_str_name_full(ps->ctx.sd, str_data(&tsplx_data), block->data, NULL);
+        str_free (&tsplx_data);
 
     } else {
         // :restore_pos
