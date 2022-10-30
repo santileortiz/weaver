@@ -269,21 +269,38 @@ int main(int argc, char** argv)
                     printf (ECMA_RED("error: ") "refusing to generate static site. Using command line input but output directory is missing as parameter, use --output-dir\n");
                 }
 
-            } else if (output_type == CLI_OUTPUT_TYPE_HTML && rt->notes_len == 1) {
-                // Even though multi note processing should also work in the single
-                // note case, I want to have at least one code path where we use the
-                // base signle-file PSPLX to HTML implementation. To avoid rotting
-                // of this code and increase usage of it.
-                char *html = markup_to_html (NULL, &rt->vlt, &rt->sd, str_data(&rt->notes->path), str_data(&rt->notes->psplx), str_data(&rt->notes->path), &error_msg);
-                if (html != NULL) {
-                    printf ("%s", html);
-                }
-                free (html);
+            } else if (rt->notes_len == 1) {
+                if (output_type == CLI_OUTPUT_TYPE_HTML) {
+                    // Even though multi note processing should also work in the single
+                    // note case, I want to have at least one code path where we use the
+                    // base signle-file PSPLX to HTML implementation. To avoid rotting
+                    // of this code and increase usage of it.
+                    char *html = markup_to_html (NULL, &rt->vlt, &rt->sd, str_data(&rt->notes->path), str_data(&rt->notes->psplx), str_data(&rt->notes->path), &error_msg);
+                    if (html != NULL) {
+                        printf ("%s", html);
+                    }
+                    free (html);
 
-                // TODO: Show same output as psplx tests.
+                    if (str_len(&error_msg) > 0) {
+                        printf ("%s", str_data(&error_msg));
+                    }
 
-                if (str_len(&error_msg) > 0) {
-                    printf ("%s", str_data(&error_msg));
+                } else if (output_type == CLI_OUTPUT_TYPE_DEFAULT) {
+                    struct note_t *note = rt->notes;
+
+                    printf (ECMA_MAGENTA("HTML") "\n");
+                    prnt_debug_string (str_data(&note->html));
+
+                    if (note->tree->data != NULL) {
+                        string_t tsplx_str = {0};
+                        str_cat_splx_canonical (&tsplx_str, &rt->sd, note->tree->data);
+
+                        printf ("\n");
+                        printf (ECMA_MAGENTA("TSPLX") "\n");
+                        prnt_debug_string (str_data(&tsplx_str));
+
+                        str_free (&tsplx_str);
+                    }
                 }
             }
 

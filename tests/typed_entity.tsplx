@@ -1,4 +1,8 @@
 // Example of an object/entity that has attributes and a type
 john a person ;
   full-name "John Doe" ;
-  age 50 .
+  age 50 ;
+
+  // Test IDs starting with digit.
+  owns 1FWJXF3CHR; 7HGRVMGMF8;
+  file 32P7FP8FC7.

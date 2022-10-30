@@ -7,6 +7,7 @@
 #include "test_logger.c"
 #include "cli_parser.c"
 
+#define ATTRIBUTE_PLACEHOLDER
 #include "tsplx_parser.c"
 
 #include "testing.c"

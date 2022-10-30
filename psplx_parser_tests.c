@@ -12,7 +12,9 @@
 #include "block.h"
 #include "note_runtime.h"
 
+#define ATTRIBUTE_PLACEHOLDER
 #include "psplx_parser.c"
+
 #include "note_runtime.c"
 
 #include "testing.c"

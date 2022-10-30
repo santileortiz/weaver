@@ -1421,6 +1421,81 @@ void psx_create_links_full (struct psx_parser_ctx_t *ctx, struct psx_block_t **r
     }
 }
 
+// I'm anticipating the actual HTML for attributes to be changing a lot, so I
+// don't want to break all tests every time a change is made. Instead, for tests
+// we compare TSPLX data in canonical form and in the HTML we just output a
+// placeholder div that represents all attributes.
+void note_attributes_html_append (struct html_t *html, struct psx_block_t *block, struct html_element_t *parent)
+#ifdef ATTRIBUTE_PLACEHOLDER
+{
+    struct html_element_t *attributes = html_new_element (html, "div");
+    html_element_attribute_set (html, attributes, "id", "__attributes");
+    html_element_append_child (html, parent, attributes);
+}
+#else
+{
+    // Types
+    struct splx_node_list_t *type_list = cstr_to_splx_node_list_map_get (&block->data->attributes, "a");
+
+    if (type_list != NULL) {
+        struct html_element_t *types = html_new_element (html, "div");
+        html_element_attribute_set (html, types, "style", "margin-bottom: 10px; align-items: baseline; display: flex; color: var(--secondary-fg-color)");
+
+        LINKED_LIST_FOR (struct splx_node_list_t *, curr_list_node, type_list) {
+            struct html_element_t *value = html_new_element (html, "div");
+            html_element_class_add (html, value, "type");
+            html_element_append_cstr (html, value, str_data(&curr_list_node->node->str));
+            html_element_append_child (html, types, value);
+        }
+
+        html_element_append_child (html, parent, types);
+    }
+
+
+    // Attributes
+
+    // NOTE: Avoid generating any attribute elements if the only present
+    // attributer are those already shown soehwre else (note's title, type
+    // labels etc.).
+    if ((type_list != NULL || block->data->attributes.num_nodes != 1) &&
+        (type_list == NULL || block->data->attributes.num_nodes != 2)) {
+
+        struct html_element_t *container = html_new_element (html, "div");
+        html_element_class_add (html, container, "attributes");
+
+        BINARY_TREE_FOR (cstr_to_splx_node_list_map, &block->data->attributes, curr_attribute) {
+            // Type attributes "a" are rendered as labels, the "name" attribute is
+            // the note's title.
+            if (strcmp(curr_attribute->key, "a") == 0 || strcmp(curr_attribute->key, "name") == 0) continue;
+
+            struct html_element_t *attribute = html_new_element (html, "div");
+            html_element_attribute_set (html, attribute, "style", "align-items: baseline; display: flex; color: var(--secondary-fg-color)");
+
+            struct html_element_t *label = html_new_element (html, "div");
+            html_element_class_add (html, label, "attribute-label");
+            html_element_append_cstr (html, label, curr_attribute->key);
+            html_element_append_child (html, attribute, label);
+
+            // NOTE: This additionar wrapper div for values is added so that they
+            // wrap nicely and are left aligned with all other values.
+            struct html_element_t *values = html_new_element (html, "div");
+            html_element_attribute_set (html, values, "style", "row-gap: 3px; display: flex; flex-wrap: wrap;");
+            LINKED_LIST_FOR (struct splx_node_list_t *, curr_list_node, curr_attribute->value) {
+                struct html_element_t *value = html_new_element (html, "div");
+                html_element_class_add (html, value, "attribute-value");
+                html_element_append_cstr (html, value, str_data(&curr_list_node->node->str));
+                html_element_append_child (html, values, value);
+            }
+            html_element_append_child (html, attribute, values);
+
+            html_element_append_child (html, container, attribute);
+        }
+
+        html_element_append_child (html, parent, container);
+    }
+}
+#endif
+
 void block_tree_to_html (struct psx_parser_ctx_t *ctx, struct html_t *html, struct psx_block_t *block, struct html_element_t *parent)
 {
     string_t buff = {0};
@@ -1485,14 +1560,9 @@ void block_tree_to_html (struct psx_parser_ctx_t *ctx, struct html_t *html, stru
 
             // If there are note attributes in the root block, print them after
             // the first block whoch sould've been the title (heading).
-            // TODO: We don't always want to use this HTML mapping for
-            // attributes, we should probably recieve the HTML used for note
-            // attributes from the caller. Then just attach it here.
             if (block->data != NULL && is_first) {
-                struct html_element_t *attributes = html_new_element (html, "div");
-                html_element_attribute_set (html, attributes, "id", "__attributes");
-                html_element_append_child (html, parent, attributes);
                 is_first = false;
+                note_attributes_html_append (html, block, parent);
             }
         }
 

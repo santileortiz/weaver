@@ -133,6 +133,12 @@ bool tps_is_operator (struct tsplx_parser_state_t *tps)
 }
 
 static inline
+bool tps_is_identifier_char (struct tsplx_parser_state_t *tps)
+{
+    return !tps_is_eof(tps) && !tps_is_operator(tps) && !tps_is_space(tps) && tps_curr_char(tps) != '\n';
+}
+
+static inline
 void tps_advance_char (struct tsplx_parser_state_t *tps)
 {
     if (!tps_is_eof(tps)) {
@@ -174,6 +180,10 @@ bool tps_match_str(struct tsplx_parser_state_t *tps, char *c_str)
 static inline
 bool tps_match_digits (struct tsplx_parser_state_t *tps)
 {
+    char *pos = tps->pos;
+    int column_number = tps->column_number;
+    int line_number = tps->line_number;
+
     bool found = false;
     if (tps_is_digit(tps)) {
         found = true;
@@ -181,6 +191,16 @@ bool tps_match_digits (struct tsplx_parser_state_t *tps)
             tps_advance_char (tps);
         }
     }
+
+    // This isn't actually a digit because it's followed by additional
+    // characters. Restore the state and mark it as not found.
+    if (tps_is_identifier_char(tps)) {
+        tps->pos = pos;
+        tps->column_number = column_number;
+        tps->line_number = line_number;
+        found = false;
+    }
+
     return found;
 }
 
@@ -211,7 +231,7 @@ void tps_parse_identifier (struct tsplx_parser_state_t *tps, struct tsplx_token_
     // TODO: Maybe better define a set of valid identifier characters?.
     // Reserve : for prefixes, don't allow identifiers starting with
     // numbers.
-    while (!tps_is_eof(tps) && !tps_is_operator(tps) && !tps_is_space(tps) && tps_curr_char(tps) != '\n') {
+    while (tps_is_identifier_char(tps)) {
         tps_advance_char (tps);
     }
 

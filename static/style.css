@@ -4,6 +4,7 @@
     --accent-color: #0d52bf;  /* blueberry-700 */
     --sidebar-color: #242A31;
     --secondary-bg-color: #f5f5f5;
+    --secondary-fg-color: #3B454EB0;
     --title-color: #32383f;
 }
 
@@ -24,19 +25,21 @@ body, html {
 }
 
 h1, h2, h3, h4, h5, h6 {
+    margin: 0;
     font-family: var(--heading-font);
+    padding-bottom: 6px;
 }
 
 h2, h3, h4, h5, h6 {
-    margin-top: 1.25em;
-    margin-bottom: 0;
+    margin-top: 0.75em;
+    padding-top: 0.5em;
 }
 
 h1 {
     color: var(--title-color);
-    font-size: 32px;
-    font-weight: 500;
-    line-height: 1.1em;
+    font-size: 40px;
+    font-weight: 700;
+    line-height: 1.2;
 }
 
 h2 {
@@ -46,8 +49,15 @@ h2 {
 
 p, ul, ol {
     font-family: var(--text-font);
-    margin-top: 0.5em;
-    margin-bottom: 1.0em;
+    margin: 0;
+}
+
+p, .attributes {
+    padding: 0.5em 0;
+}
+
+ul, ol {
+    padding-left: 20px;
 }
 
 a {
@@ -58,18 +68,6 @@ a {
 
 a:hover {
     text-decoration: underline;
-}
-
-li {
-    margin-bottom: 0.50em;
-}
-
-li > p:first-child {
-    margin-top: 0;
-}
-
-li > p:last-child {
-    margin-bottom: 0;
 }
 
 #topbar {
@@ -233,5 +231,41 @@ code {
 
 #sidebar-button:hover {
     background-color: #0000001f;
+}
+
+.attributes {
+    gap: 6px;
+    display: flex;
+    flex-direction: column;
+}
+
+.attribute-label {
+    flex-shrink: 0;
+    width: 160px;
+    padding: 0 6px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.attribute-value {
+    padding: 0 4px;
+    margin-right: 6px;
+    border-radius: 3px;
+    cursor: pointer;
+    border: 1px solid #0000001c;
+}
+
+.attribute-value:hover {
+    background-color: var(--secondary-bg-color);
+}
+
+.type {
+    padding: 1px 0.5em;
+    border-radius: 1.5em;
+    margin-right: 6px;
+    cursor: pointer;
+    border: 1px solid #0000001c;
+    background-color: var(--secondary-bg-color);
 }
 
