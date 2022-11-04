@@ -502,7 +502,7 @@ struct psx_token_t ps_inline_next_full(struct psx_parser_state_t *ps, bool escap
 
         if (!pps_is_operator(ps) || pps_curr_char(ps) == '\\' || pps_curr_char(ps) == '{') {
             char *start = ps->pos;
-            while (!pps_is_eof(ps) && !pps_is_operator(ps) && !pps_is_space(ps)) {
+            while (!pps_is_eof(ps) && !pps_is_operator(ps) && !pps_is_space(ps) && pps_curr_char(ps) != '\n') {
                 pps_advance_char (ps);
             }
 
@@ -1625,7 +1625,13 @@ void psx_parse_block_attributes (struct psx_parser_state_t *ps, struct psx_block
                 str_free (&s);
 
                 tok = ps_inline_next (ps);
-            } while (ps_match(ps, TOKEN_TYPE_TAG, NULL));
+            } while (
+                ps_match(ps, TOKEN_TYPE_TAG, NULL) &&
+
+                // Double line breaks represent an empty line, this is what
+                // breaks a tag sequence.
+                !(pps_curr_char(ps) == '\n' && *(ps->pos+1) == '\n')
+            );
 
             ps->pos = internal_backup_pos;
             ps->column_number = internal_backup_column_number;
