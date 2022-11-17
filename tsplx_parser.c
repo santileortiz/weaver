@@ -629,6 +629,9 @@ void tps_cat_floating_literals (string_t *str, struct splx_data_t *sd,
     }
 }
 
+// TODO: It's a bit cumbersome to have to pass sd here. It's only used to detect
+// if the node is the root node. I think serializing should be independent of
+// weather or not a node is the root.
 void str_cat_splx_canonical_full (string_t *str, struct splx_data_t *sd,
                                   struct splx_node_t *node,
                                   int curr_indent,

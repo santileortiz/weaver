@@ -4,3 +4,4 @@ multityped_attributes a my-type1 ;
   my-str "" ;
   my-url "http://example.com" ;
   name "Multityped Attributes" ;
+

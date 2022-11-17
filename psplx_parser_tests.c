@@ -179,6 +179,28 @@ void set_expected_html_path (string_t *str, char *note_id)
     set_expected_path (str, note_id, "html");
 }
 
+// TODO: Right now we only attaxha SPLX data node to each block, this just
+// concatenates all data nodes og a block tree. Ideally the SPLX data itself
+// would mimmic the text hierarchy structure of the note, such that just
+// serializing the single root node of the page reaches all data contained in
+// it. That's not the case at the moment.
+#define cat_note_tsplx(str,sd,root) cat_note_tsplx_full(str,sd,root,NULL)
+void cat_note_tsplx_full (string_t *str, struct splx_data_t *sd, struct psx_block_t *root, struct psx_block_t *block)
+{
+    if (block == NULL) block = root;
+
+    if (block->data != NULL) {
+        str_cat_splx_canonical (str, sd, block->data);
+        str_cat_c (str, "\n");
+    }
+
+    if (block->block_content != NULL) {
+        LINKED_LIST_FOR(struct psx_block_t*, curr_block, block->block_content) {
+            cat_note_tsplx_full (str, sd, root, curr_block);
+        }
+    }
+}
+
 int main(int argc, char** argv)
 {
     mem_pool_t pool = {0};
@@ -263,7 +285,7 @@ int main(int argc, char** argv)
 
             if (path_exists (str_data(&buff)) && note->tree->data != NULL) {
                 string_t tsplx_str = {0};
-                str_cat_splx_canonical (&tsplx_str, &rt->sd, note->tree->data);
+                cat_note_tsplx (&tsplx_str, &rt->sd, note->tree);
 
                 test_push (t, "Matches expected TSPLX");
                 test_str (t, str_data(&tsplx_str), expected_tsplx);
@@ -308,7 +330,7 @@ int main(int argc, char** argv)
 
                     if (note->tree->data != NULL) {
                         string_t tsplx_str = {0};
-                        str_cat_splx_canonical (&tsplx_str, &rt->sd, note->tree->data);
+                        cat_note_tsplx (&tsplx_str, &rt->sd, note->tree);
 
                         printf ("\n");
                         printf (ECMA_MAGENTA("TSPLX") "\n");

@@ -496,18 +496,27 @@ struct psx_token_t ps_inline_next_full(struct psx_parser_state_t *ps, bool escap
     if (pps_is_eof(ps)) {
         ps->is_eof = true;
 
-    } else if (pps_curr_char(ps) == '\\') {
-        // :tag_parsing
+    } else if (pps_curr_char(ps) == '\\' || pps_curr_char(ps) == '^') {
+        if (pps_curr_char(ps) == '\\') {
+            tok.type = TOKEN_TYPE_TEXT_TAG;
+        } else {
+            tok.type = TOKEN_TYPE_DATA_TAG;
+        }
+
         pps_advance_char (ps);
 
         if (!pps_is_operator(ps) || pps_curr_char(ps) == '\\' || pps_curr_char(ps) == '{') {
             char *start = ps->pos;
-            while (!pps_is_eof(ps) && !pps_is_operator(ps) && !pps_is_space(ps) && pps_curr_char(ps) != '\n') {
+
+            // TODO: Would be nicer to make '^' be an operator, unfortunately
+            // that breaks LaTeX parsing, why?.
+            while (!pps_is_eof(ps) && !pps_is_operator(ps) && !pps_is_space(ps) &&
+                   pps_curr_char(ps) != '\n' && pps_curr_char(ps) != '^')
+            {
                 pps_advance_char (ps);
             }
 
             tok.value = SSTRING(start, ps->pos - start);
-            tok.type = TOKEN_TYPE_TAG;
 
         } else {
             if (escape_operators) {
@@ -573,7 +582,7 @@ void ps_restore_pos (struct psx_parser_state_t *ps, char *original_pos)
 
 void str_cat_literal_token (string_t *str, struct psx_token_t token)
 {
-    if (token.type == TOKEN_TYPE_TAG) {
+    if (token.type == TOKEN_TYPE_TEXT_TAG) {
         str_cat_c (str, "\\");
         strn_cat_c (str, token.value.s, token.value.len);
 
@@ -997,7 +1006,7 @@ void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html
         } else if (ps_match(ps, TOKEN_TYPE_OPERATOR, "}") && DYNAMIC_ARRAY_GET_LAST(ps->block_unit_stack)->type != BLOCK_UNIT_TYPE_ROOT) {
             psx_block_unit_pop (ps);
 
-        } else if (ps_match(ps, TOKEN_TYPE_TAG, "i") || ps_match(ps, TOKEN_TYPE_TAG, "b")) {
+        } else if (ps_match(ps, TOKEN_TYPE_TEXT_TAG, "i") || ps_match(ps, TOKEN_TYPE_TEXT_TAG, "b")) {
             struct psx_token_t tag = ps->token;
 
             char *original_pos = ps->pos;
@@ -1026,7 +1035,7 @@ void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html
                 ps_restore_pos (ps, original_pos);
             }
 
-        } else if (ps_match(ps, TOKEN_TYPE_TAG, "link")) {
+        } else if (ps_match(ps, TOKEN_TYPE_TEXT_TAG, "link")) {
             struct psx_tag_t *tag = ps_parse_tag (ps, &original_pos);
             if (tag->has_content) {
                 // We parse the URL from the title starting at the end. I thinkg is
@@ -1070,7 +1079,7 @@ void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html
                 ps_html_cat_literal_tag (ps, tag, html);
             }
 
-        } else if (ps_match(ps, TOKEN_TYPE_TAG, "youtube")) {
+        } else if (ps_match(ps, TOKEN_TYPE_TEXT_TAG, "youtube")) {
             // TODO: I'm thinking this would look cleaner as a custom tag
             bool success = true;
 
@@ -1111,7 +1120,7 @@ void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html
                 ps_html_cat_literal_tag (ps, tag, html);
             }
 
-        } else if (ps_match(ps, TOKEN_TYPE_TAG, "image")) {
+        } else if (ps_match(ps, TOKEN_TYPE_TEXT_TAG, "image")) {
             struct psx_tag_t *tag = ps_parse_tag (ps, &original_pos);
             if (tag->has_content) {
                 str_replace (&tag->content, "\n", " ", NULL);
@@ -1150,8 +1159,8 @@ void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html
                 ps_html_cat_literal_tag (ps, tag, html);
             }
 
-        } else if (ps_match(ps, TOKEN_TYPE_TAG, "code") || ps_match(ps, TOKEN_TYPE_OPERATOR, "`")) {
-            if (ps_match(ps, TOKEN_TYPE_TAG, "code")) {
+        } else if (ps_match(ps, TOKEN_TYPE_TEXT_TAG, "code") || ps_match(ps, TOKEN_TYPE_OPERATOR, "`")) {
+            if (ps_match(ps, TOKEN_TYPE_TEXT_TAG, "code")) {
                 // TODO: Actually do something with the passed language name
                 struct psx_tag_t *tag = ps_parse_tag_full (ps, &original_pos, true);
                 if (tag->has_content) {
@@ -1169,7 +1178,7 @@ void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html
                 psx_append_inline_code_element (ps, html, &content);
             }
 
-        } else if (ps_match(ps, TOKEN_TYPE_TAG, "note")) {
+        } else if (ps_match(ps, TOKEN_TYPE_TEXT_TAG, "note")) {
             struct note_t *target_note = NULL;
             struct psx_tag_t *tag = psx_parse_tag_note (ps, &original_pos, &target_note, &buff);
             if (tag->has_content) {
@@ -1193,7 +1202,7 @@ void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html
                 ps_html_cat_literal_tag (ps, tag, html);
             }
 
-        } else if (ps_match(ps, TOKEN_TYPE_TAG, "html")) {
+        } else if (ps_match(ps, TOKEN_TYPE_TEXT_TAG, "html")) {
             struct psx_tag_t *tag = ps_parse_tag (ps, &original_pos);
             if (tag->has_content) {
                 struct psx_block_unit_t *head_unit = ps->block_unit_stack[ps->block_unit_stack_len-1];
@@ -1320,7 +1329,7 @@ void psx_block_tree_user_callbacks_full (struct psx_parser_ctx_t *ctx, struct bl
         while (!ps_inline->is_eof && !ps_inline->error) {
             char *tag_start = ps_inline->pos;
             struct psx_token_t tok = ps_inline_next (ps_inline);
-            if (ps_match(ps_inline, TOKEN_TYPE_TAG, NULL)) {
+            if (ps_match(ps_inline, TOKEN_TYPE_TEXT_TAG, NULL)) {
                 string_t tag_name = strn_new (tok.value.s, tok.value.len);
 
                 psx_user_tag_cb_t* cb = psx_user_tag_cb_get (&user_cb_tree, str_data(&tag_name));
@@ -1400,7 +1409,7 @@ void psx_create_links_full (struct psx_parser_ctx_t *ctx, struct psx_block_t **r
 
         while (!ps_inline->is_eof && !ps_inline->error) {
             ps_inline_next (ps_inline);
-            if (ps_match(ps_inline, TOKEN_TYPE_TAG, "note")) {
+            if (ps_match(ps_inline, TOKEN_TYPE_TEXT_TAG, "note")) {
                 string_t target_note_title = {0};
 
                 struct note_t *target_note = NULL;
@@ -1497,6 +1506,18 @@ void note_attributes_html_append (struct html_t *html, struct psx_block_t *block
 }
 #endif
 
+void block_attributes_html_append (struct html_t *html, struct psx_block_t *block, struct html_element_t *html_element)
+#ifdef ATTRIBUTE_PLACEHOLDER
+{
+    if (block->data != NULL) {
+        html_element_attribute_set (html, html_element, "data-block-attributes", "");
+    }
+}
+#else
+{
+}
+#endif
+
 void block_tree_to_html (struct psx_parser_ctx_t *ctx, struct html_t *html, struct psx_block_t *block, struct html_element_t *parent)
 {
     string_t buff = {0};
@@ -1505,6 +1526,7 @@ void block_tree_to_html (struct psx_parser_ctx_t *ctx, struct html_t *html, stru
         struct html_element_t *new_dom_element = html_new_element (html, "p");
         html_element_append_child (html, parent, new_dom_element);
         block_content_parse_text (ctx, html, new_dom_element, str_data(&block->inline_content));
+        block_attributes_html_append (html, block, new_dom_element);
 
     } else if (block->type == BLOCK_TYPE_HEADING) {
         str_set_printf (&buff, "h%i", block->heading_number);
@@ -1590,7 +1612,7 @@ void block_tree_to_html (struct psx_parser_ctx_t *ctx, struct html_t *html, stru
     str_free (&buff);
 }
 
-void psx_parse_block_attributes (struct psx_parser_state_t *ps, struct psx_block_t *block)
+void psx_parse_block_attributes (struct psx_parser_state_t *ps, struct psx_block_t *block, char *node_id)
 {
     assert (block != NULL);
 
@@ -1598,11 +1620,11 @@ void psx_parse_block_attributes (struct psx_parser_state_t *ps, struct psx_block
     int backup_column_number = ps->column_number;
 
     struct psx_token_t tok = ps_inline_next (ps);
-    if (ps_match(ps, TOKEN_TYPE_TAG, NULL)) {
+    if (ps_match(ps, TOKEN_TYPE_DATA_TAG, NULL)) {
         assert(ps->ctx.sd != NULL);
 
-        if (ps->ctx.id != NULL) {
-            block->data = splx_node_get_or_create(ps->ctx.sd, ps->ctx.id, SPLX_NODE_TYPE_OBJECT);
+        if (node_id != NULL) {
+            block->data = splx_node_get_or_create(ps->ctx.sd, node_id, SPLX_NODE_TYPE_OBJECT);
         } else {
             block->data = splx_node_new(ps->ctx.sd);
         }
@@ -1626,7 +1648,7 @@ void psx_parse_block_attributes (struct psx_parser_state_t *ps, struct psx_block
 
                 tok = ps_inline_next (ps);
             } while (
-                ps_match(ps, TOKEN_TYPE_TAG, NULL) &&
+                ps_match(ps, TOKEN_TYPE_DATA_TAG, NULL) &&
 
                 // Double line breaks represent an empty line, this is what
                 // breaks a tag sequence.
@@ -1641,6 +1663,16 @@ void psx_parse_block_attributes (struct psx_parser_state_t *ps, struct psx_block
         psx_cat_tag_content (ps, &tsplx_data, true);
         tsplx_parse_str_name_full(ps->ctx.sd, str_data(&tsplx_data), block->data, NULL);
         str_free (&tsplx_data);
+
+        // At this point, we parsed some attributes, and we're setting the new
+        // pos pointer in the state. If we had used peek before, the next call
+        // to ps_next() will restore pos to the peeked value instead of the one
+        // set by the tag content parseing. That's why we need to force the
+        // state to mark the last token state as not peeked.
+        // TODO: I should really get rid of the token peek AP. Instead use a
+        // state marker together with a restore mechanism.
+        // :marker_over_peek
+        ps->is_peek = false;
 
     } else {
         // :restore_pos
@@ -1668,7 +1700,7 @@ void psx_parse_note_title (struct psx_parser_state_t *ps, sstring_t *title, bool
         // Note attributes are stored in the root block not in the heading
         // block.
         struct psx_block_t *root_block = ps->block_stack[0];
-        psx_parse_block_attributes(ps, root_block);
+        psx_parse_block_attributes(ps, root_block, ps->ctx.id);
 
         if (ps->ctx.sd != NULL && root_block->data != NULL) {
             string_t s = {0};
@@ -1713,6 +1745,13 @@ void psx_append_paragraph_continuation_lines (struct psx_parser_state_t *ps, str
     while ((tok_peek.type == TOKEN_TYPE_PARAGRAPH ||
             (tok_peek.type == TOKEN_TYPE_NUMBERED_LIST && strncmp("1", tok_peek.value.s, tok_peek.value.len) != 0 && tok_peek.margin >= new_paragraph->margin)))
     {
+        // Check if this paragraph token is actually a data header. If it is,
+        // then stop appending continuation lines.
+        // TODO: Should we make data header a new kind of block level token?.
+        if (*tok_peek.value.s == '^' && sstr_find_char(&tok_peek.value, ' ') == NULL) {
+            break;
+        }
+
         str_cat_c(&new_paragraph->inline_content, "\n");
         str_cat_literal_token (&new_paragraph->inline_content, tok_peek);
         ps_next(ps);
@@ -1790,7 +1829,24 @@ void psx_parse (struct psx_parser_state_t *ps)
 
         } else if (ps_match(ps, TOKEN_TYPE_PARAGRAPH, NULL)) {
             struct psx_block_t *new_paragraph = psx_push_block (ps, psx_leaf_block_new(ps, BLOCK_TYPE_PARAGRAPH, tok.margin, tok.value));
-            psx_append_paragraph_continuation_lines (ps, new_paragraph);
+
+            // Sigh... more nastiness caused by the peek API...
+            // :marker_over_peek
+            if (*tok.value.s != '^' || sstr_find_char(&tok.value, ' ') != NULL) {
+                psx_append_paragraph_continuation_lines (ps, new_paragraph);
+
+            } else {
+                // The block paragraph token was actually the beginning of
+                // block attributes this means the block's content is actually
+                // empty.
+                strn_set (&new_paragraph->inline_content, "", 0);
+
+                // :restore_pos
+                ps->pos = tok.value.s;
+                ps->column_number = 0;
+            }
+
+            psx_parse_block_attributes(ps, new_paragraph, NULL);
 
             // Paragraph blocks are never left in the stack. Maybe we should
             // just not push leaf blocks into the stack...
@@ -1821,12 +1877,13 @@ void psx_parse (struct psx_parser_state_t *ps)
             }
             ps_next(ps);
 
-            // TODO: I don't thing the token peek API was a very good idea.
+            // TODO: I don't think the token peek API was a very good idea.
             // Backing up the position then restoring the parser seems like a
             // more powerful approach as it allows restoring after an arbitrary
             // number of calls to the tokenizer. This seems to be the only place
             // where we heavily use the peek API, maybe refactor this to not use
             // it and then remove the peek functions.
+            // :marker_over_peek
             ps_restore_pos (ps, start);
 
             // Concatenate lines to inline content while removing  the most
@@ -1950,11 +2007,29 @@ void _str_cat_block_tree (string_t *str, struct psx_block_t *block, int indent, 
     if (block->data == NULL) {
         str_cat_debugstr (str, curr_indent, 0, "");
     } else {
-        str_cat_splx_node_full (str, block->data, curr_indent);
+        str_cat_debugstr (str, curr_indent, ESC_COLOR_CYAN, "TSPLX");
+        // TODO: Ideally we would use something like this for debugging. But
+        // currently the API requires passing the global simplex data context. I
+        // think we shouldn't be asking for that parameter so I'm hesitant to
+        // add it throug all the callstack as function parameter. A quick
+        // solution would be to add an alias to psx_block_t or to splx_node_t
+        // but I still think it's not worth it just fot a debug function...
+        //
+        //string_t tsplx_str = {0};
+        //str_cat_splx_canonical (&tsplx_str, ...? sd, block->data);
+        //str_cat_debugstr (str, curr_indent, ESC_COLOR_YELLOW, str_data(&tsplx_str));
+        //str_free (&tsplx_str);
     }
 
     if (block->block_content == NULL) {
-        str_cat_indented_printf (str, curr_indent, "inline_content:\n");
+        str_cat_indented_printf (str, curr_indent, "inline_content:");
+
+        if (str_len(&block->inline_content) > 0) {
+            str_cat_printf (str, "\n");
+        } else {
+            str_cat_printf (str, " ");
+        }
+
         str_cat_debugstr (str, curr_indent, ESC_COLOR_YELLOW, str_data(&block->inline_content));
         str_cat_printf (str, "\n");
 

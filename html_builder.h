@@ -205,7 +205,11 @@ void str_cat_html_element (string_t *str, struct html_element_t *element, int in
 
         BINARY_TREE_FOR(attribute_map, &element->attributes, attr_node)
         {
-            str_cat_printf (str, " %s=\"%s\"", str_data(&attr_node->key), str_data(&attr_node->value));
+            if (str_len(&attr_node->value) > 0) {
+                str_cat_printf (str, " %s=\"%s\"", str_data(&attr_node->key), str_data(&attr_node->value));
+            } else {
+                str_cat_printf (str, " %s", str_data(&attr_node->key));
+            }
         }
 
         str_cat_printf (str, ">");

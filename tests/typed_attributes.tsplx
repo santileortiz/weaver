@@ -3,3 +3,16 @@ typed_attributes a my-type ;
   my-str "" ;
   my-url "http://example.com" ;
   name "Type Attributes" ;
+
+_ a another-type ;
+  attr "Another Value" ;
+
+_ a type1 ;
+  attr "Some other Value" ;
+  url "http://example.com/content" ;
+
+_ a my-type ;
+  attr1 10 ;
+  attr2 "My Value" ;
+  name "Data without block." ;
+

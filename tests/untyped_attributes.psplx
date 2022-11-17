@@ -1,5 +1,5 @@
 # Untyped Attributes
-\{
+^{
   my-number 0;
   my-str "";
   my-url "http://example.com";

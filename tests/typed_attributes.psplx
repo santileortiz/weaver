@@ -1,5 +1,5 @@
 # Type Attributes
-\my-type{
+^my-type{
 
   my-number 0;
 
@@ -10,3 +10,22 @@
 }
 
 Some paragraph with text.
+
+Single line description of the object.
+^another-type{
+  attr "Another Value";
+}
+
+Multiline block that describes the
+attributed object corresponding to
+the block.
+^type1{
+  attr "Some other Value";
+  url "http://example.com/content";
+}
+
+^my-type{
+  attr1 10;
+  attr2 "My Value";
+  name "Data without block.";
+}

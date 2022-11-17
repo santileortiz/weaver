@@ -1070,6 +1070,11 @@ void prnt_debug_sstring (sstring_t *str)
     str_free (&s);
 }
 
+char* sstr_find_char (sstring_t *str, char c)
+{
+    return memchr(str->s, c, str->len);
+}
+
 
 // Set POSIX locale while storing the previous one. Useful while calling strtod
 // and you know the decimal separator will always be '.', and you don't want it

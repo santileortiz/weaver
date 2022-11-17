@@ -1,5 +1,5 @@
 # Multityped Attributes
-\my-type1\my-type2{
+^my-type1^my-type2{
   my-number 0;
   my-str "";
   my-url "http://example.com";
