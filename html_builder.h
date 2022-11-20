@@ -161,6 +161,28 @@ void html_element_class_add (struct html_t *html, struct html_element_t *html_el
     str_free (&attr);
 }
 
+// FIXME: Why does this cause a double free but the cass add doesn't?... is it
+// related to the fact that classes are shirt and style strings are longer?...
+void html_element_style_add (struct html_t *html, struct html_element_t *html_element, char *value)
+{
+    mem_pool_variable_ensure (html);
+
+    string_t attr = {0};
+    str_set (&attr, "style");
+
+    struct attribute_map_node_t *node;
+    attribute_map_lookup (&html_element->attributes, attr, &node);
+    if (node == NULL) {
+        // And the double freed block was allocated here...
+        html_element_attribute_set (html, html_element, str_data(&attr), value);
+
+    } else {
+        // The double free seems to come from here!...
+        str_cat_printf (&node->value, "; %s", value);
+    }
+    str_free (&attr);
+}
+
 static inline
 bool html_element_is_text_node (struct html_element_t *element)
 {

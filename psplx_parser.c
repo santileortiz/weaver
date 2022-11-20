@@ -1431,25 +1431,15 @@ void psx_create_links_full (struct psx_parser_ctx_t *ctx, struct psx_block_t **r
     }
 }
 
-// I'm anticipating the actual HTML for attributes to be changing a lot, so I
-// don't want to break all tests every time a change is made. Instead, for tests
-// we compare TSPLX data in canonical form and in the HTML we just output a
-// placeholder div that represents all attributes.
-void note_attributes_html_append (struct html_t *html, struct psx_block_t *block, struct html_element_t *parent)
-#ifdef ATTRIBUTE_PLACEHOLDER
-{
-    struct html_element_t *attributes = html_new_element (html, "div");
-    html_element_attribute_set (html, attributes, "id", "__attributes");
-    html_element_append_child (html, parent, attributes);
-}
-#else
+
+void attributes_html_append (struct html_t *html, struct psx_block_t *block, struct html_element_t *parent, char *skip_attr)
 {
     // Types
     struct splx_node_list_t *type_list = cstr_to_splx_node_list_map_get (&block->data->attributes, "a");
 
     if (type_list != NULL) {
         struct html_element_t *types = html_new_element (html, "div");
-        html_element_attribute_set (html, types, "style", "margin-bottom: 10px; align-items: baseline; display: flex; color: var(--secondary-fg-color)");
+        html_element_class_add (html, types, "type-list");
 
         LINKED_LIST_FOR (struct splx_node_list_t *, curr_list_node, type_list) {
             struct html_element_t *value = html_new_element (html, "div");
@@ -1461,22 +1451,26 @@ void note_attributes_html_append (struct html_t *html, struct psx_block_t *block
         html_element_append_child (html, parent, types);
     }
 
+    int num_visible_attributes = block->data->attributes.num_nodes;
+    if (type_list != NULL) num_visible_attributes--;
+    if (skip_attr != NULL) num_visible_attributes--;
 
     // Attributes
 
     // NOTE: Avoid generating any attribute elements if the only present
     // attributer are those already shown soehwre else (note's title, type
     // labels etc.).
-    if ((type_list != NULL || block->data->attributes.num_nodes != 1) &&
-        (type_list == NULL || block->data->attributes.num_nodes != 2)) {
-
+    if (num_visible_attributes > 0) {
         struct html_element_t *container = html_new_element (html, "div");
         html_element_class_add (html, container, "attributes");
 
         BINARY_TREE_FOR (cstr_to_splx_node_list_map, &block->data->attributes, curr_attribute) {
             // Type attributes "a" are rendered as labels, the "name" attribute is
             // the note's title.
-            if (strcmp(curr_attribute->key, "a") == 0 || strcmp(curr_attribute->key, "name") == 0) continue;
+            if (strcmp(curr_attribute->key, "a") == 0 ||
+                (skip_attr != NULL && strcmp(curr_attribute->key, skip_attr) == 0)) {
+                continue;
+            }
 
             struct html_element_t *attribute = html_new_element (html, "div");
             html_element_attribute_set (html, attribute, "style", "align-items: baseline; display: flex; color: var(--secondary-fg-color)");
@@ -1504,17 +1498,63 @@ void note_attributes_html_append (struct html_t *html, struct psx_block_t *block
         html_element_append_child (html, parent, container);
     }
 }
-#endif
 
-void block_attributes_html_append (struct html_t *html, struct psx_block_t *block, struct html_element_t *html_element)
+// I'm anticipating the actual HTML for attributes to be changing a lot, so I
+// don't want to break all tests every time a change is made. Instead, for tests
+// we compare TSPLX data in canonical form and in the HTML we just output a
+// placeholder div that represents all attributes.
+void note_attributes_html_append (struct html_t *html, struct psx_block_t *block, struct html_element_t *parent)
 #ifdef ATTRIBUTE_PLACEHOLDER
 {
-    if (block->data != NULL) {
-        html_element_attribute_set (html, html_element, "data-block-attributes", "");
-    }
+    struct html_element_t *attributes = html_new_element (html, "div");
+    html_element_attribute_set (html, attributes, "id", "__attributes");
+    html_element_append_child (html, parent, attributes);
 }
 #else
 {
+    attributes_html_append (html, block, parent, "name");
+}
+#endif
+
+void attributed_block_html_append (struct psx_parser_ctx_t *ctx, struct html_t *html, struct psx_block_t *block, struct html_element_t *parent)
+#ifdef ATTRIBUTE_PLACEHOLDER
+{
+    assert(block->data != NULL);
+
+    struct html_element_t *new_dom_element = html_new_element (html, "p");
+    html_element_attribute_set (html, html_element, "data-block-attributes", "");
+    html_element_append_child (html, parent, new_dom_element);
+    block_content_parse_text (ctx, html, new_dom_element, str_data(&block->inline_content));
+}
+#else
+{
+    assert(block->data != NULL);
+
+    struct html_element_t *padding = html_new_element (html, "div");
+    html_element_append_child (html, parent, padding);
+    html_element_attribute_set (html, padding, "style", "padding: 0.5em 0;");
+
+    struct html_element_t *new_dom_element = html_new_element (html, "div");
+    html_element_append_child (html, padding, new_dom_element);
+    html_element_class_add (html, new_dom_element, "attributed-block");
+
+    if (str_len(&block->inline_content) > 0) {
+        struct html_element_t *inline_content = html_new_element (html, "p");
+        html_element_append_child (html, new_dom_element, inline_content);
+        block_content_parse_text (ctx, html, inline_content, str_data(&block->inline_content));
+    }
+
+    struct html_element_t *block_attributes = html_new_element (html, "div");
+    html_element_append_child (html, new_dom_element, block_attributes);
+
+    string_t style = {0};
+    str_set (&style, "padding: var(--bleed); background-color: var(--secondary-bg-color);");
+    if (str_len(&block->inline_content) > 0) {
+        str_cat_c (&style,  "border-top: 1px solid #0000001c;");
+    }
+    html_element_attribute_set (html, block_attributes, "style", str_data(&style));
+
+    attributes_html_append (html, block, block_attributes, NULL);
 }
 #endif
 
@@ -1523,10 +1563,14 @@ void block_tree_to_html (struct psx_parser_ctx_t *ctx, struct html_t *html, stru
     string_t buff = {0};
 
     if (block->type == BLOCK_TYPE_PARAGRAPH) {
-        struct html_element_t *new_dom_element = html_new_element (html, "p");
-        html_element_append_child (html, parent, new_dom_element);
-        block_content_parse_text (ctx, html, new_dom_element, str_data(&block->inline_content));
-        block_attributes_html_append (html, block, new_dom_element);
+        if (block->data == NULL) {
+            struct html_element_t *new_dom_element = html_new_element (html, "p");
+            html_element_append_child (html, parent, new_dom_element);
+            block_content_parse_text (ctx, html, new_dom_element, str_data(&block->inline_content));
+
+        } else {
+            attributed_block_html_append (ctx, html, block, parent);
+        }
 
     } else if (block->type == BLOCK_TYPE_HEADING) {
         str_set_printf (&buff, "h%i", block->heading_number);

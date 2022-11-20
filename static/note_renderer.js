@@ -1,11 +1,7 @@
-let content_width = 708 // px
-css_property_set ("--content-width", content_width + "px");
-
-let sidebar_width = 240 // px
-css_property_set ("--sidebar-width", sidebar_width + "px");
-
-let topbar_height = 45 // px
-css_property_set ("--topbar-height", topbar_height + "px");
+// For reference, previously when I needed to make calculations in javascript
+// based on a CSS variable value I would define the variable like this:
+//let content_width = 708 // px
+//css_property_set ("--content-width", content_width + "px");
 
 let note_link_color = "#0D52BF"
 css_property_set ("--note-link-color", note_link_color);
