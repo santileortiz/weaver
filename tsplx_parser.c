@@ -37,16 +37,19 @@ char* splx_get_node_id (struct splx_data_t *sd, struct splx_node_t *node)
     return splx_get_node_id_str (sd, str_data(&node->str));
 }
 
-#define TSPLX_TOKEN_TYPES_TABLE                  \
-    TOKEN_TYPES_ROW(TSPLX_TOKEN_TYPE_UNKNOWN)    \
-    TOKEN_TYPES_ROW(TSPLX_TOKEN_TYPE_COMMENT)    \
-    TOKEN_TYPES_ROW(TSPLX_TOKEN_TYPE_EMPTY_LINE) \
-    TOKEN_TYPES_ROW(TSPLX_TOKEN_TYPE_IDENTIFIER) \
-    TOKEN_TYPES_ROW(TSPLX_TOKEN_TYPE_VARIABLE)   \
-    TOKEN_TYPES_ROW(TSPLX_TOKEN_TYPE_STRING)     \
-    TOKEN_TYPES_ROW(TSPLX_TOKEN_TYPE_NUMBER)     \
-    TOKEN_TYPES_ROW(TSPLX_TOKEN_TYPE_OPERATOR)   \
-    TOKEN_TYPES_ROW(TSPLX_TOKEN_TYPE_EOF)        \
+#define TSPLX_TOKEN_TYPES_TABLE                        \
+    TOKEN_TYPES_ROW(TSPLX_TOKEN_TYPE_UNKNOWN)          \
+    TOKEN_TYPES_ROW(TSPLX_TOKEN_TYPE_COMMENT)          \
+    TOKEN_TYPES_ROW(TSPLX_TOKEN_TYPE_EMPTY_LINE)       \
+    TOKEN_TYPES_ROW(TSPLX_TOKEN_TYPE_IDENTIFIER)       \
+    TOKEN_TYPES_ROW(TSPLX_TOKEN_TYPE_VARIABLE)         \
+    TOKEN_TYPES_ROW(TSPLX_TOKEN_TYPE_STRING)           \
+    TOKEN_TYPES_ROW(TSPLX_TOKEN_TYPE_MULTILINE_STRING) \
+    TOKEN_TYPES_ROW(TSPLX_TOKEN_TYPE_URI)              \
+    TOKEN_TYPES_ROW(TSPLX_TOKEN_TYPE_NUMBER)           \
+    TOKEN_TYPES_ROW(TSPLX_TOKEN_TYPE_SOFT_REFERENCE)   \
+    TOKEN_TYPES_ROW(TSPLX_TOKEN_TYPE_OPERATOR)         \
+    TOKEN_TYPES_ROW(TSPLX_TOKEN_TYPE_EOF)              \
 
 #define TOKEN_TYPES_ROW(value) value,
 enum tsplx_token_type_t {
@@ -274,6 +277,27 @@ struct tsplx_token_t tps_next (struct tsplx_parser_state_t *tps)
         tok->value = SSTRING(non_space_pos, tps->pos - non_space_pos);
         tok->type = TSPLX_TOKEN_TYPE_NUMBER;
 
+    } else if (tps_match_str(tps, "<")) {
+        char *start = tps->pos;
+        while (!tps_is_eof(tps) && tps_curr_char(tps) != '>') {
+            tps_advance_char (tps);
+        }
+
+        tok->type = TSPLX_TOKEN_TYPE_URI;
+        tok->value = SSTRING(start, tps->pos - start);
+
+        // Advance over terminating > character
+        tps_advance_char (tps);
+
+    } else if (tps_match_str(tps, "\"\"\"")) {
+        char *start = tps->pos;
+        while (!tps_is_eof(tps) && !tps_match_str(tps, "\"\"\"")) {
+            tps_advance_char (tps);
+        }
+
+        tok->type = TSPLX_TOKEN_TYPE_MULTILINE_STRING;
+        tok->value = SSTRING(start, tps->pos - start - 3);
+
     } else if (tps_match_str(tps, "\"")) {
         char *start = tps->pos;
         while (!tps_is_eof(tps) && tps_curr_char(tps) != '"') {
@@ -285,6 +309,22 @@ struct tsplx_token_t tps_next (struct tsplx_parser_state_t *tps)
         }
 
         tok->type = TSPLX_TOKEN_TYPE_STRING;
+        tok->value = SSTRING(start, tps->pos - start);
+
+        // Advance over terminating " character
+        tps_advance_char (tps);
+
+    } else if (tps_match_str(tps, "q\"")) {
+        char *start = tps->pos;
+        while (!tps_is_eof(tps) && tps_curr_char(tps) != '"') {
+            tps_advance_char (tps);
+
+            if (tps_curr_char(tps) == '"' && *(tps->pos - 1) == '\\') {
+                tps_advance_char (tps);
+            }
+        }
+
+        tok->type = TSPLX_TOKEN_TYPE_SOFT_REFERENCE;
         tok->value = SSTRING(start, tps->pos - start);
 
         // Advance over terminating " character
@@ -372,6 +412,16 @@ bool splx_node_render_as_reference (struct splx_node_t *node, struct cstr_to_spl
 }
 
 static inline
+void splx_cat_node_identifier (string_t *str, int curr_indent, struct splx_node_t *node)
+{
+    if (node->uri_formatted_identifier) {
+        str_cat_indented_printf (str, curr_indent, "<%s>", str_data(&node->str));
+    } else {
+        str_cat_indented_printf (str, curr_indent, "%s", str_data(&node->str));
+    }
+}
+
+static inline
 bool splx_node_is_root (struct splx_data_t *sd, struct splx_node_t *node)
 {
     return sd->root == node;
@@ -387,7 +437,15 @@ struct splx_node_t* splx_node_new (struct splx_data_t *sd)
 
 void splx_node_add (struct splx_data_t *sd, struct splx_node_t *node)
 {
-    if (splx_node_has_name (node)) {
+    // Don't reuse literal nodes.
+    // TODO: If this is a desireable thing to do for space performance reasons,
+    // then we should have a string pool, not really a value node map. A value
+    // node map is problematic because we may have 2 literals of different type
+    // but same value like "John Doe" and q"John Doe" or 1 and "1".
+    if (splx_node_has_name (node) &&
+        node->type != SPLX_NODE_TYPE_INTEGER &&
+        node->type != SPLX_NODE_TYPE_STRING &&
+        node->type != SPLX_NODE_TYPE_SOFT_REFERENCE) {
         cstr_to_splx_node_map_insert (&sd->nodes, str_data(&node->str), node);
     }
 
@@ -537,7 +595,13 @@ void str_cat_splx_dump_full (string_t *str, struct splx_data_t *sd, struct splx_
     str_cat_indented_printf (str, curr_indent, ECMA_S_CYAN(0, "%p") "\n", node);
     str_cat_indented_printf (str, curr_indent, "TYPE: %s\n", splx_node_type_names[node->type]);
     str_cat_indented_c (str, "STR: ", curr_indent);
-    str_cat_debugstr (str, 0, ESC_COLOR_YELLOW, str_data(&node->str));
+
+    if (strstr(str_data(&node->str), "\n") == NULL) {
+        str_cat_debugstr (str, 0, ESC_COLOR_YELLOW, str_data(&node->str));
+    } else {
+        str_cat_printf (str, "\n");
+        str_cat_debugstr (str, curr_indent + 1*SPLX_STR_INDENT, ESC_COLOR_YELLOW, str_data(&node->str));
+    }
 
     if (node->type == SPLX_NODE_TYPE_OBJECT ||
         node->attributes.num_nodes > 0 ||
@@ -588,11 +652,15 @@ void str_cat_splx_dump_full (string_t *str, struct splx_data_t *sd, struct splx_
 
 void str_cat_literal_node (string_t *str, struct splx_node_t *node)
 {
-    if (node->type == SPLX_NODE_TYPE_STRING) {
+    if (node->type == SPLX_NODE_TYPE_STRING || node->type == SPLX_NODE_TYPE_SOFT_REFERENCE) {
         string_t buff = {0};
 
         str_cpy (&buff, &node->str);
         str_replace (&buff, "\"", "\\\"", NULL);
+        str_replace (&buff, "\n", "\\n", NULL);
+        str_replace (&buff, "\t", "\\t", NULL);
+
+        if (node->type == SPLX_NODE_TYPE_SOFT_REFERENCE) str_cat_c(str, "q");
         str_cat_printf (str, "\"%s\"", str_data(&buff));
 
         str_free (&buff);
@@ -630,7 +698,7 @@ void tps_cat_floating_literals (string_t *str, struct splx_data_t *sd,
         if (curr_node->type == SPLX_NODE_TYPE_OBJECT) {
             if (splx_node_render_as_reference(curr_node, printed_nodes))
             {
-                str_cat_indented_printf (str, curr_indent, "%s", str_data(&curr_node->str));
+                splx_cat_node_identifier(str, curr_indent, curr_node);
 
             } else {
                 str_cat_indented_c (str, "[\n", curr_indent);
@@ -743,7 +811,7 @@ void str_cat_splx_canonical_full (string_t *str, struct splx_data_t *sd,
 
                 if (curr_node->type == SPLX_NODE_TYPE_OBJECT) {
                     if (splx_node_render_as_reference(curr_node, printed_nodes)) {
-                        str_cat_printf (str, "%s", str_data(&curr_node->str));
+                        splx_cat_node_identifier (str, curr_indent, curr_node);
 
                     } else {
                         str_cat_indented_c (str, "[\n", curr_indent + indent_levels*SPLX_STR_INDENT);
@@ -848,12 +916,16 @@ void str_cat_splx_canonical(string_t *str, struct splx_data_t *sd, struct splx_n
 
 void str_cat_literal_node_ttl (string_t *str, struct splx_node_t *node)
 {
-    if (node->type == SPLX_NODE_TYPE_STRING) {
+    if (node->type == SPLX_NODE_TYPE_STRING || node->type == SPLX_NODE_TYPE_SOFT_REFERENCE) {
         string_t buff = {0};
 
         str_cpy (&buff, &node->str);
         str_replace (&buff, "\"", "\\\"", NULL);
+        str_replace (&buff, "\n", "\\n", NULL);
+        str_replace (&buff, "\t", "\\t", NULL);
+
         str_cat_printf (str, "\"%s\"", str_data(&buff));
+        if (node->type == SPLX_NODE_TYPE_SOFT_REFERENCE) str_cat_c(str, "^^t:soft-reference");
 
         str_free (&buff);
 
@@ -1173,7 +1245,7 @@ bool tps_parse_node (struct tsplx_parser_state_t *tps, struct splx_node_t *root_
 
     while (!tps->is_eof && !tps->error) {
         tps_next (tps);
-        if (tps_match(tps, TSPLX_TOKEN_TYPE_IDENTIFIER, NULL)) {
+        if (tps_match(tps, TSPLX_TOKEN_TYPE_IDENTIFIER, NULL) || tps_match(tps, TSPLX_TOKEN_TYPE_URI, NULL)) {
             struct splx_node_t *node = tps_get_triple_node (tps, triple, triple_idx);
             if (node != NULL) {
                 splx_node_clear (node);
@@ -1184,6 +1256,9 @@ bool tps_parse_node (struct tsplx_parser_state_t *tps, struct splx_node_t *root_
                     strn_set (&node->str, tps->token.value.s, tps->token.value.len);
                 }
                 node->type = SPLX_NODE_TYPE_OBJECT;
+                if (tps_match(tps, TSPLX_TOKEN_TYPE_URI, NULL)) {
+                    node->uri_formatted_identifier = true;
+                }
                 triple_idx++;
             }
 
@@ -1215,12 +1290,40 @@ bool tps_parse_node (struct tsplx_parser_state_t *tps, struct splx_node_t *root_
 
             str_free (&variable_name);
 
+        } else if (tps_match(tps, TSPLX_TOKEN_TYPE_MULTILINE_STRING, NULL)) {
+            // TODO: Does this implementation of multiline strings work in
+            // systems that use \r\n as line feed?.
+
+            struct splx_node_t *node = tps_get_triple_node (tps, triple, triple_idx);
+            if (node != NULL) {
+                splx_node_clear (node);
+                strn_set (&node->str, tps->token.value.s, tps->token.value.len);
+                str_replace (&node->str, "\\n", "\n", NULL);
+                str_replace (&node->str, "\\t", "\t", NULL);
+
+                str_dedent(&node->str);
+
+                node->type = SPLX_NODE_TYPE_STRING;
+                triple_idx++;
+            }
+
         } else if (tps_match(tps, TSPLX_TOKEN_TYPE_STRING, NULL)) {
             struct splx_node_t *node = tps_get_triple_node (tps, triple, triple_idx);
             if (node != NULL) {
                 splx_node_clear (node);
                 strn_set (&node->str, tps->token.value.s, tps->token.value.len);
+                str_replace (&node->str, "\\n", "\n", NULL);
+                str_replace (&node->str, "\\t", "\t", NULL);
                 node->type = SPLX_NODE_TYPE_STRING;
+                triple_idx++;
+            }
+
+        } else if (tps_match(tps, TSPLX_TOKEN_TYPE_SOFT_REFERENCE, NULL)) {
+            struct splx_node_t *node = tps_get_triple_node (tps, triple, triple_idx);
+            if (node != NULL) {
+                splx_node_clear (node);
+                strn_set (&node->str, tps->token.value.s, tps->token.value.len);
+                node->type = SPLX_NODE_TYPE_SOFT_REFERENCE;
                 triple_idx++;
             }
 

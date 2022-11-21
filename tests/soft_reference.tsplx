@@ -1,0 +1,7 @@
+_ a person ;
+ name "John Doe" .
+
+
+_ a person ;
+ name "Jane Doe" ;
+ knows q"John Doe" .

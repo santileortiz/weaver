@@ -1,0 +1,9 @@
+<tsplx-data> <has-entity> [
+      a <person> ;
+      <name> "John Doe" ;
+    ] ,
+    [
+      a <person> ;
+      <knows> "John Doe"^^t:soft-reference ;
+      <name> "Jane Doe" ;
+    ] .

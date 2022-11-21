@@ -8,13 +8,14 @@ BINARY_TREE_NEW (ptr_set, void*, void*, (a==b) ? 0 : (a<b ? -1 : 1))
 BINARY_TREE_NEW (cstr_to_splx_node_map, char*, struct splx_node_t*, strcmp(a, b))
 BINARY_TREE_NEW (cstr_to_splx_node_list_map, char*, struct splx_node_list_t*, strcmp(a, b))
 
-#define SPLX_NODE_TYPES_TABLE                   \
-    SPLX_NODE_TYPE_ROW(SPLX_NODE_TYPE_UNKNOWN)  \
-    SPLX_NODE_TYPE_ROW(SPLX_NODE_TYPE_STRING)   \
-    SPLX_NODE_TYPE_ROW(SPLX_NODE_TYPE_DOUBLE)   \
-    SPLX_NODE_TYPE_ROW(SPLX_NODE_TYPE_INTEGER)  \
-    SPLX_NODE_TYPE_ROW(SPLX_NODE_TYPE_URI)      \
-    SPLX_NODE_TYPE_ROW(SPLX_NODE_TYPE_OBJECT)   \
+#define SPLX_NODE_TYPES_TABLE                         \
+    SPLX_NODE_TYPE_ROW(SPLX_NODE_TYPE_UNKNOWN)        \
+    SPLX_NODE_TYPE_ROW(SPLX_NODE_TYPE_SOFT_REFERENCE) \
+    SPLX_NODE_TYPE_ROW(SPLX_NODE_TYPE_STRING)         \
+    SPLX_NODE_TYPE_ROW(SPLX_NODE_TYPE_DOUBLE)         \
+    SPLX_NODE_TYPE_ROW(SPLX_NODE_TYPE_INTEGER)        \
+    SPLX_NODE_TYPE_ROW(SPLX_NODE_TYPE_URI)            \
+    SPLX_NODE_TYPE_ROW(SPLX_NODE_TYPE_OBJECT)         \
 
 #define SPLX_NODE_TYPE_ROW(value) value,
 enum splx_node_type_t {
@@ -36,6 +37,8 @@ struct splx_node_t {
 
     struct splx_node_list_t *floating_values;
     struct splx_node_list_t *floating_values_end;
+
+    bool uri_formatted_identifier;
 };
 
 struct splx_node_list_t {

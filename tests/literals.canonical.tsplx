@@ -1,0 +1,10 @@
+1;
+"1";
+<http://example.com>;
+"Multi line\n string.";
+
+_ a type1 ;
+  age 1 ;
+  name "1" ;
+  text "Multi line\n string.\nAutomatically dedented." ;
+  url <http://example.com> ;

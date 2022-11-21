@@ -27,6 +27,10 @@ body, html {
     font-size: 16px;
     font-family: var(--ui-font);
     font-weight: 400;
+
+    /*For some reason not doing this causes a double scrollbar in pages with
+     * math rendering.*/
+    overflow-y:hidden;
 }
 
 h1, h2, h3, h4, h5, h6 {
@@ -242,6 +246,7 @@ code {
     gap: 6px;
     display: flex;
     flex-direction: column;
+    white-space: pre;
 }
 
 .attribute-label {

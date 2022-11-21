@@ -997,6 +997,63 @@ void str_strip (string_t *str)
     }
 }
 
+void str_dedent (string_t *str)
+{
+    char *pos = str_data(str);
+    uint32_t len = str_len(str);
+
+    bool is_space_indented = true;
+    int max_run = INT32_MAX;
+    for (int i=0; i<len; i++) {
+        if (*(pos + i) == '\n') {
+            i++;
+
+            int curr_run = 0;
+            while (*(pos + i) == ' '){
+                i++;
+                curr_run++;
+            }
+            max_run = MIN(max_run, curr_run);
+        }
+
+        if (max_run == 0) {
+            is_space_indented = false;
+            break;
+        }
+    }
+
+
+    if (!is_space_indented) {
+        max_run = INT32_MAX;
+        for (int i=0; i<len; i++) {
+            if (*(pos + i) == '\n') {
+                i++;
+
+                int curr_run = 0;
+                while (*(pos + i) == '\t'){
+                    i++;
+                    curr_run++;
+                }
+                max_run = MIN(max_run, curr_run);
+            }
+
+            if (max_run == 0) {
+                break;
+            }
+        }
+    }
+
+    if (max_run > 0) {
+        string_t indent = {0};
+        str_set(&indent, "\n");
+        str_cat_char(&indent, is_space_indented ? ' ' : '\t', max_run);
+        str_replace (str, str_data(&indent), "\n", NULL);
+        str_free(&indent);
+    }
+
+    str_strip(str);
+}
+
 ////////////////////
 // SHALLOW STRINGS
 //
