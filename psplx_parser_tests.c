@@ -139,7 +139,11 @@ void negative_programmatic_test (struct test_ctx_t *t, struct note_runtime_t *rt
 
         if (test_note->error || str_len (&test_note->error_msg) > 0) {
             *errored_successfuly = true;
+
+#if !defined TEST_NO_SUBPROCESS
             str_set (&__subprocess_output, str_data(&test_note->error_msg));
+#endif
+
         }
     );
 

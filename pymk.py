@@ -284,13 +284,16 @@ C_FLAGS = modes[mode]
 def check_js_toggle():
     return get_cli_persistent_toggle ('use_js', '--js-enable', '--js-disable', True)
 
-def common_build(c_sources, out_fname, use_js):
+def common_build(c_sources, out_fname, use_js, subprocess_test=True):
     global C_FLAGS
 
     if use_js:
         c_sources += " lib/duktape.c"
     else:
         C_FLAGS += " -DNO_JS"
+
+    if not subprocess_test:
+        C_FLAGS += " -DTEST_NO_SUBPROCESS"
 
     generate_automacros ('automacros.h')
 
@@ -303,10 +306,14 @@ def weaver():
     weaver_build (check_js_toggle ())
 
 def psplx_parser_tests():
-    return common_build ("psplx_parser_tests.c", 'bin/psplx_parser_tests', False)
+    subprocess_test = not get_cli_bool_opt ("--no-subprocess")
+    
+    return common_build ("psplx_parser_tests.c", 'bin/psplx_parser_tests', False, subprocess_test)
 
 def tsplx_parser_tests():
-    return common_build ("tsplx_parser_tests.c", 'bin/tsplx_parser_tests', False)
+    subprocess_test = not get_cli_bool_opt ("--no-subprocess")
+
+    return common_build ("tsplx_parser_tests.c", 'bin/tsplx_parser_tests', False, subprocess_test)
 
 def cloc():
     ex ('cloc --exclude-list-file=.clocignore .')
