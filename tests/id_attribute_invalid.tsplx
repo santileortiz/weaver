@@ -1,0 +1,11 @@
+2C73CW77H6 a type1 ;
+  id 2C73CW77H6 ;
+
+66WC4FQ6V3 a type2 ;
+  id 4592FWR344 ; // Should be ignored
+
+myIdentifierX1 a type2 ;
+  id "myIdentifierX1" ;
+
+myIdentifierX2 a type2 ;
+  id "myIdentifierX3" ; // Should be ignored

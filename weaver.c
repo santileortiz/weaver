@@ -222,6 +222,14 @@ int main(int argc, char** argv)
         rt_process_notes (rt, &error_msg);
     }
 
+    //print_splx_dump (&rt->sd, rt->sd.entities);
+
+    //BINARY_TREE_FOR(cstr_to_splx_node_map, &rt->sd.nodes, curr_splx_node) {
+    //    printf ("%s\n", curr_splx_node->key);
+    //    print_splx_dump (&rt->sd, curr_splx_node->value);
+    //    printf ("\n");
+    //}
+
     // GENERATE OUTPUT
     if (success) {
         if (command == CLI_COMMAND_GENERATE) {

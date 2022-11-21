@@ -1,0 +1,6 @@
+<tsplx-data> <has-entity> <2C73CW77H6> ,
+    <myIdentifierX1> .
+
+<2C73CW77H6> a <type1> .
+
+<myIdentifierX1> a <type2> .

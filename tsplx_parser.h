@@ -47,6 +47,14 @@ struct splx_data_t {
     mem_pool_t pool;
 
     struct cstr_to_splx_node_map_t nodes;
+    struct splx_node_t *entities;
+
+    // The root is different than "entities" in that it has the actual nesting
+    // structure of the whole object parsed, entities instead is just a flat
+    // node containing all entities as floating objects. Some entities without
+    // identifier may only be reached through an iterative traversal starting at
+    // the root, while it's guaranteed that all entities are reachable at one
+    // level depth through the entities node.
     struct splx_node_t *root;
 };
 

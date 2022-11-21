@@ -1667,11 +1667,7 @@ void psx_parse_block_attributes (struct psx_parser_state_t *ps, struct psx_block
     if (ps_match(ps, TOKEN_TYPE_DATA_TAG, NULL)) {
         assert(ps->ctx.sd != NULL);
 
-        if (node_id != NULL) {
-            block->data = splx_node_get_or_create(ps->ctx.sd, node_id, SPLX_NODE_TYPE_OBJECT);
-        } else {
-            block->data = splx_node_new(ps->ctx.sd);
-        }
+        block->data = splx_node_get_or_create(ps->ctx.sd, node_id, SPLX_NODE_TYPE_OBJECT);
 
         if (tok.value.len > 0) {
             char *internal_backup_pos;
@@ -1705,7 +1701,7 @@ void psx_parse_block_attributes (struct psx_parser_state_t *ps, struct psx_block
 
         string_t tsplx_data = {0};
         psx_cat_tag_content (ps, &tsplx_data, true);
-        tsplx_parse_str_name_full(ps->ctx.sd, str_data(&tsplx_data), block->data, NULL);
+        tsplx_parse_str_name_full(ps->ctx.sd, str_data(&tsplx_data), block->data, ps->ctx.error_msg);
         str_free (&tsplx_data);
 
         // At this point, we parsed some attributes, and we're setting the new
@@ -1713,7 +1709,7 @@ void psx_parse_block_attributes (struct psx_parser_state_t *ps, struct psx_block
         // to ps_next() will restore pos to the peeked value instead of the one
         // set by the tag content parseing. That's why we need to force the
         // state to mark the last token state as not peeked.
-        // TODO: I should really get rid of the token peek AP. Instead use a
+        // TODO: I should really get rid of the token peek API. Instead use a
         // state marker together with a restore mechanism.
         // :marker_over_peek
         ps->is_peek = false;
