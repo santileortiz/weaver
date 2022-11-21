@@ -247,7 +247,7 @@ int main(int argc, char** argv)
             if (path_exists (str_data(&buff))) {
                 expected_tsplx = full_file_read (NULL, str_data(&buff), NULL);
             }
-            bool missing_tsplx = (expected_tsplx == NULL && note->tree->data != NULL);
+            bool missing_tsplx = (expected_tsplx == NULL && note->tree != NULL && note->tree->data != NULL);
 
             if (expected_html == NULL || missing_tsplx) {
                 string_t missing_info = {0};
@@ -283,7 +283,7 @@ int main(int argc, char** argv)
 
 
 
-            if (path_exists (str_data(&buff)) && note->tree->data != NULL) {
+            if (path_exists (str_data(&buff)) && note->tree != NULL && note->tree->data != NULL) {
                 string_t tsplx_str = {0};
                 cat_note_tsplx (&tsplx_str, &rt->sd, note->tree);
 

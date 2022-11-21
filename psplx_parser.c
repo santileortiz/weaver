@@ -1522,7 +1522,7 @@ void attributed_block_html_append (struct psx_parser_ctx_t *ctx, struct html_t *
     assert(block->data != NULL);
 
     struct html_element_t *new_dom_element = html_new_element (html, "p");
-    html_element_attribute_set (html, html_element, "data-block-attributes", "");
+    html_element_attribute_set (html, new_dom_element, "data-block-attributes", "");
     html_element_append_child (html, parent, new_dom_element);
     block_content_parse_text (ctx, html, new_dom_element, str_data(&block->inline_content));
 }
