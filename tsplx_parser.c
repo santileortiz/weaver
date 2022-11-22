@@ -1199,9 +1199,9 @@ struct splx_node_t* _tps_get_buffered_node(struct tsplx_parser_state_t *tps, str
 }
 
 struct splx_node_list_t* tps_insert_subject (struct splx_data_t *sd,
-                                                  struct splx_node_t *object,
-                                                  char *predicate_str,
-                                                  struct splx_node_t *subject)
+                                             struct splx_node_t *object,
+                                             char *predicate_str,
+                                             struct splx_node_t *subject)
 {
     struct splx_node_list_t *new_node_list_element = tps_wrap_in_list_node (sd, subject);
     cstr_to_splx_node_list_map_insert (&object->attributes, predicate_str, new_node_list_element);
@@ -1210,10 +1210,13 @@ struct splx_node_list_t* tps_insert_subject (struct splx_data_t *sd,
 }
 
 void tps_internal_attributes(struct tsplx_parser_state_t *tps,
+                             struct splx_data_t *sd,
                              struct splx_node_t *curr_object, struct splx_node_t *subject)
 {
     if (subject->type == SPLX_NODE_TYPE_OBJECT || subject->type == SPLX_NODE_TYPE_STRING) {
         str_set (&curr_object->str, str_data(&subject->str));
+        cstr_to_splx_node_map_insert (&sd->nodes, str_data(&subject->str), curr_object);
+
     } else {
         // TODO: should we also somehow allows integer, float and boolean
         // IDs?. integers kind of make sense (but it's very likely they
@@ -1519,7 +1522,7 @@ bool tps_parse_node (struct tsplx_parser_state_t *tps, struct splx_node_t *root_
                         while (curr_value->next != NULL) curr_value = curr_value->next;
 
                     } else if (str_len(&curr_object->str) == 0) {
-                        tps_internal_attributes(tps, curr_object, &triple[1]);
+                        tps_internal_attributes(tps, sd, curr_object, &triple[1]);
                     }
 
                     triple_idx = 0;
@@ -1546,7 +1549,7 @@ bool tps_parse_node (struct tsplx_parser_state_t *tps, struct splx_node_t *root_
                     LINKED_LIST_APPEND (root_object->floating_values, new_node_list_element);
 
                 } else if (str_len(&new_node->str) == 0) {
-                    tps_internal_attributes(tps, curr_object, &triple[2]);
+                    tps_internal_attributes(tps, sd, curr_object, &triple[2]);
                 }
 
                 triple_idx = 0;

@@ -198,7 +198,7 @@ int main(int argc, char** argv)
     // files to be processed.
     bool require_target_dir = false;
 
-    if (no_opt != NULL) {
+    if (command == CLI_COMMAND_NONE && no_opt != NULL) {
         char *note_path = no_opt;
         require_target_dir = true;
 
@@ -223,12 +223,6 @@ int main(int argc, char** argv)
     }
 
     //print_splx_dump (&rt->sd, rt->sd.entities);
-
-    //BINARY_TREE_FOR(cstr_to_splx_node_map, &rt->sd.nodes, curr_splx_node) {
-    //    printf ("%s\n", curr_splx_node->key);
-    //    print_splx_dump (&rt->sd, curr_splx_node->value);
-    //    printf ("\n");
-    //}
 
     // GENERATE OUTPUT
     if (success) {
@@ -347,6 +341,45 @@ int main(int argc, char** argv)
                 } else {
                     printf (ECMA_RED("error:") " Invalid identifier.\n");
                 }
+
+            } else if (strcmp(query, "type()") == 0) {
+                struct splx_node_t *entities_node = rt->sd.entities;
+
+                struct cstr_to_splx_node_list_map_t type_index = {0};
+
+                LINKED_LIST_FOR(struct splx_node_list_t *, curr_list_node, entities_node->floating_values) {
+                    struct splx_node_t *entitity = curr_list_node->node;
+
+                    BINARY_TREE_FOR (cstr_to_splx_node_list_map, &entitity->attributes, curr_attribute) {
+                        if (strcmp(curr_attribute->key, "a") == 0) {
+                            LINKED_LIST_FOR (struct splx_node_list_t *, curr_node_list_element, curr_attribute->value) {
+                                struct splx_node_list_t *new_node_list_element =
+                                    tps_wrap_in_list_node (&rt->sd, curr_node_list_element->node);
+
+                                char *type = str_data(&curr_node_list_element->node->str);
+                                struct splx_node_list_t *existing_list = cstr_to_splx_node_list_map_get (&type_index, type);
+                                if (existing_list == NULL) {
+                                    cstr_to_splx_node_list_map_insert (&type_index, type, new_node_list_element);
+                                } else {
+                                    new_node_list_element->next = existing_list->next;
+                                    existing_list->next = new_node_list_element;
+                                }
+                            }
+                        }
+                    }
+                }
+
+
+                BINARY_TREE_FOR (cstr_to_splx_node_list_map, &type_index, curr_type) {
+                    int num_instances = 0;
+                    LINKED_LIST_FOR (struct splx_node_list_t *, curr_node_list_element, curr_type->value) {
+                        num_instances++;
+                    }
+
+                    printf ("%s (%i)\n", curr_type->key, num_instances);
+                }
+
+                cstr_to_splx_node_list_map_destroy (&type_index);
             }
         }
 
