@@ -1,0 +1,5 @@
+// TODO: This cause an infinite loop in the TTL serializer and when using the
+// TSPLX --dump option.
+CJ8MHGPVP3 a type ; {
+  self CJ8MHGPVP3;
+}

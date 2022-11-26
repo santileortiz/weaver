@@ -1209,20 +1209,22 @@ struct splx_node_list_t* tps_insert_subject (struct splx_data_t *sd,
     return new_node_list_element;
 }
 
-void tps_internal_attributes(struct tsplx_parser_state_t *tps,
-                             struct splx_data_t *sd,
-                             struct splx_node_t *curr_object, struct splx_node_t *subject)
+void tps_resolve_id_attribute(struct tsplx_parser_state_t *tps,
+                              struct splx_data_t *sd,
+                              struct splx_node_t *curr_object, struct splx_node_t *subject)
 {
-    if (subject->type == SPLX_NODE_TYPE_OBJECT || subject->type == SPLX_NODE_TYPE_STRING) {
-        str_set (&curr_object->str, str_data(&subject->str));
-        cstr_to_splx_node_map_insert (&sd->nodes, str_data(&curr_object->str), curr_object);
+    if (str_len(&curr_object->str) == 0) {
+        if (subject->type == SPLX_NODE_TYPE_OBJECT || subject->type == SPLX_NODE_TYPE_STRING) {
+            str_set (&curr_object->str, str_data(&subject->str));
+            cstr_to_splx_node_map_insert (&sd->nodes, str_data(&curr_object->str), curr_object);
 
-    } else {
-        // TODO: should we also somehow allows integer, float and boolean
-        // IDs?. integers kind of make sense (but it's very likely they
-        // should actually be some locally scoped Ids...), the other types,
-        // don't make much sense.
-        tps_warning (tps, "Unexpected id type.");
+        } else {
+            // TODO: should we also somehow allows integer, float and boolean
+            // IDs?. integers kind of make sense (but it's very likely they
+            // should actually be some locally scoped Ids...), the other types,
+            // don't make much sense.
+            tps_warning (tps, "Unexpected id type.");
+        }
     }
 }
 
@@ -1504,8 +1506,10 @@ bool tps_parse_node (struct tsplx_parser_state_t *tps, struct splx_node_t *root_
                     // Completed a triple with respect to the current object.
 
                     char *predicate_str = splx_get_node_id (sd, &triple[0]);
-                    if (strcmp(predicate_str, "id") != 0) {
+                    if (strcmp(predicate_str, "id") == 0) {
+                        tps_resolve_id_attribute(tps, sd, curr_object, &triple[1]);
 
+                    } else {
                         struct splx_node_list_t *subject_node_list = tps_subject_node_list_from_tmp_node (sd, &triple[1]);
 
                         // Look if this predicate is already used in the curent
@@ -1520,9 +1524,6 @@ bool tps_parse_node (struct tsplx_parser_state_t *tps, struct splx_node_t *root_
 
                         curr_value = subject_node_list;
                         while (curr_value->next != NULL) curr_value = curr_value->next;
-
-                    } else if (str_len(&curr_object->str) == 0) {
-                        tps_internal_attributes(tps, sd, curr_object, &triple[1]);
                     }
 
                     triple_idx = 0;
@@ -1537,7 +1538,10 @@ bool tps_parse_node (struct tsplx_parser_state_t *tps, struct splx_node_t *root_
                 curr_object = new_node;
 
                 char *predicate_str = splx_get_node_id (sd, &triple[1]);
-                if (strcmp(predicate_str, "id") != 0) {
+                if (strcmp(predicate_str, "id") == 0) {
+                    tps_resolve_id_attribute(tps, sd, curr_object, &triple[2]);
+
+                } else {
 
                     struct splx_node_list_t *subject_node_list = tps_subject_node_list_from_tmp_node (sd, &triple[2]);
 
@@ -1548,8 +1552,6 @@ bool tps_parse_node (struct tsplx_parser_state_t *tps, struct splx_node_t *root_
                     struct splx_node_list_t *new_node_list_element = tps_wrap_in_list_node (sd, new_node);
                     LINKED_LIST_APPEND (root_object->floating_values, new_node_list_element);
 
-                } else if (str_len(&new_node->str) == 0) {
-                    tps_internal_attributes(tps, sd, curr_object, &triple[2]);
                 }
 
                 triple_idx = 0;
