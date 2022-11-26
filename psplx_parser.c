@@ -586,6 +586,10 @@ void str_cat_literal_token (string_t *str, struct psx_token_t token)
         str_cat_c (str, "\\");
         strn_cat_c (str, token.value.s, token.value.len);
 
+    } else if (token.type == TOKEN_TYPE_DATA_TAG) {
+        str_cat_c (str, "^");
+        strn_cat_c (str, token.value.s, token.value.len);
+
     } else if (token.type == TOKEN_TYPE_NUMBERED_LIST) {
         strn_cat_c(str, token.value.s, token.value.len);
         str_cat_c (str, ".");

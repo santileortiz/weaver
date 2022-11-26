@@ -13,6 +13,9 @@ link -> http://example.com}. Now we test splitting the \link{link
 title -> http://example.com} and the URL \link{link -> http://exam
 ple.com}.
 
+Text containing ^ chatacters, ^also as^ inline tag content
+\code{^person["name"]} and in backticks inline code `^person["name"]`.
+
 \link{link -> http://example.com}
 
 \youtube{https://youtu.be/Rpjab--XQ0U}
@@ -21,3 +24,5 @@ ple.com}.
 
 This is a paragraph with some embedded math in it \math{e^{\pi i} = -1}. And
 now some math in display mode \Math{v - e + f = 2}.
+
+
