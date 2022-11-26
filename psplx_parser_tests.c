@@ -175,12 +175,17 @@ void negative_tests (struct test_ctx_t *t, struct note_runtime_t *rt)
 
 void set_expected_path (string_t *str, char *note_id, char *extension)
 {
-    str_set_printf (str, TESTS_DIR "/%s.%s", note_id, extension);
+    str_set_printf (str, TESTS_DIR "/%s%s", note_id, extension);
+}
+
+void set_expected_tsplx_path (string_t *str, char *note_id)
+{
+    set_expected_path (str, note_id, ".canonical.tsplx");
 }
 
 void set_expected_html_path (string_t *str, char *note_id)
 {
-    set_expected_path (str, note_id, "html");
+    set_expected_path (str, note_id, ".html");
 }
 
 // TODO: Right now we only attaxha SPLX data node to each block, this just
@@ -219,6 +224,7 @@ int main(int argc, char** argv)
     rt_init_from_dir (rt, TESTS_DIR);
 
     STACK_ALLOCATE (struct cli_ctx_t, cli_ctx);
+    bool tsplx_out = get_cli_bool_opt_ctx (cli_ctx, "--tsplx", argv, argc);
     bool html_out = get_cli_bool_opt_ctx (cli_ctx, "--html", argv, argc);
     bool blocks_out = get_cli_bool_opt_ctx (cli_ctx, "--blocks", argv, argc);
     bool no_output = get_cli_bool_opt_ctx (cli_ctx, "--none", argv, argc);
@@ -246,21 +252,21 @@ int main(int argc, char** argv)
                 expected_html = full_file_read (NULL, str_data(&buff), NULL);
             }
 
-            set_expected_path (&buff, note->id, "tsplx");
+            set_expected_tsplx_path (&buff, note->id);
             char *expected_tsplx = NULL;
             if (path_exists (str_data(&buff))) {
                 expected_tsplx = full_file_read (NULL, str_data(&buff), NULL);
             }
-            bool missing_tsplx = (expected_tsplx == NULL && note->tree != NULL && note->tree->data != NULL);
+            bool warn_missing_tsplx = (expected_tsplx == NULL && note->tree != NULL && note->tree->data != NULL) && tsplx_out;
 
-            if (expected_html == NULL || missing_tsplx) {
+            if (expected_html == NULL || warn_missing_tsplx) {
                 string_t missing_info = {0};
 
                 if (expected_html == NULL) {
                     str_cat_c (&missing_info, "!html");
                 }
 
-                if (missing_tsplx) {
+                if (warn_missing_tsplx) {
                     if (str_len (&missing_info) && str_last (&missing_info) != ' ') {
                         str_cat_c (&missing_info, " ");
                     }
@@ -350,7 +356,7 @@ int main(int argc, char** argv)
                         printf ("\n");
                         printf (ECMA_MAGENTA("TSPLX") "\n");
                         prnt_debug_string (str_data(&tsplx_str));
-                        set_expected_path (&buff, note->id, "tsplx");
+                        set_expected_tsplx_path (&buff, note->id);
                         print_diff_str_to_expected_file (&tsplx_str, str_data (&buff));
 
                         str_free (&tsplx_str);
