@@ -281,7 +281,12 @@ int main(int argc, char** argv)
 
             if (expected_html != NULL) {
                 test_push (t, "Matches expected HTML");
-                test_str (t, str_data(&note->html), expected_html);
+
+                string_t html_str = {0};
+                str_cat_html (&html_str, note->html, 2);
+                test_str (t, str_data(&html_str), expected_html);
+                str_free(&html_str);
+
                 free (expected_html);
             }
 
@@ -308,7 +313,10 @@ int main(int argc, char** argv)
         if (note != NULL) {
             if (!note->error) {
                 if (html_out) {
-                    printf ("%s", str_data(&note->html));
+                    string_t html_str = {0};
+                    str_cat_html (&html_str, note->html, 2);
+                    printf ("%s", str_data(&html_str));
+                    str_free(&html_str);
 
                 } else if (blocks_out) {
                     STACK_ALLOCATE(struct psx_parser_ctx_t, ctx);
@@ -327,10 +335,13 @@ int main(int argc, char** argv)
                     prnt_debug_string (str_data(&note->psplx));
                     printf ("\n");
 
+                    string_t html_str = {0};
+                    str_cat_html (&html_str, note->html, 2);
                     printf (ECMA_MAGENTA("HTML") "\n");
-                    prnt_debug_string (str_data(&note->html));
+                    prnt_debug_string (str_data(&html_str));
                     set_expected_html_path (&buff, note->id);
-                    print_diff_str_to_expected_file (&note->html, str_data (&buff));
+                    print_diff_str_to_expected_file (&html_str, str_data (&buff));
+                    str_free(&html_str);
 
                     if (note->tree->data != NULL) {
                         string_t tsplx_str = {0};

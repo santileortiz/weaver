@@ -45,11 +45,17 @@ struct note_t* rt_get_note_by_id (char *id)
 void rt_link_notes (struct note_t *src, struct note_t *tgt)
 {
     struct note_runtime_t *rt = rt_get ();
+
     LINKED_LIST_PUSH_NEW (&rt->pool, struct note_link_t, src->links, src_link);
     src_link->note = tgt;
 
     LINKED_LIST_PUSH_NEW (&rt->pool, struct note_link_t, tgt->back_links, tgt_link);
     tgt_link->note = src;
+
+    struct splx_node_t *src_node = splx_node_get_or_create(&rt->sd, src->id, SPLX_NODE_TYPE_OBJECT);
+    struct splx_node_t *tgt_node = splx_node_get_or_create(&rt->sd, tgt->id, SPLX_NODE_TYPE_OBJECT);
+    splx_node_attribute_append (&rt->sd, src_node, "link", tgt_node);
+    splx_node_attribute_append (&rt->sd, tgt_node, "backlink", src_node);
 }
 
 void rt_process_note (mem_pool_t *pool_out, struct file_vault_t *vlt, struct note_t *note)
@@ -77,7 +83,6 @@ void rt_process_note (mem_pool_t *pool_out, struct file_vault_t *vlt, struct not
 
     {
         mem_pool_t _html_pool = {0};
-        mem_pool_t *pool_l = &_html_pool;
         PROCESS_NOTE_GENERATE_HTML
         mem_pool_destroy (&_html_pool);
     }
@@ -138,14 +143,7 @@ void rt_process_notes (struct note_runtime_t *rt, string_t *error_msg_out)
             ctx->path = str_data(&curr_note->path);
             ctx->error_msg = &curr_note->error_msg;
 
-            // Parse to html but don't keep the full html tree, only store the
-            // resulting html string. So far the HTML tree hasn't been necesary.
-            mem_pool_t _html_pool = {0};
-            mem_pool_t *pool_l = &_html_pool;
-
             PROCESS_NOTE_GENERATE_HTML
-
-            mem_pool_destroy (&_html_pool);
 
             if (error_msg_out != NULL && str_len(&note->error_msg) > 0) {
                 if (has_output) {

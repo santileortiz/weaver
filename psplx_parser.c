@@ -19,6 +19,8 @@ struct note_link_t {
 };
 
 struct note_t {
+    mem_pool_t pool;
+
     string_t path;
 
     char *id;
@@ -27,8 +29,7 @@ struct note_t {
 
     struct psx_block_t *tree;
 
-    bool is_html_valid;
-    string_t html;
+    struct html_t *html;
 
     bool error;
     string_t error_msg;
@@ -39,6 +40,19 @@ struct note_t {
     struct note_t *next;
 };
 
+void note_init (struct note_t *note)
+{
+    mem_pool_t *pool = &note->pool;
+    str_pool (pool, &note->path);
+    str_pool (pool, &note->title);
+    str_pool (pool, &note->psplx);
+    str_pool (pool, &note->error_msg);
+}
+
+void note_destroy (struct note_t *note)
+{
+    mem_pool_destroy (&note->pool);
+}
 
 int psx_content_width = 588; // px
 
@@ -1436,7 +1450,10 @@ void psx_create_links_full (struct psx_parser_ctx_t *ctx, struct psx_block_t **r
 }
 
 
-void attributes_html_append (struct html_t *html, struct psx_block_t *block, struct html_element_t *parent, char *skip_attr)
+char *note_internal_attributes[] = {"name", "a", "link", "backlink", "poo"};
+
+void attributes_html_append (struct html_t *html, struct psx_block_t *block, struct html_element_t *parent,
+                             char **skip_attrs, int skip_attrs_len)
 {
     // Types
     struct splx_node_list_t *type_list = cstr_to_splx_node_list_map_get (&block->data->attributes, "a");
@@ -1456,8 +1473,11 @@ void attributes_html_append (struct html_t *html, struct psx_block_t *block, str
     }
 
     int num_visible_attributes = block->data->attributes.num_nodes;
-    if (type_list != NULL) num_visible_attributes--;
-    if (skip_attr != NULL) num_visible_attributes--;
+    BINARY_TREE_FOR (cstr_to_splx_node_list_map, &block->data->attributes, curr_attribute) {
+        if (c_str_array_contains(skip_attrs, skip_attrs_len, curr_attribute->key)) {
+            num_visible_attributes--;
+        }
+    }
 
     // Attributes
 
@@ -1471,8 +1491,7 @@ void attributes_html_append (struct html_t *html, struct psx_block_t *block, str
         BINARY_TREE_FOR (cstr_to_splx_node_list_map, &block->data->attributes, curr_attribute) {
             // Type attributes "a" are rendered as labels, the "name" attribute is
             // the note's title.
-            if (strcmp(curr_attribute->key, "a") == 0 ||
-                (skip_attr != NULL && strcmp(curr_attribute->key, skip_attr) == 0)) {
+            if (c_str_array_contains(skip_attrs, skip_attrs_len, curr_attribute->key)) {
                 continue;
             }
 
@@ -1510,13 +1529,22 @@ void attributes_html_append (struct html_t *html, struct psx_block_t *block, str
 void note_attributes_html_append (struct html_t *html, struct psx_block_t *block, struct html_element_t *parent)
 #ifdef ATTRIBUTE_PLACEHOLDER
 {
-    struct html_element_t *attributes = html_new_element (html, "div");
-    html_element_attribute_set (html, attributes, "id", "__attributes");
-    html_element_append_child (html, parent, attributes);
+    int num_visible_attributes = block->data->attributes.num_nodes;
+    BINARY_TREE_FOR (cstr_to_splx_node_list_map, &block->data->attributes, curr_attribute) {
+        if (c_str_array_contains(note_internal_attributes, ARRAY_SIZE(note_internal_attributes), curr_attribute->key)) {
+            num_visible_attributes--;
+        }
+    }
+
+    if (num_visible_attributes > 0) {
+        struct html_element_t *attributes = html_new_element (html, "div");
+        html_element_attribute_set (html, attributes, "id", "__attributes");
+        html_element_append_child (html, parent, attributes);
+    }
 }
 #else
 {
-    attributes_html_append (html, block, parent, "name");
+    attributes_html_append (html, block, parent, note_internal_attributes, ARRAY_SIZE(note_internal_attributes));
 }
 #endif
 
@@ -1558,7 +1586,7 @@ void attributed_block_html_append (struct psx_parser_ctx_t *ctx, struct html_t *
     }
     html_element_attribute_set (html, block_attributes, "style", str_data(&style));
 
-    attributes_html_append (html, block, block_attributes, NULL);
+    attributes_html_append (html, block, block_attributes, NULL, 0);
 }
 #endif
 
@@ -1667,11 +1695,24 @@ void psx_parse_block_attributes (struct psx_parser_state_t *ps, struct psx_block
     char *backup_pos = ps->pos;
     int backup_column_number = ps->column_number;
 
+    // We don't want to add data nodes for all blocks, it feels wasteful to have
+    // one for each paragraph (?). Instead we only add a node if it has an ID,
+    // or later when we are sure there was a data block after the paragraph.
+    // That being said, we do force one data node for each note because we need
+    // them to make references through links anyway.
+    // :block_data_node_instantiation
+    if (node_id != NULL) {
+        block->data = splx_node_get_or_create(ps->ctx.sd, node_id, SPLX_NODE_TYPE_OBJECT);
+    }
+
     struct psx_token_t tok = ps_inline_next (ps);
     if (ps_match(ps, TOKEN_TYPE_DATA_TAG, NULL)) {
         assert(ps->ctx.sd != NULL);
 
-        block->data = splx_node_get_or_create(ps->ctx.sd, node_id, SPLX_NODE_TYPE_OBJECT);
+        // :block_data_node_instantiation
+        if (block->data == NULL) {
+            block->data = splx_node_get_or_create(ps->ctx.sd, node_id, SPLX_NODE_TYPE_OBJECT);
+        }
 
         if (tok.value.len > 0) {
             char *internal_backup_pos;
@@ -2144,25 +2185,24 @@ char* markup_to_html (
 
     // Generate HTML          @AUTO_MACRO(BEGIN)
     if (!note->error) {
-        struct html_t *html = html_new (pool_l, "div");
-        html_element_attribute_set (html, html->root, "id", note->id);
-        block_tree_to_html (ctx, html, note->tree, html->root);
+        note->html = html_new (&note->pool, "div");
+        html_element_attribute_set (note->html, note->html->root, "id", note->id);
+        block_tree_to_html (ctx, note->html, note->tree, note->html->root);
 
-        if (html != NULL) {
-            str_set (&note->html, "");
-            str_cat_html (&note->html, html, 2);
-            note->is_html_valid = true;
-
-        } else {
+        if (note->html == NULL) {
             note->error = true;
         }
     }
     // @AUTO_MACRO(END)
 
+    string_t *html_out = str_pool(pool_out, "");
+    if (!note->error) {
+        str_cat_html (html_out, note->html, 2);
+    }
+
     mem_pool_destroy (&_pool_l);
 
-    char *html_out = pom_strndup (pool_out, str_data(&note->html), str_len(&note->html));
-    return html_out;
+    return str_data(html_out);
 }
 
 // Replace a block with a linked list of blocks. The block to be replaced is

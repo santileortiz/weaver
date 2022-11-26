@@ -29,25 +29,21 @@ void rt_init_push_file (struct note_runtime_t *rt, char *fname)
     p++; // advance '/'
 
     struct note_t *new_note = rt_new_note (rt, p, basename_len);
+    note_init(new_note);
 
-    str_pool (&rt->pool, &new_note->error_msg);
-    str_set_pooled (&rt->pool, &new_note->path, fname);
+    str_set (&new_note->path, fname);
 
     size_t source_len;
     char *source = full_file_read (NULL, fname, &source_len);
-    str_pool (&rt->pool, &new_note->psplx);
     strn_set (&new_note->psplx, source, source_len);
     free (source);
 
-    str_pool (&rt->pool, &new_note->title);
     if (!parse_note_title (fname, str_data(&new_note->psplx), &new_note->title, &rt->sd, &new_note->error_msg)) {
         new_note->error = true;
 
     } else {
         title_to_note_insert (&rt->notes_by_title, &new_note->title, new_note);
     }
-
-    str_pool (&rt->pool, &new_note->html);
 }
 
 ITERATE_DIR_CB(test_dir_iter)
@@ -247,7 +243,13 @@ int main(int argc, char** argv)
                     size_t end = str_len (&html_path);
                     LINKED_LIST_FOR (struct note_t*, curr_note, rt->notes) {
                         str_put_printf (&html_path, end, "%s", curr_note->id);
-                        full_file_write (str_data(&curr_note->html), str_len(&curr_note->html), str_data(&html_path));
+
+                        if (!curr_note->error) {
+                            string_t html_str = {0};
+                            str_cat_html (&html_str, curr_note->html, 2);
+                            full_file_write (str_data(&html_str), str_len(&html_str), str_data(&html_path));
+                            str_free(&html_str);
+                        }
                     }
 
 
@@ -291,7 +293,11 @@ int main(int argc, char** argv)
                     struct note_t *note = rt->notes;
 
                     printf (ECMA_MAGENTA("HTML") "\n");
-                    prnt_debug_string (str_data(&note->html));
+
+                    string_t html_str = {0};
+                    str_cat_html (&html_str, note->html, 2);
+                    prnt_debug_string (str_data(&html_str));
+                    str_free(&html_str);
 
                     if (note->tree->data != NULL) {
                         string_t tsplx_str = {0};

@@ -268,6 +268,7 @@ typedef union {
 } string_t;
 #elif defined(__BYTE_ORDER__)&&(__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
 // TODO: This has NOT been tested!
+// :untested
 typedef union {
     struct {
         char str_small[15];
@@ -2176,6 +2177,21 @@ void int_array_set_insert (int n, int *arr, int *arr_len, int arr_max_size)
         arr[low] = n;
         (*arr_len)++;
     }
+}
+
+// If len == -1 we assume arr has a NULL element at the end.
+static inline
+bool c_str_array_contains(char **arr, int len, char *str)
+{
+    bool found = false;
+
+    for (int i=0; i<len; i++) {
+        if (strcmp(str, arr[i]) == 0) {
+            found = true;
+        }
+    }
+
+    return found;
 }
 
 void print_u64_array (uint64_t *arr, int n)

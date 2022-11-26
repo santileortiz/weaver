@@ -31,10 +31,14 @@ char* markup_to_html (
 
     PROCESS_NOTE_GENERATE_HTML
 
+    string_t *html_out = str_pool(pool_out, "");
+    if (!note->error) {
+        str_cat_html (html_out, note->html, 2);
+    }
+
     mem_pool_destroy (&_pool_l);
 
-    char *html_out = pom_strndup (pool_out, str_data(&note->html), str_len(&note->html));
-    return html_out;
+    return str_data(html_out);
 }
 */
 
@@ -56,16 +60,11 @@ char* markup_to_html (
     
 #define PROCESS_NOTE_GENERATE_HTML \
     if (!note->error) { \
-        struct html_t *html = html_new (pool_l, "div"); \
-        html_element_attribute_set (html, html->root, "id", note->id); \
-        block_tree_to_html (ctx, html, note->tree, html->root); \
+        note->html = html_new (&note->pool, "div"); \
+        html_element_attribute_set (note->html, note->html->root, "id", note->id); \
+        block_tree_to_html (ctx, note->html, note->tree, note->html->root); \
  \
-        if (html != NULL) { \
-            str_set (&note->html, ""); \
-            str_cat_html (&note->html, html, 2); \
-            note->is_html_valid = true; \
- \
-        } else { \
+        if (note->html == NULL) { \
             note->error = true; \
         } \
     } \
