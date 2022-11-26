@@ -1,6 +1,12 @@
 <tsplx-data> <has-entity> <2C73CW77H6> ,
-    <myIdentifierX1> .
+    <myIdentifierX1> ,
+    <Ggggggggggggggg> ,
+    [
+      <author> "Xxxxxxxxxxxxxxx" ;
+    ] .
 
 <2C73CW77H6> a <type1> .
+
+<Ggggggggggggggg> a <type3> .
 
 <myIdentifierX1> a <type2> .

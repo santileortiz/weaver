@@ -16,3 +16,8 @@ _ a my-type ;
   attr2 "My Value" ;
   name "Data without block." ;
 
+GGGGGGGGGGGGGGGGGGGGGG a article ;
+
+_ a article ;
+  author q"XXXXXXXXXXXXXXX" ;
+

@@ -1215,7 +1215,7 @@ void tps_internal_attributes(struct tsplx_parser_state_t *tps,
 {
     if (subject->type == SPLX_NODE_TYPE_OBJECT || subject->type == SPLX_NODE_TYPE_STRING) {
         str_set (&curr_object->str, str_data(&subject->str));
-        cstr_to_splx_node_map_insert (&sd->nodes, str_data(&subject->str), curr_object);
+        cstr_to_splx_node_map_insert (&sd->nodes, str_data(&curr_object->str), curr_object);
 
     } else {
         // TODO: should we also somehow allows integer, float and boolean

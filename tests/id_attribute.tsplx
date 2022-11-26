@@ -5,3 +5,15 @@ _ a type1 ; {
 _ a type2 ; {
   id "myIdentifierX1" ;
 }
+
+// Test a long identifier as property. There was an aliasing bug where long
+// sequences of capitalized strings would cause a weird aliasing. The "author"
+// property would point to Ggggggggggggggg instead of the expected string
+// :id_attribute_string_aliasing
+// {
+_ a type3 ; {
+   id Ggggggggggggggg;
+}
+
+_ author "Xxxxxxxxxxxxxxx" ;
+// }

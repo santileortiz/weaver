@@ -29,3 +29,14 @@ the block.
   attr2 "My Value";
   name "Data without block.";
 }
+
+PSPLX version of the test created for the bug described in
+:id_attribute_string_aliasing
+
+^article{
+   id GGGGGGGGGGGGGGGGGGGGGG;
+}
+
+^article{
+   author q"XXXXXXXXXXXXXXX";
+}
