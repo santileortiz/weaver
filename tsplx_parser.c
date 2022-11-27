@@ -476,6 +476,8 @@ void splx_node_clear (struct splx_node_t *node)
 struct splx_node_t* splx_node_get_or_create (struct splx_data_t *sd,
                                              char *id, enum splx_node_type_t type)
 {
+    assert(sd != NULL);
+
     struct splx_node_t *subject_node = NULL;
     if (id != NULL) {
         subject_node = cstr_to_splx_node_map_get (&sd->nodes, id);
@@ -525,6 +527,35 @@ void splx_node_attribute_append (struct splx_data_t *sd, struct splx_node_t *nod
 
         struct splx_node_list_t *new_node_list_element = tps_wrap_in_list_node (sd, object);
         subject_node_list->next = new_node_list_element;
+    }
+}
+
+void splx_node_attribute_append_once (struct splx_data_t *sd, struct splx_node_t *node,
+                                      char *predicate,
+                                      struct splx_node_t *object)
+{
+    char *predicate_str = splx_get_node_id_str (sd, predicate);
+
+    bool found = false;
+    struct splx_node_list_t *subject_node_list = cstr_to_splx_node_list_map_get (&node->attributes, predicate_str);
+    if (subject_node_list == NULL) {
+        subject_node_list = tps_wrap_in_list_node (sd, object);
+        cstr_to_splx_node_list_map_insert (&node->attributes, predicate_str, subject_node_list);
+
+    } else {
+        found = false;
+        LINKED_LIST_FOR (struct splx_node_list_t *, curr_list_node, subject_node_list) {
+            if (object == curr_list_node->node) {
+                found = true;
+            }
+
+            if (curr_list_node->next == NULL) break;
+        }
+
+        if (!found) {
+            struct splx_node_list_t *new_node_list_element = tps_wrap_in_list_node (sd, object);
+            curr_list_node->next = new_node_list_element;
+        }
     }
 }
 
@@ -1636,4 +1667,26 @@ bool splx_node_get_value_cstr_arr (struct splx_data_t *sd, struct splx_node_t *n
     }
 
     return false;
+}
+
+// Common Queries
+
+struct splx_node_list_t* splx_node_get_attributes (struct splx_node_t *node, char *attr)
+{
+    return cstr_to_splx_node_list_map_get (&node->attributes, attr);
+}
+
+struct splx_node_t* splx_node_get_attribute (struct splx_node_t *node, char *attr)
+{
+    struct splx_node_list_t *values = splx_node_get_attributes(node, attr);
+    assert(values->next == NULL);
+    return values->node;
+}
+
+string_t* splx_node_get_name (struct splx_node_t *node)
+{
+    // TODO: If there are multiple names, don't just return the first one. When
+    // reification is supported we should allow sorting by reification tags.
+    struct splx_node_list_t *values = splx_node_get_attributes(node, "name");
+    return &values->node->str;
 }

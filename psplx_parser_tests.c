@@ -134,8 +134,15 @@ void negative_programmatic_test (struct test_ctx_t *t, struct note_runtime_t *rt
     str_set (&t->test_stack->success_string, "-OK");
     NEW_SHARED_VARIABLE_NAMED (bool, errored_successfuly, false, "NEGATIVE_TEST_subprocess_success");
     CRASH_TEST(no_crash, t->error,
+        // NOTE: The following operations would normally add a broken note to
+        // the runtime. But, because this gets called from a subprocess, the
+        // parent process never sees these broken notes. Except when
+        // TEST_NO_SUBPROCESS is defined, in which case, we will get one false
+        // negative for each negative test.
+        // TODO: If we ever implement note removal, we should remove added notes
+        // in the single process case.
         struct note_t *test_note = push_test_note (rt, source, strlen(source), test_id, strlen(test_id), test_id);
-        rt_process_note (&rt->pool, NULL, test_note);
+        rt_process_note (&rt->pool, NULL, &rt->sd, test_note);
 
         if (test_note->error || str_len (&test_note->error_msg) > 0) {
             *errored_successfuly = true;
@@ -148,34 +155,22 @@ void negative_programmatic_test (struct test_ctx_t *t, struct note_runtime_t *rt
     );
 
     UNLINK_SHARED_VARIABLE_NAMED ("NEGATIVE_TEST_subprocess_success");
-    if (!(*errored_successfuly)) {
+    if (!no_crash) {
+        test_error_current (t, "Expected an error but test crashed.");
+    } else if (!(*errored_successfuly)) {
         test_error_current (t, "Expected an error but note parsed successfully.");
     }
     test_pop (t, no_crash && *errored_successfuly);
 }
 
-void negative_tests (struct test_ctx_t *t, struct note_runtime_t *rt)
-{
-    char *test_id = "single_hash_test()";
-    char *source =
-        "# Single Hash Test\n"
-        "\n"
-        "A note can't have single hash titles besides its title\n"
-        "\n"
-        "# This should fail (but not crash)\n";
-    negative_programmatic_test (t, rt, test_id, source);
-
-    test_id = "broken_note_link()";
-    source =
-        "# Broken Note Link\n"
-        "\n"
-        "Weaver should warn whenever a tag points to a \\note{Non-existent Note} \n";
-    negative_programmatic_test (t, rt, test_id, source);
-}
-
 void set_expected_path (string_t *str, char *note_id, char *extension)
 {
     str_set_printf (str, TESTS_DIR "/%s%s", note_id, extension);
+}
+
+void set_expected_tsplx_error_path (string_t *str, char *note_id)
+{
+    set_expected_path (str, note_id, ".tsplx_error");
 }
 
 void set_expected_tsplx_path (string_t *str, char *note_id)
@@ -186,6 +181,28 @@ void set_expected_tsplx_path (string_t *str, char *note_id)
 void set_expected_html_path (string_t *str, char *note_id)
 {
     set_expected_path (str, note_id, ".html");
+}
+
+struct negative_test_clsr_t {
+    struct test_ctx_t *t;
+    struct note_runtime_t *rt;
+};
+ITERATE_DIR_CB(negative_test)
+{
+    struct negative_test_clsr_t *clsr = (struct negative_test_clsr_t*)data;
+
+    if (!is_dir) {
+        char *basename = path_basename(fname);
+        if (strcmp(get_extension(basename), "psplx_error") == 0) {
+            mem_pool_t pool = {0};
+
+            char *test_id = remove_extension (&pool, basename);
+            char *source = full_file_read (&pool, fname, NULL);
+            negative_programmatic_test (clsr->t, clsr->rt, test_id, source);
+
+            mem_pool_destroy (&pool);
+        }
+    }
 }
 
 // TODO: Right now we only attaxha SPLX data node to each block, this just
@@ -238,8 +255,12 @@ int main(int argc, char** argv)
     );
     test_pop (t, notes_processed);
 
+    // Run negative tests.
     if (notes_processed) {
-        negative_tests (t, rt);
+        struct negative_test_clsr_t clsr = {0};
+        clsr.t = t;
+        clsr.rt = rt;
+        iterate_dir (TESTS_DIR, negative_test, &clsr);
     }
 
     if (note_id == NULL) {
@@ -296,21 +317,19 @@ int main(int argc, char** argv)
                 free (expected_html);
             }
 
+            test_pop_parent(t);
 
-
+            set_expected_tsplx_path (&buff, note->id);
             if (path_exists (str_data(&buff)) && note->tree != NULL && note->tree->data != NULL) {
                 string_t tsplx_str = {0};
                 cat_note_tsplx (&tsplx_str, &rt->sd, note->tree);
 
-                test_push (t, "Matches expected TSPLX");
+                test_push (t, "%s (tsplx)", note->id);
                 test_str (t, str_data(&tsplx_str), expected_tsplx);
 
                 free (expected_tsplx);
                 str_free (&tsplx_str);
             }
-
-
-            test_pop_parent(t);
         }
 
     } else {

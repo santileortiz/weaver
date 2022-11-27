@@ -54,16 +54,20 @@ void rt_link_notes (struct note_t *src, struct note_t *tgt)
 
     struct splx_node_t *src_node = splx_node_get_or_create(&rt->sd, src->id, SPLX_NODE_TYPE_OBJECT);
     struct splx_node_t *tgt_node = splx_node_get_or_create(&rt->sd, tgt->id, SPLX_NODE_TYPE_OBJECT);
-    splx_node_attribute_append (&rt->sd, src_node, "link", tgt_node);
-    splx_node_attribute_append (&rt->sd, tgt_node, "backlink", src_node);
+
+    // TODO: Instead of just printing a page's backling once, we should provide
+    // more context about where the link is coming from in each repetition.
+    splx_node_attribute_append_once (&rt->sd, src_node, "link", tgt_node);
+    splx_node_attribute_append_once (&rt->sd, tgt_node, "backlink", src_node);
 }
 
-void rt_process_note (mem_pool_t *pool_out, struct file_vault_t *vlt, struct note_t *note)
+void rt_process_note (mem_pool_t *pool_out, struct file_vault_t *vlt, struct splx_data_t *sd, struct note_t *note)
 {
     mem_pool_t *pool_l = pool_out;
 
     STACK_ALLOCATE(struct psx_parser_ctx_t, ctx);
     ctx->id = note->id;
+    ctx->sd = sd;
     ctx->path = str_data(&note->path);
     ctx->error_msg = &note->error_msg;
 

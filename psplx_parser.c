@@ -795,10 +795,15 @@ struct psx_block_unit_t* psx_block_unit_new(mem_pool_t *pool, enum psx_block_uni
     return new_block_unit;
 }
 
-void psx_append_html_element (struct psx_parser_state_t *ps, struct html_t *html, struct html_element_t *html_element)
+struct html_element_t* psx_get_head_html_element (struct psx_parser_state_t *ps)
 {
     struct psx_block_unit_t *head_ctx = DYNAMIC_ARRAY_GET_LAST(ps->block_unit_stack);
-    html_element_append_child (html, head_ctx->html_element, html_element);
+    return head_ctx->html_element;
+}
+
+void psx_append_html_element (struct psx_parser_state_t *ps, struct html_t *html, struct html_element_t *html_element)
+{
+    html_element_append_child (html, psx_get_head_html_element(ps), html_element);
 }
 
 void psx_append_inline_code_element (struct psx_parser_state_t *ps, struct html_t *html, string_t *str)
@@ -989,6 +994,24 @@ struct psx_tag_t* psx_parse_tag_note (struct psx_parser_state_t *ps, char **orig
     *target_note = rt_get_note_by_title (target_note_title);
 
     return tag;
+}
+
+struct html_element_t* html_append_note_link(struct html_t *html, struct html_element_t *parent, char *target_id, char *text, int text_len)
+{
+    string_t buff = {0};
+
+    struct html_element_t *link_element = html_new_element (html, "a");
+    html_element_attribute_set (html, link_element, "href", "#");
+
+    str_set_printf (&buff, "return open_note('%s');", target_id);
+    html_element_attribute_set (html, link_element, "onclick", str_data(&buff));
+    html_element_class_add (html, link_element, "note-link");
+
+    html_element_append_strn (html, link_element, text_len, text);
+    html_element_append_child (html, parent, link_element);
+
+    str_free(&buff);
+    return link_element;
 }
 
 // This function parses the content of a block of text. The formatting is
@@ -1199,25 +1222,25 @@ void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html
         } else if (ps_match(ps, TOKEN_TYPE_TEXT_TAG, "note")) {
             struct note_t *target_note = NULL;
             struct psx_tag_t *tag = psx_parse_tag_note (ps, &original_pos, &target_note, &buff);
-            if (tag->has_content) {
-                struct html_element_t *link_element = html_new_element (html, "a");
-                html_element_attribute_set (html, link_element, "href", "#");
-                if (target_note != NULL) {
-                    str_set_printf (&buff, "return open_note('%s');", target_note->id);
-                    html_element_attribute_set (html, link_element, "onclick", str_data(&buff));
-                    html_element_class_add (html, link_element, "note-link");
-                } else {
-                    html_element_class_add (html, link_element, "note-link-broken");
 
-                    // :target_note_not_found_error
-                    psx_warning (ps, "broken note link, couldn't find note for title: %s", str_data (&buff));
-                }
-                html_element_append_strn (html, link_element, str_len(&tag->content), str_data(&tag->content));
-                psx_append_html_element(ps, html, link_element);
+            if (tag->has_content && target_note != NULL) {
+                html_append_note_link (html,
+                    psx_get_head_html_element(ps),
+                    target_note->id,
+                    str_data(&tag->content),
+                    str_len(&tag->content));
 
             } else {
                 ps_restore_pos (ps, original_pos);
                 ps_html_cat_literal_tag (ps, tag, html);
+            }
+
+            if (target_note == NULL) {
+                // TODO: Handle broken links!!
+                //html_element_class_add (html, link_element, "note-link-broken");
+
+                // :target_note_not_found_error
+                psx_warning (ps, "broken note link, couldn't find note for title: %s", str_data (&buff));
             }
 
         } else if (ps_match(ps, TOKEN_TYPE_TEXT_TAG, "html")) {
@@ -2203,6 +2226,41 @@ char* markup_to_html (
     mem_pool_destroy (&_pool_l);
 
     return str_data(html_out);
+}
+
+void render_links(struct note_runtime_t *rt)
+{
+    LINKED_LIST_FOR (struct note_t *, curr_note, rt->notes) {
+        struct splx_node_list_t *backlinks = splx_node_get_attributes (curr_note->tree->data, "backlink");
+        int num_backlinks = 0;
+        {
+            LINKED_LIST_FOR (struct splx_node_list_t *, curr_list_node, backlinks) {
+                num_backlinks++;
+            }
+        }
+
+        if (num_backlinks > 0) {
+            struct html_t *html = curr_note->html;
+
+            struct html_element_t *title = html_new_element (html, "h4");
+            html_element_append_child(html, html->root, title);
+            html_element_append_cstr(html, title, "Backlinks");
+
+            struct html_element_t *backlinks_element = html_new_element (html, "div");
+            html_element_append_child(html, html->root, backlinks_element);
+            html_element_class_add (html, backlinks_element, "backlinks");
+
+            LINKED_LIST_FOR (struct splx_node_list_t *, curr_list_node, backlinks) {
+                struct splx_node_t *node = curr_list_node->node;
+
+                struct html_element_t *wrapper = html_new_element (html, "p");
+                html_element_append_child(html, backlinks_element, wrapper);
+
+                string_t *name = splx_node_get_name (node);
+                html_append_note_link (html, wrapper, str_data(&node->str), str_data(name), str_len(name));
+            }
+        }
+    }
 }
 
 // Replace a block with a linked list of blocks. The block to be replaced is

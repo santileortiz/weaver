@@ -216,6 +216,8 @@ int main(int argc, char** argv)
     // PROCESS DATA
     if (rt->notes_len > 0) {
         rt_process_notes (rt, &error_msg);
+
+        render_links(rt);
     }
 
     //print_splx_dump (&rt->sd, rt->sd.entities);

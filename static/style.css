@@ -322,3 +322,11 @@ code {
     padding-top: var(--bleed);;
 }
 
+.backlinks {
+    padding: 0.5em 1em;
+    position: relative;
+    left: calc(0px - var(--bleed));
+    width: calc(var(--content-width) + 2*var(--bleed));
+    background-color: var(--secondary-bg-color);
+}
+

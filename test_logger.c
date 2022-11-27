@@ -363,7 +363,11 @@ bool __crash_safe_wait_and_output (mem_pool_t *pool, bool *success,
     }
 
 #else
-#define CRASH_TEST(SUCCESS,OUTPUT,CODE) CODE
-#define CRASH_TEST_AND_RUN(SUCCESS,OUTPUT,CODE) CODE
+
+// If subprocesses are disabled by convention we set the SUCCESS variable to
+// true. If the test code executes, and there is still a process that is
+// logging results, by definition it means that the test passed.
+#define CRASH_TEST(SUCCESS,OUTPUT,CODE) SUCCESS=true; CODE
+#define CRASH_TEST_AND_RUN(SUCCESS,OUTPUT,CODE) SUCCESS=true; CODE
 
 #endif

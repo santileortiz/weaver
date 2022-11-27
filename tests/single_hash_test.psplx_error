@@ -1,0 +1,5 @@
+# Single Hash Test
+
+A note can't have single hash titles besides its title
+
+# This should fail (but not crash)
