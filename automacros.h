@@ -31,6 +31,7 @@ char* markup_to_html (
 
     PROCESS_NOTE_GENERATE_HTML
 
+
     string_t *html_out = str_pool(pool_out, "");
     if (!note->error) {
         str_cat_html (html_out, note->html, 2);

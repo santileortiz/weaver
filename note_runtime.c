@@ -95,6 +95,7 @@ void rt_process_note (mem_pool_t *pool_out, struct file_vault_t *vlt, struct spl
 void rt_process_notes (struct note_runtime_t *rt, string_t *error_msg_out)
 {
     STACK_ALLOCATE (struct psx_parser_ctx_t, ctx);
+    ctx->rt = rt;
     ctx->vlt = &rt->vlt;
     ctx->sd = &rt->sd;
 
@@ -102,6 +103,7 @@ void rt_process_notes (struct note_runtime_t *rt, string_t *error_msg_out)
     {
         LINKED_LIST_FOR (struct note_t*, curr_note, rt->notes) {
             struct note_t *note = curr_note;
+            ctx->note = curr_note;
             ctx->id = curr_note->id;
             ctx->path = str_data(&curr_note->path);
             ctx->error_msg = &curr_note->error_msg;
@@ -118,6 +120,7 @@ void rt_process_notes (struct note_runtime_t *rt, string_t *error_msg_out)
     {
         LINKED_LIST_FOR (struct note_t*, curr_note, rt->notes) {
             struct note_t *note = curr_note;
+            ctx->note = curr_note;
             ctx->id = curr_note->id;
             ctx->path = str_data(&curr_note->path);
             ctx->error_msg = &curr_note->error_msg;
@@ -129,6 +132,7 @@ void rt_process_notes (struct note_runtime_t *rt, string_t *error_msg_out)
     {
         LINKED_LIST_FOR (struct note_t*, curr_note, rt->notes) {
             struct note_t *note = curr_note;
+            ctx->note = curr_note;
             ctx->id = curr_note->id;
             ctx->path = str_data(&curr_note->path);
             ctx->error_msg = &curr_note->error_msg;
@@ -143,6 +147,7 @@ void rt_process_notes (struct note_runtime_t *rt, string_t *error_msg_out)
         bool has_output = false;
         LINKED_LIST_FOR (struct note_t*, curr_note, rt->notes) {
             struct note_t *note = curr_note;
+            ctx->note = curr_note;
             ctx->id = curr_note->id;
             ctx->path = str_data(&curr_note->path);
             ctx->error_msg = &curr_note->error_msg;
@@ -158,5 +163,29 @@ void rt_process_notes (struct note_runtime_t *rt, string_t *error_msg_out)
                 str_cat_printf (error_msg_out, ECMA_CYAN("%s\n") "%s", str_data(&note->title), str_data(&note->error_msg));
             }
         }
+    }
+}
+
+void rt_queue_late_callback (struct note_t *note, struct psx_tag_t *tag, struct html_element_t *html_placeholder, psx_late_user_tag_cb_t *cb)
+{
+    struct note_runtime_t *rt = rt_get ();
+    struct late_cb_invocation_t *invocation = mem_pool_push_struct(&rt->pool, struct late_cb_invocation_t);
+    *invocation = ZERO_INIT(struct late_cb_invocation_t);
+
+    invocation->note = note;
+    invocation->tag = tag;
+    invocation->html_placeholder = html_placeholder;
+    invocation->cb = cb;
+
+    LINKED_LIST_APPEND(rt->invocations, invocation);
+}
+
+void rt_late_user_callbacks(struct note_runtime_t *rt)
+{
+    LINKED_LIST_FOR (struct late_cb_invocation_t*, curr_invocation, rt->invocations) {
+        curr_invocation->cb (rt,
+            curr_invocation->note,
+            curr_invocation->tag,
+            curr_invocation->html_placeholder);
     }
 }

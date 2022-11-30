@@ -6,6 +6,7 @@
 #include "binary_tree.c"
 #include "test_logger.c"
 #include "cli_parser.c"
+#include "html_builder.h"
 #include "automacros.h"
 
 #include "file_utility.h"
@@ -66,6 +67,9 @@ void rt_init (struct note_runtime_t *rt, struct splx_data_t *config)
     rt->notes_by_title.pool = &rt->pool;
 
     splx_get_value_cstr_arr (config, &rt->pool, CFG_TITLE_NOTES, &rt->title_note_ids, &rt->title_note_ids_len);
+
+    rt->user_late_cb_tree.pool = &rt->pool;
+    psx_populate_internal_late_cb_tree (&rt->user_late_cb_tree);
 }
 
 //
@@ -216,6 +220,8 @@ int main(int argc, char** argv)
     // PROCESS DATA
     if (rt->notes_len > 0) {
         rt_process_notes (rt, &error_msg);
+
+        rt_late_user_callbacks (rt);
 
         render_links(rt);
     }

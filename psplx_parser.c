@@ -4,7 +4,6 @@
 
 #include <limits.h>
 #include "tsplx_parser.h"
-#include "html_builder.h"
 #include "lib/regexp.h"
 #include "lib/regexp.c"
 
@@ -57,10 +56,13 @@ void note_destroy (struct note_t *note)
 int psx_content_width = 588; // px
 
 struct psx_parser_ctx_t {
+    struct note_runtime_t *rt;
     char *id;
     char *path;
     struct file_vault_t *vlt;
     struct splx_data_t *sd;
+
+    struct note_t *note;
 
     string_t *error_msg;
 };
@@ -588,6 +590,19 @@ struct psx_tag_t {
     string_t content;
 };
 
+struct psx_tag_t* psx_tag_new (mem_pool_t *pool)
+{
+    assert (pool != NULL);
+
+    struct psx_tag_t *tag = mem_pool_push_struct (pool, struct psx_tag_t);
+    *tag = ZERO_INIT (struct psx_tag_t);
+
+    tag->parameters.named.pool = pool;
+    str_pool (pool, &tag->content);
+
+    return tag;
+}
+
 void ps_restore_pos (struct psx_parser_state_t *ps, char *original_pos)
 {
     ps->pos = original_pos;
@@ -731,24 +746,14 @@ bool psx_cat_tag_content (struct psx_parser_state_t *ps, string_t *str, bool exp
     return has_content;
 }
 
-struct psx_tag_t* ps_tag_new (struct psx_parser_state_t *ps)
-{
-    struct psx_tag_t *tag = mem_pool_push_struct (&ps->pool, struct psx_tag_t);
-    *tag = ZERO_INIT (struct psx_tag_t);
-    tag->parameters.named.pool = &ps->pool;
-    str_pool (&ps->pool, &tag->content);
-
-    return tag;
-}
-
-#define ps_parse_tag(ps,end) ps_parse_tag_full(ps,end,false)
-struct psx_tag_t* ps_parse_tag_full (struct psx_parser_state_t *ps, char **end, bool expect_balanced_braces)
+#define ps_parse_tag(ps,end) ps_parse_tag_full(&ps->pool,ps,end,false)
+struct psx_tag_t* ps_parse_tag_full (mem_pool_t *pool, struct psx_parser_state_t *ps, char **end, bool expect_balanced_braces)
 {
     if (end != NULL) *end = ps->pos;
 
-    mem_pool_marker_t mrk = mem_pool_begin_temporary_memory (&ps->pool);
+    mem_pool_marker_t mrk = mem_pool_begin_temporary_memory (pool);
 
-    struct psx_tag_t *tag = ps_tag_new (ps);
+    struct psx_tag_t *tag = psx_tag_new (pool);
     tag->token = ps->token;
 
     char *original_pos = ps->pos;
@@ -1203,7 +1208,7 @@ void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html
         } else if (ps_match(ps, TOKEN_TYPE_TEXT_TAG, "code") || ps_match(ps, TOKEN_TYPE_OPERATOR, "`")) {
             if (ps_match(ps, TOKEN_TYPE_TEXT_TAG, "code")) {
                 // TODO: Actually do something with the passed language name
-                struct psx_tag_t *tag = ps_parse_tag_full (ps, &original_pos, true);
+                struct psx_tag_t *tag = ps_parse_tag_full (&ps->pool, ps, &original_pos, true);
                 if (tag->has_content) {
                     psx_append_inline_code_element (ps, html, &tag->content);
 
@@ -1249,6 +1254,21 @@ void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html
                 struct psx_block_unit_t *head_unit = ps->block_unit_stack[ps->block_unit_stack_len-1];
                 html_element_append_no_escape_strn (html, head_unit->html_element, str_len(&tag->content), str_data(&tag->content));
             } else {
+                ps_restore_pos (ps, original_pos);
+                ps_html_cat_literal_tag (ps, tag, html);
+            }
+
+        } else if (rt_get() != NULL && ctx->note != NULL && ps_match(ps, TOKEN_TYPE_TEXT_TAG, NULL)) {
+            struct note_runtime_t *rt = rt_get ();
+            strn_set (&buff, ps->token.value.s, ps->token.value.len);
+            psx_late_user_tag_cb_t *cb = psx_late_user_tag_cb_get(&rt->user_late_cb_tree, str_data(&buff));
+
+            if (cb != NULL) {
+                struct psx_tag_t *tag = ps_parse_tag_full (&rt->pool, ps, &original_pos, false);
+                rt_queue_late_callback (ctx->note, tag, psx_get_head_html_element(ps), cb);
+            } else {
+                struct note_t *target_note = NULL;
+                struct psx_tag_t *tag = psx_parse_tag_note (ps, &original_pos, &target_note, &buff);
                 ps_restore_pos (ps, original_pos);
                 ps_html_cat_literal_tag (ps, tag, html);
             }
@@ -1330,16 +1350,15 @@ enum psx_user_tag_cb_status_t {
 // CAUTION: DON'T MODIFY THE BLOCK CONTENT'S STRING FROM A psx_user_tag_cb_t.
 // These callbacks are called while parsing the block's content, modifying
 // block->inline_content will mess up the parser.
+// :early_tag_api
 #define PSX_USER_TAG_CB(funcname) enum psx_user_tag_cb_status_t funcname(struct psx_parser_ctx_t *ctx, struct block_allocation_t *block_allocation, struct psx_parser_state_t *ps_inline, struct psx_block_t **block, struct str_replacement_t *replacement)
 typedef PSX_USER_TAG_CB(psx_user_tag_cb_t);
-
 BINARY_TREE_NEW (psx_user_tag_cb, char*, psx_user_tag_cb_t*, strcmp(a, b));
-
 void psx_populate_internal_cb_tree (struct psx_user_tag_cb_t *tree);
 
-// TODO: User callbacks will be modifying the tree. It's possible the user
-// messes up and for example adds a cycle into the tree, we should detect such
-// problem and avoid maybe later entering an infinite loop.
+// TODO: Early user callbacks will be modifying the block tree. It's possible
+// the user messes up and for example adds a cycle into the tree, we should
+// detect such problem and avoid maybe later entering an infinite loop.
 #define psx_block_tree_user_callbacks(ctx,ba,root) psx_block_tree_user_callbacks_full(ctx,ba,root,NULL)
 void psx_block_tree_user_callbacks_full (struct psx_parser_ctx_t *ctx, struct block_allocation_t *ba, struct psx_block_t **root, struct psx_block_t **block_p)
 {
@@ -2218,6 +2237,7 @@ char* markup_to_html (
     }
     // @AUTO_MACRO(END)
 
+
     string_t *html_out = str_pool(pool_out, "");
     if (!note->error) {
         str_cat_html (html_out, note->html, 2);
@@ -2310,6 +2330,8 @@ PSX_USER_TAG_CB (summary_tag_handler)
 
         psx_replace_block_multiple (block_allocation, block, result, result_end);
 
+        rt_link_notes(ctx->note, note);
+
         // TODO: Add some user defined wrapper that allows setting a different
         // style for blocks of summary. For example if we ever get inline
         // editing from HTML we would like to disable editing in summary blocks
@@ -2325,7 +2347,7 @@ PSX_USER_TAG_CB (summary_tag_handler)
 enum psx_user_tag_cb_status_t math_tag_handler (struct psx_parser_state_t *ps_inline, struct str_replacement_t *replacement, bool is_display_mode)
 {
     char *original_pos;
-    struct psx_tag_t *tag = ps_parse_tag_full (ps_inline, &original_pos, true);
+    struct psx_tag_t *tag = ps_parse_tag_full (&ps_inline->pool, ps_inline, &original_pos, true);
     if (tag->has_content) {
         string_t res = {0};
         str_replace (&tag->content, "\n", " ", NULL);
@@ -2357,43 +2379,106 @@ PSX_USER_TAG_CB(math_tag_display_handler)
     return math_tag_handler (ps_inline, replacement, true);
 }
 
-PSX_USER_TAG_CB(orphan_list_tag_handler)
-{
-    string_t res = {0};
-
-    struct note_runtime_t *rt = rt_get ();
-    LINKED_LIST_FOR (struct note_t*, curr_note, rt->notes) {
-        if (curr_note->back_links == NULL) {
-            // TODO: Maybe use a map so we don't do an O(n) search in each iteration
-            // to determine if a root note is a title note?.
-            bool is_title_note = false;
-            for (int i=0; i < rt->title_note_ids_len; i++) {
-                if (strcmp (curr_note->id, rt->title_note_ids[i]) == 0) {
-                    is_title_note = true;
-                }
-            }
-
-            if (!is_title_note) {
-                str_cat_printf (&res, "- \\note{%s}\n", str_data(&curr_note->title));
-            }
-        }
-    }
-
-    struct psx_block_t *root = psx_parse_string (block_allocation, str_data (&res), NULL);
-    psx_replace_block_multiple (block_allocation, block, root->block_content, root->block_content_end);
-    return USER_TAG_CB_STATUS_BREAK;
-}
-
 // Register internal custom callbacks
-#define PSX_INTERNAL_CUSTOM_TAG_TABLE \
+// :early_tag_api
+#define PSX_EARLY_INTERNAL_TAG_TABLE \
 PSX_INTERNAL_CUSTOM_TAG_ROW ("math",        math_tag_inline_handler) \
 PSX_INTERNAL_CUSTOM_TAG_ROW ("Math",        math_tag_display_handler) \
 PSX_INTERNAL_CUSTOM_TAG_ROW ("summary",     summary_tag_handler) \
-PSX_INTERNAL_CUSTOM_TAG_ROW ("orphan_list", orphan_list_tag_handler) \
 
 void psx_populate_internal_cb_tree (struct psx_user_tag_cb_t *tree)
 {
 #define PSX_INTERNAL_CUSTOM_TAG_ROW(name,cb) psx_user_tag_cb_insert (tree, name, cb);
-    PSX_INTERNAL_CUSTOM_TAG_TABLE
+    PSX_EARLY_INTERNAL_TAG_TABLE
 #undef PSX_INTERNAL_CUSTOM_TAG_ROW
 }
+
+
+/////////////////////
+// Late Callback API
+//
+// This is a different user callback implementation where a custom tag can be
+// defined, a placeholder HTML element will be emmitted at parse time, but the
+// callback will be deferred until later when all internal PSPLX parsing is
+// complete. This ensure for example that TSPLX contains all links. It also
+// avoids the perills of being called during parsing execution and the
+// possibility of messing up the parser's state.
+
+PSX_LATE_USER_TAG_CB(orphan_list_tag_handler)
+{
+    str_set(&html_placeholder->tag, "ul");
+
+    LINKED_LIST_FOR (struct note_t *, curr_note, rt->notes) {
+        // TODO: Maybe use a map so we don't do an O(n) search in each iteration
+        // to determine if a root note is a title note?.
+        bool is_title_note = false;
+        for (int i=0; i < rt->title_note_ids_len; i++) {
+            if (strcmp (curr_note->id, rt->title_note_ids[i]) == 0) {
+                is_title_note = true;
+            }
+        }
+
+        struct splx_node_list_t *backlinks = splx_node_get_attributes (curr_note->tree->data, "backlink");
+        if (backlinks == NULL && !is_title_note) {
+            struct html_element_t *list_item = html_new_element (note->html, "li");
+            html_element_append_child (note->html, html_placeholder, list_item);
+
+            struct html_element_t *paragraph = html_new_element (note->html, "p");
+            html_element_append_child (note->html, list_item, paragraph);
+
+            struct note_t *target_note = rt_get_note_by_title (&curr_note->title);
+            if (target_note != NULL) {
+                html_append_note_link (note->html,
+                    paragraph,
+                    target_note->id,
+                    str_data(&curr_note->title),
+                    str_len(&curr_note->title));
+            }
+        }
+    }
+}
+
+PSX_LATE_USER_TAG_CB(entity_list_tag_handler)
+{
+    str_set(&html_placeholder->tag, "ul");
+
+    LINKED_LIST_FOR (struct splx_node_list_t *, curr_list_node, rt->sd.entities->floating_values) {
+        struct splx_node_t *entity = curr_list_node->node;
+
+        struct splx_node_list_t *types = splx_node_get_attributes (entity, "a");
+        LINKED_LIST_FOR (struct splx_node_list_t *, curr_type, types) {
+            if (strcmp(str_data(&curr_type->node->str), str_data(&tag->content)) == 0) {
+                struct html_element_t *list_item = html_new_element (note->html, "li");
+                html_element_append_child (note->html, html_placeholder, list_item);
+
+                struct html_element_t *paragraph = html_new_element (note->html, "p");
+                html_element_append_child (note->html, list_item, paragraph);
+                //html_element_append_cstr (note->html, paragraph, str_data(title));
+
+                string_t *title = splx_node_get_name(entity);
+                struct note_t *target_note = rt_get_note_by_title (title);
+                if (target_note != NULL) {
+                    html_append_note_link (note->html,
+                                           paragraph,
+                                           target_note->id,
+                                           str_data(title),
+                                           str_len(title));
+                }
+            }
+        }
+    }
+}
+
+// Register callbacks
+// :late_tag_api
+#define PSX_LATE_INTERNAL_TAG_TABLE \
+PSX_INTERNAL_CUSTOM_TAG_ROW ("orphan_list", orphan_list_tag_handler) \
+PSX_INTERNAL_CUSTOM_TAG_ROW ("entity_list", entity_list_tag_handler) \
+
+void psx_populate_internal_late_cb_tree (struct psx_late_user_tag_cb_t *tree)
+{
+#define PSX_INTERNAL_CUSTOM_TAG_ROW(name,cb) psx_late_user_tag_cb_insert (tree, name, cb);
+    PSX_LATE_INTERNAL_TAG_TABLE
+#undef PSX_INTERNAL_CUSTOM_TAG_ROW
+}
+
