@@ -48,7 +48,7 @@ struct note_t* rt_new_note (struct note_runtime_t *rt, char *id, size_t id_len);
 struct note_runtime_t* rt_get ();
 struct note_t* rt_get_note_by_title (string_t *title);
 struct note_t* rt_get_note_by_id (char *id);
-void rt_link_notes (struct note_t *src, struct note_t *tgt);
+void rt_link_entities (char *src_id, char *tgt_id);
 void rt_queue_late_callback (struct note_t *note, struct psx_tag_t *tag, struct html_element_t *html_placeholder, psx_late_user_tag_cb_t *cb);
 
 #define CFG_TITLE_NOTES "title-notes"

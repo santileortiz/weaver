@@ -13,8 +13,10 @@ link -> http://example.com}. Now we test splitting the \link{link
 title -> http://example.com} and the URL \link{link -> http://exam
 ple.com}.
 
+Normal entity link ^my-type[Type Attributes].
+
 Text containing ^ chatacters, ^also as^ inline tag content
-\code{^person["name"]} and in backticks inline code `^person["name"]`.
+\code{^person[John Doe]} and in backticks inline code `^person[John Doe]`.
 
 \link{link -> http://example.com}
 

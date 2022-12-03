@@ -42,18 +42,12 @@ struct note_t* rt_get_note_by_id (char *id)
     return id_to_note_get (&rt->notes_by_id, id);
 }
 
-void rt_link_notes (struct note_t *src, struct note_t *tgt)
+void rt_link_entities (char *src_id, char *tgt_id)
 {
     struct note_runtime_t *rt = rt_get ();
 
-    LINKED_LIST_PUSH_NEW (&rt->pool, struct note_link_t, src->links, src_link);
-    src_link->note = tgt;
-
-    LINKED_LIST_PUSH_NEW (&rt->pool, struct note_link_t, tgt->back_links, tgt_link);
-    tgt_link->note = src;
-
-    struct splx_node_t *src_node = splx_node_get_or_create(&rt->sd, src->id, SPLX_NODE_TYPE_OBJECT);
-    struct splx_node_t *tgt_node = splx_node_get_or_create(&rt->sd, tgt->id, SPLX_NODE_TYPE_OBJECT);
+    struct splx_node_t *src_node = splx_node_get_or_create(&rt->sd, src_id, SPLX_NODE_TYPE_OBJECT);
+    struct splx_node_t *tgt_node = splx_node_get_or_create(&rt->sd, tgt_id, SPLX_NODE_TYPE_OBJECT);
 
     // TODO: Instead of just printing a page's backling once, we should provide
     // more context about where the link is coming from in each repetition.

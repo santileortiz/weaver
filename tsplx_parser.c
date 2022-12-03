@@ -461,6 +461,16 @@ void splx_node_add (struct splx_data_t *sd, struct splx_node_t *node)
     }
 }
 
+struct splx_node_t* splx_node (struct splx_data_t *sd, char *c_str, enum splx_node_type_t type)
+{
+    struct splx_node_t *node = splx_node_new (sd);
+    str_set (&node->str, c_str);
+    node->type = type;
+    splx_node_add (sd, node);
+
+    return node;
+}
+
 void splx_node_clear (struct splx_node_t *node)
 {
     node->type = SPLX_NODE_TYPE_UNKNOWN;
@@ -530,6 +540,15 @@ void splx_node_attribute_append (struct splx_data_t *sd, struct splx_node_t *nod
     }
 }
 
+void splx_node_attribute_append_c_str (struct splx_data_t *sd, struct splx_node_t *node,
+                                       char *predicate,
+                                       char *c_str,
+                                       enum splx_node_type_t type)
+{
+    struct splx_node_t *value = splx_node (sd, c_str, type);
+    splx_node_attribute_append (sd, node, predicate, value);
+}
+
 void splx_node_attribute_append_once (struct splx_data_t *sd, struct splx_node_t *node,
                                       char *predicate,
                                       struct splx_node_t *object)
@@ -557,6 +576,89 @@ void splx_node_attribute_append_once (struct splx_data_t *sd, struct splx_node_t
             curr_list_node->next = new_node_list_element;
         }
     }
+}
+
+void splx_node_attribute_append_once_c_str (struct splx_data_t *sd, struct splx_node_t *node,
+                                            char *predicate,
+                                            char *c_str,
+                                            enum splx_node_type_t type)
+{
+    char *predicate_str = splx_get_node_id_str (sd, predicate);
+
+    bool found = false;
+    struct splx_node_list_t *subject_node_list = cstr_to_splx_node_list_map_get (&node->attributes, predicate_str);
+    if (subject_node_list == NULL) {
+        subject_node_list = tps_wrap_in_list_node (sd, splx_node (sd, c_str, type));
+        cstr_to_splx_node_list_map_insert (&node->attributes, predicate_str, subject_node_list);
+
+    } else {
+        found = false;
+        LINKED_LIST_FOR (struct splx_node_list_t *, curr_list_node, subject_node_list) {
+            if (strcmp (c_str, str_data(&curr_list_node->node->str)) == 0) {
+                found = true;
+            }
+
+            if (curr_list_node->next == NULL) break;
+        }
+
+        if (!found) {
+            struct splx_node_t *value = splx_node (sd, c_str, type);
+            struct splx_node_list_t *new_node_list_element = tps_wrap_in_list_node (sd, value);
+            curr_list_node->next = new_node_list_element;
+        }
+    }
+}
+
+struct splx_node_list_t* splx_node_get_attributes (struct splx_node_t *node, char *attr)
+{
+    return cstr_to_splx_node_list_map_get (&node->attributes, attr);
+}
+
+struct splx_node_t* splx_get_node_by_name(struct splx_data_t *sd, char *name)
+{
+    struct splx_node_t *result = NULL;
+
+    LINKED_LIST_FOR (struct splx_node_list_t *, curr_list_node, sd->entities->floating_values) {
+        struct splx_node_t *entity = curr_list_node->node;
+
+        struct splx_node_list_t *names = splx_node_get_attributes (entity, "name");
+        LINKED_LIST_FOR (struct splx_node_list_t *, curr_name, names) {
+            struct splx_node_t *node = curr_name->node;
+
+            if (node->type == SPLX_NODE_TYPE_STRING && strcmp(str_data(&node->str), name) == 0) {
+                result = entity;
+                break;
+            }
+        }
+
+        if (result != NULL) break;
+    }
+
+    return result;
+}
+
+// TODO: Actually search for a specific type
+struct splx_node_t* splx_get_node_by_default_constructor(struct splx_data_t *sd, char *type, char *name)
+{
+    struct splx_node_t *result = NULL;
+
+    LINKED_LIST_FOR (struct splx_node_list_t *, curr_list_node, sd->entities->floating_values) {
+        struct splx_node_t *entity = curr_list_node->node;
+
+        struct splx_node_list_t *names = splx_node_get_attributes (entity, "name");
+        LINKED_LIST_FOR (struct splx_node_list_t *, curr_name, names) {
+            struct splx_node_t *node = curr_name->node;
+
+            if (node->type == SPLX_NODE_TYPE_STRING && strcmp(str_data(&node->str), name) == 0) {
+                result = entity;
+                break;
+            }
+        }
+
+        if (result != NULL) break;
+    }
+
+    return result;
 }
 
 // CAUTION: This isn't a fully deep copy, the values pointed to by the attribute
@@ -1671,9 +1773,9 @@ bool splx_node_get_value_cstr_arr (struct splx_data_t *sd, struct splx_node_t *n
 
 // Common Queries
 
-struct splx_node_list_t* splx_node_get_attributes (struct splx_node_t *node, char *attr)
+string_t* splx_node_get_id (struct splx_node_t *node)
 {
-    return cstr_to_splx_node_list_map_get (&node->attributes, attr);
+    return &node->str;
 }
 
 struct splx_node_t* splx_node_get_attribute (struct splx_node_t *node, char *attr)

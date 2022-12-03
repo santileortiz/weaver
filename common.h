@@ -1105,6 +1105,12 @@ void sstr_extend (sstring_t *str1, sstring_t *str2)
     }
 }
 
+static inline
+void str_set_sstr(string_t *str, sstring_t *sstr)
+{
+    strn_set (str, sstr->s, sstr->len);
+}
+
 bool is_empty_line (sstring_t line)
 {
     int count = 0;

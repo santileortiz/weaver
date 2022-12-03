@@ -6,6 +6,7 @@
 #include "binary_tree.c"
 #include "test_logger.c"
 #include "cli_parser.c"
+#include "html_builder.h"
 #include "automacros.h"
 
 #include "file_utility.h"

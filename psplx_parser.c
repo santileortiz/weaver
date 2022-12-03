@@ -33,9 +33,6 @@ struct note_t {
     bool error;
     string_t error_msg;
 
-    struct note_link_t *links;
-    struct note_link_t *back_links;
-
     struct note_t *next;
 };
 
@@ -1045,7 +1042,7 @@ void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html
         if (ps_match(ps, TOKEN_TYPE_TEXT, NULL) || ps_match(ps, TOKEN_TYPE_SPACE, NULL)) {
             struct psx_block_unit_t *curr_unit = DYNAMIC_ARRAY_GET_LAST(ps->block_unit_stack);
 
-            strn_set (&buff, tok.value.s, tok.value.len);
+            str_set_sstr (&buff, &tok.value);
             str_replace (&buff, "\n", " ", NULL);
             html_element_append_strn (html, curr_unit->html_element, str_len(&buff), str_data(&buff));
 
@@ -1240,7 +1237,7 @@ void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html
                 ps_html_cat_literal_tag (ps, tag, html);
             }
 
-            if (target_note == NULL) {
+            if (tag->has_content && target_note == NULL) {
                 // TODO: Handle broken links!!
                 //html_element_class_add (html, link_element, "note-link-broken");
 
@@ -1271,6 +1268,43 @@ void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html
                 struct psx_tag_t *tag = psx_parse_tag_note (ps, &original_pos, &target_note, &buff);
                 ps_restore_pos (ps, original_pos);
                 ps_html_cat_literal_tag (ps, tag, html);
+            }
+
+        } else if (rt_get() != NULL && ctx->note != NULL && ps_match(ps, TOKEN_TYPE_DATA_TAG, NULL)) {
+            struct splx_node_t *target = NULL;
+            struct psx_tag_t *tag = ps_parse_tag (ps, &original_pos);
+
+            if (tag->parameters.positional != NULL) {
+                string_t type = {0};
+                struct note_runtime_t *rt = rt_get();
+
+                str_set_sstr (&buff, &tag->parameters.positional->v);
+                str_set_sstr (&type, &tag->token.value);
+
+                target = splx_get_node_by_default_constructor(&rt->sd, str_data(&type), str_data(&buff));
+                str_free (&type);
+            }
+
+            if (target != NULL) {
+                rt_link_entities (ctx->id, str_data(&target->str));
+
+                html_append_note_link (html,
+                    psx_get_head_html_element(ps),
+                    str_data(splx_node_get_id(target)),
+                    str_data(&buff),
+                    str_len(&buff));
+
+            } else {
+                ps_restore_pos (ps, original_pos);
+                ps_html_cat_literal_tag (ps, tag, html);
+            }
+
+            if (tag->token.value.len > 0 && tag->parameters.positional != NULL && target == NULL) {
+                // TODO: Handle broken links!!
+                //html_element_class_add (html, link_element, "note-link-broken");
+
+                // :target_note_not_found_error
+                psx_warning (ps, "broken entity link, couldn't find entity for name: %s", str_data (&buff));
             }
 
         } else if (ps->is_eof) {
@@ -1307,7 +1341,7 @@ struct psx_block_t* psx_block_new_cpy(struct block_allocation_t *ba, struct psx_
 struct psx_block_t* psx_leaf_block_new(struct psx_parser_state_t *ps, enum psx_block_type_t type, int margin, sstring_t inline_content)
 {
     struct psx_block_t *new_block = psx_block_new (&ps->block_allocation);
-    strn_set (&new_block->inline_content, inline_content.s, inline_content.len);
+    str_set_sstr (&new_block->inline_content, &inline_content);
     new_block->type = type;
     new_block->margin = margin;
 
@@ -1480,7 +1514,7 @@ void psx_create_links_full (struct psx_parser_ctx_t *ctx, struct psx_block_t **r
                 // will show the warning message later, when building the html.
                 // :target_note_not_found_error
                 if (target_note != NULL) {
-                    rt_link_notes (current_note, target_note);
+                    rt_link_entities (current_note->id, target_note->id);
                 }
 
                 str_free (&target_note_title);
@@ -1765,7 +1799,7 @@ void psx_parse_block_attributes (struct psx_parser_state_t *ps, struct psx_block
                 internal_backup_column_number = ps->column_number;
 
                 string_t s = {0};
-                strn_set(&s, tok.value.s, tok.value.len);
+                str_set_sstr(&s, &tok.value);
                 struct splx_node_t *type = splx_node_get_or_create (ps->ctx.sd, str_data(&s), SPLX_NODE_TYPE_OBJECT);
                 splx_node_attribute_append (
                     ps->ctx.sd,
@@ -1831,7 +1865,7 @@ void psx_parse_note_title (struct psx_parser_state_t *ps, sstring_t *title, bool
 
         if (ps->ctx.sd != NULL && root_block->data != NULL) {
             string_t s = {0};
-            strn_set(&s, title->s, title->len);
+            str_set_sstr(&s, title);
             splx_node_attribute_add (
                 ps->ctx.sd,
                 root_block->data,
@@ -1856,7 +1890,7 @@ bool parse_note_title (char *path, char *note_text, string_t *title, struct splx
     sstring_t title_s = {0};
     psx_parse_note_title (ps, &title_s, false);
     if (!ps->error) {
-        strn_set (title, title_s.s, title_s.len);
+        str_set_sstr (title, &title_s);
     } else {
         success = false;
     }
@@ -2330,7 +2364,7 @@ PSX_USER_TAG_CB (summary_tag_handler)
 
         psx_replace_block_multiple (block_allocation, block, result, result_end);
 
-        rt_link_notes(ctx->note, note);
+        rt_link_entities(ctx->note->id, note->id);
 
         // TODO: Add some user defined wrapper that allows setting a different
         // style for blocks of summary. For example if we ever get inline
