@@ -237,8 +237,21 @@ bool test_int (struct test_ctx_t *t, int result, int expected)
 // For the case where it makes sense to use the expected string as start of the test name.
 void test_str_small (struct test_ctx_t *t, char *test_name, char *result, char *expected)
 {
-    test_push (t, "%s (%s)", expected, test_name);
-    if (test_bool (t, strcmp(result,expected) != 0)) {
+    if (test_name == NULL) {
+        test_push (t, "%s", expected);
+    } else {
+        test_push (t, "%s (%s)", expected, test_name);
+    }
+
+    if (!test_bool (t, strcmp(result,expected) == 0)) {
+        test_error (t, "Failed string comparison:\n got: '%s'\n exp: '%s'", result, expected);
+    }
+}
+
+// Default error message
+void test_str_e (struct test_ctx_t *t, char *result, char *expected)
+{
+    if (!test_str (t, result, expected)) {
         test_error (t, "Failed string comparison got '%s', expected '%s'", result, expected);
     }
 }
@@ -363,11 +376,9 @@ bool __crash_safe_wait_and_output (mem_pool_t *pool, bool *success,
     }
 
 #else
-
 // If subprocesses are disabled by convention we set the SUCCESS variable to
 // true. If the test code executes, and there is still a process that is
 // logging results, by definition it means that the test passed.
 #define CRASH_TEST(SUCCESS,OUTPUT,CODE) SUCCESS=true; CODE
 #define CRASH_TEST_AND_RUN(SUCCESS,OUTPUT,CODE) SUCCESS=true; CODE
-
 #endif
