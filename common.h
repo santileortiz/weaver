@@ -3,7 +3,9 @@
  */
 
 #if !defined(COMMON_H)
+#define _GNU_SOURCE
 #include <stdio.h>
+
 #include <ctype.h>
 #include <unistd.h>
 #include <inttypes.h>
@@ -19,6 +21,7 @@
 #include <dirent.h>
 #include <locale.h>
 #include <float.h>
+#include <ftw.h>
 
 #ifdef __cplusplus
 #define ZERO_INIT(type) (type){}
@@ -860,12 +863,20 @@ char sys_path_sep ()
 #define path_cat(str,path) str_cat_path(str,path)
 void str_cat_path (string_t *str, char *path)
 {
-    if (str_last (str) != '/') {
-        // TODO: Using printf for this feels like overkill
-        str_cat_printf (str, "%c", sys_path_sep());
+    if (str_len(str) > 0 && str_last (str) != '/') {
+        str_cat_char (str, sys_path_sep(), 1);
     }
 
     str_cat_c (str, path);
+}
+
+void str_path_ensure_ends_in_separator (string_t *path)
+{
+    char sep = sys_path_sep();
+
+    if (str_last (path) != sep) {
+        str_cat_char (path, sep, 1);
+    }
 }
 
 //////////////////////
@@ -3315,8 +3326,13 @@ bool path_ensure_dir (char *path)
 // to create all directories required for it to exist. If path ends in / then
 // all components are checked, otherwise the last part after / is assumed to be
 // a filename and is not created as a directory.
-bool ensure_path_exists (char *path)
+bool ensure_path_exists (char *path_str)
 {
+    // Create a duplicate so we don't write over the passed path
+    string_t _path = {0};
+    str_set (&_path, path_str);
+    char *path = str_data(&_path);
+
     bool success = true;
 
     char *c = path;
@@ -3353,6 +3369,8 @@ bool ensure_path_exists (char *path)
         // Path exists. Maybe check if it's the same type as on path, either
         // file or directory?.
     }
+
+    str_free (&_path);
 
     return success;
 }
@@ -3400,6 +3418,22 @@ bool read_dir (DIR *dirp, struct dirent **res)
         return false;
     }
     return true;
+}
+
+int unlink_cb(const char *fpath, const struct stat *sb, int typeflag, struct FTW *ftwbuf)
+{
+    int rv = remove(fpath);
+
+    if (rv) {
+        printf ("Error: could not delete: %s\n", fpath);
+    }
+
+    return rv;
+}
+
+int path_rmrf(char *path)
+{
+    return nftw(path, unlink_cb, 64, FTW_DEPTH | FTW_PHYS);
 }
 
 ////////////////////////////
@@ -3469,14 +3503,233 @@ void iterate_dir_helper (string_t *path,  iterate_dir_cb_t *callback, void *data
 void iterate_dir_full (char *path, iterate_dir_cb_t *callback, void *data, bool include_hidden)
 {
     string_t path_str = str_new (path);
-    if (str_last (&path_str) != '/') {
-        str_cat_c (&path_str, "/");
-    }
+    str_path_ensure_ends_in_separator(&path_str);
 
     iterate_dir_helper (&path_str, callback, data, include_hidden);
 
     str_free (&path_str);
 }
+
+#define MAX_FILENAME 255
+#define MAX_DEPTH 255
+
+struct dir_iterator_t {
+  DIR *dir;
+  string_t current_dir;
+  struct dirent *entry;
+
+  // TODO: Better use dynamic array
+  char directories[MAX_DEPTH][PATH_MAX];
+  int dir_stack_top;
+
+  bool entered_loop1;
+  bool done_loop1;
+  bool entered_loop2;
+  bool done_loop2;
+  bool yield;
+
+  // TODO: Which of these are the most used ones in practice?
+  string_t path;
+  char *basename;
+  bool is_dir;
+};
+
+void dir_iterator_next(struct dir_iterator_t *it, char *path) {
+    it->yield = false;
+
+    if (it->dir_stack_top == 0 && !(it->entered_loop1 && !it->done_loop1)) {
+        // Push the initial directory onto the stack of directories to be opened
+        strcpy(it->directories[it->dir_stack_top++], path);
+    }
+
+    // while (it->dir_stack_top > 0) // LOOP1
+    if (it->dir_stack_top > 0 || (it->entered_loop1 && !it->done_loop1)) {
+        it->entered_loop1 = true;
+
+        if (it->entry == NULL && !(it->entered_loop2 && !it->done_loop2)) {
+            it->done_loop2 = false;
+
+            // Pop the top directory from the stack
+            char *current_dir = it->directories[--it->dir_stack_top];
+            str_set (&it->current_dir, current_dir);
+
+            it->dir = opendir(current_dir);
+            if (it->dir == NULL) {
+                fprintf(stderr, "Failed to open directory '%s'\n", current_dir);
+                return;
+            }
+        }
+
+        // while ((it->entry = readdir(it->dir)) != NULL) // LOOP2
+        if ((it->entry = readdir(it->dir)) != NULL) {
+            it->entered_loop2 = true;
+
+            if (strcmp(it->entry->d_name, ".") == 0 || strcmp(it->entry->d_name, "..") == 0) {
+                return;
+            }
+
+            // Construct the full path of the entry
+            str_set(&it->path, str_data(&it->current_dir));
+            str_cat_path (&it->path, it->entry->d_name);
+
+            it->basename = it->entry->d_name;
+
+            if (it->entry->d_type == DT_DIR) {
+                strcpy(it->directories[it->dir_stack_top++], str_data(&it->path));
+                it->is_dir = true;
+            }  else {
+                it->is_dir = false;
+            }
+
+            // Yield
+            it->yield = true;
+        }
+
+        if (it->entry == NULL && it->entered_loop2) {
+            it->done_loop2 = true;
+
+            closedir(it->dir);
+        }
+
+    }
+
+    if (it->dir_stack_top == 0 && it->done_loop2) {
+        it->done_loop1 = true;
+    }
+}
+
+#define PATH_FOR(path_str, it) \
+    for (struct dir_iterator_t it = {0}; it.done_loop1 ? (str_free(&it.path), str_free(&it.current_dir), 0) : 1 ; dir_iterator_next(&it, path_str))\
+        if (it.yield)
+
+struct dir_sorted_iterator_t {
+  string_t current_dir;
+  struct dirent **entries;
+  int entries_len;
+  int entries_idx;
+  struct dirent *entry;
+
+  // TODO: Better use dynamic array
+  char directories[MAX_DEPTH][PATH_MAX];
+  int dir_stack_top;
+  int stack_frame_start_idx;
+
+  bool entered_loop1;
+  bool done_loop1;
+  bool entered_loop2;
+  bool done_loop2;
+  bool yield;
+
+  // TODO: Which of these are the most used ones in practice?
+  string_t path;
+  char *basename;
+  bool is_dir;
+};
+
+int dirent_nat_cmp(const struct dirent **a, const struct dirent **b)
+{
+    return strverscmp((char*) (*a)->d_name, (char*) (*b)->d_name);
+}
+
+int strcmp_cb(const void *a, const void *b)
+{
+    const char *s1 = *(const char **)a;
+    const char *s2 = *(const char **)b;
+    return strcmp(s1, s2);
+}
+
+void dir_sorted_iterator_next(struct dir_sorted_iterator_t *it, char *path) {
+    it->yield = false;
+
+    if (it->dir_stack_top == 0 && !(it->entered_loop1 && !it->done_loop1)) {
+        // Push the initial directory onto the stack of directories to be opened
+        strcpy(it->directories[it->dir_stack_top++], path);
+    }
+
+    // while (it->dir_stack_top > 0) // LOOP1
+    if (it->dir_stack_top > 0 || (it->entered_loop1 && !it->done_loop1)) {
+        it->entered_loop1 = true;
+
+        if (!(it->entries_idx < it->entries_len) && !(it->entered_loop2 && !it->done_loop2)) {
+            it->done_loop2 = false;
+
+            // Pop the top directory from the stack
+            char *current_dir = it->directories[--it->dir_stack_top];
+            str_set (&it->current_dir, current_dir);
+            it->stack_frame_start_idx = it->dir_stack_top;
+
+            it->entries_idx = 0;
+            it->entries_len = scandir(current_dir, &it->entries, NULL, dirent_nat_cmp);
+            if (it->entries_len == -1) {
+                fprintf(stderr, "Failed to open directory '%s'\n", current_dir);
+                return;
+            }
+
+            if (it->entries_len == 0) {
+                free (it->entries);
+            }
+        }
+
+        // for ( ; it->entries_idx < it->entries_len; it->entries_idx++) // LOOP2
+        if (it->entries_idx < it->entries_len) {
+            it->entered_loop2 = true;
+
+            it->entry = it->entries[it->entries_idx++];
+
+            if (strcmp(it->entry->d_name, ".") == 0 || strcmp(it->entry->d_name, "..") == 0) {
+                return;
+            }
+
+            // Construct the full path of the entry
+            str_set(&it->path, str_data(&it->current_dir));
+            str_cat_path (&it->path, it->entry->d_name);
+
+            it->basename = it->entry->d_name;
+
+            if (it->entry->d_type == DT_DIR) {
+                strcpy(it->directories[it->dir_stack_top++], str_data(&it->path));
+                it->is_dir = true;
+            }  else {
+                it->is_dir = false;
+            }
+
+            // Yield
+            it->yield = true;
+
+        } else if (it->entered_loop2) {
+            it->done_loop2 = true;
+
+            // To preserve entity ordering, reverse the order of directories
+            // pushed in this stack frame
+            int i = it->stack_frame_start_idx;
+            int j = it->dir_stack_top - 1;
+            char tmp[PATH_MAX];
+            for (int k = 0; k < (j - i + 1) / 2; k++)
+            {
+                strcpy(tmp, it->directories[i + k]);
+                strcpy(it->directories[i + k], it->directories[j - k]);
+                strcpy(it->directories[j - k], tmp);
+            }
+
+            // Free memory allocated by scandir
+            for (int i=0; i<it->entries_len; i++) {
+                free (it->entries[i]);
+            }
+            free (it->entries);
+        }
+    }
+
+    if (it->dir_stack_top == 0 && it->done_loop2) {
+        it->done_loop1 = true;
+    }
+}
+
+// TODO: Presumably this version should be slower than PATH_FOR because of the
+// stack reversal operation and the sorting of entries performed by scandir().
+// Is this true?, if so, how much slower is it?.
+#define PATH_FOR_SORTED(path_str, it) \
+    for (struct dir_sorted_iterator_t it = {0}; it.done_loop1 ? (str_free(&it.path), str_free(&it.current_dir), 0) : 1 ; dir_sorted_iterator_next(&it, path_str))\
+        if (it.yield)
 
 //////////////////////////////
 //
