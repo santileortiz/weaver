@@ -73,16 +73,19 @@ struct psx_parser_state_t {
 
     bool error;
 
-    bool is_eof;
-    bool is_eol;
-    bool is_peek;
-    char *str;
+    struct scanner_t scr;
 
     char *pos;
-    char *pos_peek;
+    char *str;
 
     int line_number;
     int column_number;
+
+    bool is_eof;
+
+    bool is_eol;
+    bool is_peek;
+    char *pos_peek;
 
     struct psx_token_t token;
     struct psx_token_t token_peek;
@@ -114,6 +117,7 @@ char pps_curr_char (struct psx_parser_state_t *ps)
 static inline
 char pps_prev_char (struct psx_parser_state_t *ps)
 {
+    assert (ps->str < ps->pos);
     return *(ps->pos-1);
 }
 
@@ -121,6 +125,14 @@ static inline
 bool pps_is_eof (struct psx_parser_state_t *ps)
 {
     return ps->is_eof || pps_curr_char(ps) == '\0';
+}
+
+static inline
+char pps_next_char (struct psx_parser_state_t *ps)
+{
+    if (pps_is_eof(ps)) return '\0';
+
+    return *(ps->pos+1);
 }
 
 static inline
@@ -138,7 +150,7 @@ bool pps_is_space (struct psx_parser_state_t *ps)
 static inline
 bool char_is_operator (char c)
 {
-    return char_in_str(c, ",=[]{}\\|`");
+    return char_in_str(c, ",=[]{}\\^|`");
 }
 
 static inline
@@ -206,9 +218,6 @@ sstring_t pps_advance_line(struct psx_parser_state_t *ps)
         pps_advance_char (ps);
     }
 
-    // Advance over the \n character. We leave \n characters because they are
-    // handled by the inline parser. Sometimes they are ignored (between URLs),
-    // and sometimes they are replaced to space (multiline paragraphs).
     pps_advance_char (ps);
 
     return SSTRING(start, ps->pos - start);
@@ -307,6 +316,7 @@ bool ps_parse_tag_parameters (struct psx_parser_state_t *ps, struct psx_tag_para
             if (pps_curr_char(ps) != '\"') {
                 // TODO: Allow quote strings for values. This is to allow
                 // values containing "," or "]".
+                // :scr_match_double_quoted_string
             }
 
             while (!ps->is_eof &&
@@ -501,48 +511,77 @@ bool ps_match(struct psx_parser_state_t *ps, enum psx_token_type_t type, char *v
     return match;
 }
 
+bool psx_match_tag_id (char *str, char *pos,
+                       char *start_chars,
+
+                       // Out
+                       char **tag, uint32_t *tag_len,
+                       char **end)
+{
+    bool success = true;
+
+    STACK_ALLOCATE(struct scanner_t, scr);
+    scr->str = str;
+    scr->pos = pos;
+
+    char *start = NULL;
+    if (char_in_str (scr_curr_char(scr), start_chars)) {
+        scr_advance_char (scr);
+
+        start = scr->pos;
+        while (!scr_is_eof(scr) &&
+               !char_is_operator(scr_curr_char(scr)) &&
+               !scr_is_space(scr) &&
+               scr_curr_char(scr) != '\n')
+        {
+            scr_advance_char (scr);
+        }
+
+    } else {
+        success = false;
+    }
+
+    if (success) {
+        if (tag != NULL) *tag = start;
+        if (tag_len != NULL) *tag_len = (scr->pos - start);
+
+        if (end != NULL) *end = scr->pos;
+    }
+
+    return success;
+}
+
 #define ps_inline_next(ps) ps_inline_next_full(ps,true)
 struct psx_token_t ps_inline_next_full(struct psx_parser_state_t *ps, bool escape_operators)
 {
     struct psx_token_t tok = {0};
 
+    char *new_pos = NULL;
     if (pps_is_eof(ps)) {
         ps->is_eof = true;
 
-    } else if (pps_curr_char(ps) == '\\' || pps_curr_char(ps) == '^') {
+    } else if (escape_operators && pps_curr_char(ps) == '\\' &&
+               char_is_operator(pps_next_char(ps)) && pps_next_char(ps) != '\\') {
+        // Move past \ character
+        pps_advance_char (ps);
+
+        // Create a text token with escaped operator as value
+        tok.value = SSTRING(ps->pos, 1);
+        tok.type = TOKEN_TYPE_TEXT;
+        pps_advance_char (ps);
+
+    } else if ((pps_curr_char(ps) == '\\' || pps_curr_char(ps) == '^') &&
+               psx_match_tag_id (ps->str, ps->pos, "\\^", &tok.value.s, &tok.value.len, &new_pos)) {
         if (pps_curr_char(ps) == '\\') {
             tok.type = TOKEN_TYPE_TEXT_TAG;
         } else {
             tok.type = TOKEN_TYPE_DATA_TAG;
         }
 
-        pps_advance_char (ps);
-
-        if (!pps_is_operator(ps) || pps_curr_char(ps) == '\\' || pps_curr_char(ps) == '{') {
-            char *start = ps->pos;
-
-            // TODO: Would be nicer to make '^' be an operator, unfortunately
-            // that breaks LaTeX parsing, why?.
-            while (!pps_is_eof(ps) && !pps_is_operator(ps) && !pps_is_space(ps) &&
-                   pps_curr_char(ps) != '\n' && pps_curr_char(ps) != '^')
-            {
-                pps_advance_char (ps);
-            }
-
-            tok.value = SSTRING(start, ps->pos - start);
-
-        } else {
-            if (escape_operators) {
-                // Escaped operator
-                tok.value = SSTRING(ps->pos, 1);
-                tok.type = TOKEN_TYPE_TEXT;
-
-                pps_advance_char (ps);
-
-            } else {
-                tok.value = SSTRING("\\", 1);
-                tok.type = TOKEN_TYPE_TEXT;
-            }
+        // This may be quite slow, but it ensures row and column count are
+        // consistent.
+        while (ps->pos != new_pos) {
+            pps_advance_char (ps);
         }
 
     } else if (pps_is_operator(ps)) {
@@ -1900,6 +1939,182 @@ bool parse_note_title (char *path, char *note_text, string_t *title, struct splx
     return success;
 }
 
+bool psx_match_tag_content (char *str, char *pos,
+                            bool expect_balanced_braces,
+
+                            // Out
+                            char **content, uint32_t *content_len,
+                            char **end)
+{
+    bool success = true;
+
+    STACK_ALLOCATE(struct scanner_t, scr);
+    scr->str = str;
+    scr->pos = pos;
+
+    if (scr_curr_char(scr) == '{') {
+        scr_advance_char (scr);
+
+        if (!expect_balanced_braces) {
+            success = scr_match_until_unescaped_operator (scr, '}', content, content_len);
+
+        } else {
+            int brace_level = 1;
+
+            char *content_start = scr->pos;
+            while (!scr->is_eof && brace_level != 0) {
+                scr_advance_char (scr);
+
+                if (scr_curr_char(scr) == '{') {
+                    brace_level++;
+                } else if (scr_curr_char(scr) == '}') {
+                    brace_level--;
+                }
+            }
+
+            if (scr->is_eof && scr_curr_char(scr) != '}') success = false;
+
+            if (success) {
+                if (content != NULL) *content = content_start;
+                if (content_len != NULL) *content_len = scr->pos - content_start;
+
+                // Advance over } character
+                scr_advance_char (scr);
+            }
+        }
+
+    } else if (scr_curr_char(scr) == '|') {
+        scr_advance_char (scr);
+
+        char *start = scr->pos;
+        while (!scr->is_eof && *(scr->pos) != '|') {
+            scr_advance_char (scr);
+        }
+
+        if (scr->is_eof) {
+            success = false;
+            //psx_error (ps, "Unexpected end of block. Incomplete definition of block content delimiter.");
+
+        } else {
+            char *content_start = NULL;
+            char *number_end;
+            size_t size = strtoul (start, &number_end, 10);
+            if (scr->pos == number_end) {
+                scr_advance_char (scr);
+                content_start = scr->pos;
+                scr->pos += size;
+
+            } else {
+                // TODO: Implement sentinel based tag content parsing
+                // \code|SENTINEL|int a[2] = {1,2}SENTINEL
+                success = false;
+            }
+
+            if (content_start != NULL && success) {
+                if (content != NULL) *content = content_start;
+                if (content_len != NULL) *content_len = scr->pos - content_start;
+            }
+        }
+    }
+
+    if (success && end != NULL) *end = scr->pos;
+
+    return success;
+}
+
+void psx_match_tag_data (char *str, char *pos,
+                         bool expect_balanced_braces,
+
+                         // Out
+                         char **parameters, uint32_t *parameters_len,
+                         char **content, uint32_t *content_len,
+                         char **end)
+{
+    STACK_ALLOCATE(struct scanner_t, scr);
+    scr->str = str;
+    scr->pos = pos;
+
+    if (scr_curr_char(scr) == '[' || scr_curr_char(scr) == '{' || scr_curr_char(scr) == '|') {
+        // Parameters
+        if (scr_curr_char(scr) == '[') {
+            scr_advance_char (scr);
+
+            char *parameters_start = scr->pos;
+            while (!scr->is_eof && scr_curr_char(scr) != ']') {
+                scr_match_double_quoted_string (scr);
+
+                scr_advance_char (scr);
+            }
+
+            if (parameters != NULL) *parameters = parameters_start;
+            if (parameters_len != NULL) *parameters_len = scr->pos - parameters_start;
+
+            // Advance over ] character
+            scr_advance_char (scr);
+
+            if (end != NULL) *end = scr->pos;
+        }
+
+        // Content
+        psx_match_tag_content(str, scr->pos, expect_balanced_braces, content, content_len, &scr->pos);
+    }
+
+    if (end != NULL) *end = scr->pos;
+}
+
+// Because we want to be very flexible but easy to learn, that often means
+// overloading a lot of functionality into very similar syntax. When writing
+// text, the concept of "weird" behavior is being overloaded into the tag
+// concept. Tags may behave differently depending on their position and we now
+// have text and data tags etc. This function matches a tag and returns all the
+// positioning information that we may need to make follow up decision on how we
+// process a specific tag.
+//
+// A notable aspect of this function is that it's pure, in the sense that it has
+// absolutely no side effects. Its memory allocation profile is net zero. It
+// just performs a sophisticated string matching then returns enough pointers
+// for other functions to actually perform the necessary side effects. Or not,
+// in fact, not doing anything is probably the most commonly ovelooked use case.
+bool psx_match_tag (char *str, char *pos,
+                    char *start_chars,
+                    bool balanced_brace_content,
+
+                    // Out
+                    char **tag, uint32_t *tag_len,
+                    char **parameters, uint32_t *parameters_len,
+                    char **content, uint32_t *content_len,
+                    char **end,
+                    bool *at_end_of_block)
+{
+    bool success = true;
+
+    STACK_ALLOCATE(struct scanner_t, scr);
+    scr->str = str;
+    scr->pos = pos;
+
+    bool after_line_break = (pos > str && scr_prev_char(scr) == '\n');
+
+    success = psx_match_tag_id(str, pos, start_chars,
+                               tag, tag_len,
+                               &scr->pos);
+
+    psx_match_tag_data(str, scr->pos,
+                       balanced_brace_content,
+                       parameters, parameters_len,
+                       content, content_len,
+                       &scr->pos);
+
+    if (at_end_of_block != NULL) {
+        *at_end_of_block = false;
+
+        if (scr_match_str (scr, "\n\n") && after_line_break)  {
+            *at_end_of_block = true;
+        }
+    }
+
+    return success;
+}
+
 void psx_append_paragraph_continuation_lines (struct psx_parser_state_t *ps, struct psx_block_t *new_paragraph)
 {
     struct psx_token_t tok_peek = ps_next_peek(ps);
@@ -1908,8 +2123,17 @@ void psx_append_paragraph_continuation_lines (struct psx_parser_state_t *ps, str
     {
         // Check if this paragraph token is actually a data header. If it is,
         // then stop appending continuation lines.
-        // TODO: Should we make data header a new kind of block level token?.
-        if (*tok_peek.value.s == '^' && sstr_find_char(&tok_peek.value, ' ') == NULL) {
+        bool at_end_of_block = false;
+        if (*tok_peek.value.s == '^' &&
+            psx_match_tag(ps->str, ps->pos, "^",
+                          true,
+                          NULL, NULL,
+                          NULL, NULL,
+                          NULL, NULL,
+                          NULL,
+                          &at_end_of_block) &&
+            at_end_of_block)
+        {
             break;
         }
 

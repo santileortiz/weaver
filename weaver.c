@@ -3,6 +3,7 @@
  */
 
 #include "common.h"
+#include "scanner.c"
 #include "binary_tree.c"
 #include "test_logger.c"
 #include "cli_parser.c"

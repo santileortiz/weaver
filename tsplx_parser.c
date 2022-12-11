@@ -300,6 +300,7 @@ struct tsplx_token_t tps_next (struct tsplx_parser_state_t *tps)
 
     } else if (tps_match_str(tps, "\"")) {
         char *start = tps->pos;
+        // :advance_double_quoted_string
         while (!tps_is_eof(tps) && tps_curr_char(tps) != '"') {
             tps_advance_char (tps);
 
