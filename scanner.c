@@ -13,9 +13,15 @@ struct scanner_t {
 };
 
 static inline
+char* scr_pos (struct scanner_t *scr)
+{
+    return scr->pos;
+}
+
+static inline
 char scr_curr_char (struct scanner_t *scr)
 {
-    return *(scr->pos);
+    return *scr_pos(scr);
 }
 
 static inline
@@ -28,7 +34,14 @@ char scr_prev_char (struct scanner_t *scr)
 static inline
 bool scr_is_eof (struct scanner_t *scr)
 {
-    return scr->is_eof || scr_curr_char(scr) == '\0';
+    return scr->is_eof;
+}
+
+static inline
+char scr_next_char (struct scanner_t *scr)
+{
+    if (scr_is_eof(scr)) return '\0';
+    return *(scr->pos+1);
 }
 
 static inline
@@ -51,7 +64,7 @@ bool scr_is_space (struct scanner_t *scr)
 
 void scr_advance_char (struct scanner_t *scr)
 {
-    if (!scr_is_eof(scr)) {
+    if (scr_curr_char(scr) != '\0') {
         scr->pos++;
 
         scr->column_number++;
@@ -62,6 +75,9 @@ void scr_advance_char (struct scanner_t *scr)
         }
 
     } else {
+        // This is not the only place where is_eof is set. I've had to also do
+        // this in tokenizers. Be careful when assuming EOF is only set here.
+        // :eof_set
         scr->is_eof = true;
     }
 }
