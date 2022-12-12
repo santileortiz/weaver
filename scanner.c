@@ -118,8 +118,10 @@ bool scr_match_digits (struct scanner_t *scr)
 
 bool scr_match_until_unescaped_operator (struct scanner_t *scr, char operator, char **str, uint32_t *str_len)
 {
-    bool found = false;
+    char *res = NULL;
+    uint32_t res_len = 0;
 
+    struct scanner_t scr_bak = *scr;
     char *start = scr->pos;
     while (!scr_is_eof(scr) && scr_curr_char(scr) != operator) {
         scr_advance_char (scr);
@@ -130,13 +132,17 @@ bool scr_match_until_unescaped_operator (struct scanner_t *scr, char operator, c
     }
 
     if (scr_curr_char(scr) == operator) {
-        found = true;
-
-        if (str != NULL) *str = start;
-        if (str_len != NULL) *str_len = scr->pos - start;
+        res = start;
+        res_len = scr->pos - start;
+        scr_advance_char(scr);
+    } else {
+        *scr = scr_bak;
     }
 
-    return found;
+    if (str != NULL) *str = res;
+    if (str_len != NULL) *str_len = res_len;
+
+    return res != NULL;
 }
 
 // TODO: Some places do this but are not calling into this function. When we

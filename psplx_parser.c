@@ -604,66 +604,96 @@ bool psx_extract_until_unescaped_operator (struct psx_parser_state_t *ps, char c
     return success;
 }
 
-bool psx_cat_tag_content (struct psx_parser_state_t *ps, string_t *str, bool expect_balanced_braces)
+bool psx_match_tag_content (char *str, char *pos,
+                            bool expect_balanced_braces,
+
+                            // Out
+                            char **content, uint32_t *content_len,
+                            char **end)
 {
-    bool has_content = false;
+    char *res = NULL;
+    uint32_t res_len = 0;
 
-    char *original_pos = scr_pos(PS_SCR);
-    ps_inline_next(ps);
-    if (ps_match(ps, TOKEN_TYPE_OPERATOR, "{")) {
-        has_content = true;
+    STACK_ALLOCATE(struct scanner_t, scr);
+    scr->str = str;
+    scr->pos = pos;
 
+    if (scr_curr_char(scr) == '{') {
         if (!expect_balanced_braces) {
-            has_content = psx_extract_until_unescaped_operator (ps, '}', str);
+            scr_advance_char (scr);
+            scr_match_until_unescaped_operator (scr, '}', &res, &res_len);
 
         } else {
             int brace_level = 1;
 
-            while (!scr_is_eof(PS_SCR) && brace_level != 0) {
-                ps_inline_next_full (ps, false);
-                if (ps_match (ps, TOKEN_TYPE_OPERATOR, "{")) {
+            char *content_start = scr->pos + 1/*starting { character*/;
+            while (!scr->is_eof && brace_level != 0) {
+                scr_advance_char (scr);
+
+                if (scr_curr_char(scr) == '{') {
                     brace_level++;
-                } else if (ps_match (ps, TOKEN_TYPE_OPERATOR, "}")) {
+                } else if (scr_curr_char(scr) == '}') {
                     brace_level--;
                 }
+            }
 
-                if (brace_level != 0) { // Avoid appending the closing }
-                    str_cat_literal_token_ps (str, ps);
-                }
+            if (!scr->is_eof && brace_level == 0) {
+                res = content_start;
+                res_len = scr->pos - content_start;
+                scr_advance_char (scr);
             }
         }
 
-    } else if (ps_match(ps, TOKEN_TYPE_OPERATOR, "|")) {
-        has_content = true;
+    } else if (scr_curr_char(scr) == '|') {
+        scr_advance_char (scr);
 
-        char *start = scr_pos(PS_SCR);
-        while (!scr_is_eof(PS_SCR) && scr_curr_char(PS_SCR) != '|') {
-            scr_advance_char (PS_SCR);
+        char *start = scr->pos;
+        while (!scr->is_eof && *(scr->pos) != '|') {
+            scr_advance_char (scr);
         }
 
-        if (scr_is_eof(PS_SCR)) {
-            psx_error (ps, "Unexpected end of block. Incomplete definition of block content delimiter.");
+        char *content_start = NULL;
+        char *number_end;
+        size_t size = strtoul (start, &number_end, 10);
+        if (scr->pos == number_end) {
+            scr_advance_char (scr);
+            content_start = scr->pos;
+
+            // TODO: We may be going past the end of the note!!! this is
+            // unsafe!
+            scr->pos += size;
 
         } else {
-            char *number_end;
-            size_t size = strtoul (start, &number_end, 10);
-            if (scr_pos(PS_SCR) == number_end) {
-                scr_advance_char (PS_SCR);
-                strn_cat_c (str, scr_pos(PS_SCR), size);
-                ps->scr.pos += size;
+            // TODO: Implement sentinel based tag content parsing
+            // \code|SENTINEL|int a[2] = {1,2}SENTINEL
+        }
 
-            } else {
-                // TODO: Implement sentinel based tag content parsing
-                // \code|SENTINEL|int a[2] = {1,2}SENTINEL
-            }
+        if (!scr_is_eof(scr) && content_start != NULL) {
+            res = content_start;
+            res_len = scr->pos - content_start;
         }
     }
 
-    if (!has_content) {
-        ps_restore_pos (ps, original_pos);
+    if (content != NULL) *content = res;
+    if (content_len != NULL) *content_len = res_len;
+    if (res != NULL && end != NULL) *end = scr->pos;
+
+    return res != NULL;
+}
+
+bool psx_cat_tag_content (struct psx_parser_state_t *ps, string_t *str, bool expect_balanced_braces)
+{
+    char *content;
+    uint32_t content_len;
+    char *end;
+    psx_match_tag_content (ps->scr.str, ps->scr.pos, expect_balanced_braces, &content, &content_len, &end);
+
+    if (content != NULL) {
+        strn_cat_c (str, content, content_len);
+        ps->scr.pos = end;
     }
 
-    return has_content;
+    return content != NULL;
 }
 
 #define ps_parse_tag(ps,end) ps_parse_tag_full(&ps->pool,ps,end,false)
@@ -1819,89 +1849,6 @@ bool parse_note_title (char *path, char *note_text, string_t *title, struct splx
     }
 
     ps_destroy (ps);
-
-    return success;
-}
-
-bool psx_match_tag_content (char *str, char *pos,
-                            bool expect_balanced_braces,
-
-                            // Out
-                            char **content, uint32_t *content_len,
-                            char **end)
-{
-    bool success = true;
-
-    STACK_ALLOCATE(struct scanner_t, scr);
-    scr->str = str;
-    scr->pos = pos;
-
-    if (scr_curr_char(scr) == '{') {
-        scr_advance_char (scr);
-
-        if (!expect_balanced_braces) {
-            success = scr_match_until_unescaped_operator (scr, '}', content, content_len);
-
-        } else {
-            int brace_level = 1;
-
-            char *content_start = scr->pos;
-            while (!scr->is_eof && brace_level != 0) {
-                scr_advance_char (scr);
-
-                if (scr_curr_char(scr) == '{') {
-                    brace_level++;
-                } else if (scr_curr_char(scr) == '}') {
-                    brace_level--;
-                }
-            }
-
-            if (scr->is_eof && scr_curr_char(scr) != '}') success = false;
-
-            if (success) {
-                if (content != NULL) *content = content_start;
-                if (content_len != NULL) *content_len = scr->pos - content_start;
-
-                // Advance over } character
-                scr_advance_char (scr);
-            }
-        }
-
-    } else if (scr_curr_char(scr) == '|') {
-        scr_advance_char (scr);
-
-        char *start = scr->pos;
-        while (!scr->is_eof && *(scr->pos) != '|') {
-            scr_advance_char (scr);
-        }
-
-        if (scr->is_eof) {
-            success = false;
-            //psx_error (ps, "Unexpected end of block. Incomplete definition of block content delimiter.");
-
-        } else {
-            char *content_start = NULL;
-            char *number_end;
-            size_t size = strtoul (start, &number_end, 10);
-            if (scr->pos == number_end) {
-                scr_advance_char (scr);
-                content_start = scr->pos;
-                scr->pos += size;
-
-            } else {
-                // TODO: Implement sentinel based tag content parsing
-                // \code|SENTINEL|int a[2] = {1,2}SENTINEL
-                success = false;
-            }
-
-            if (content_start != NULL && success) {
-                if (content != NULL) *content = content_start;
-                if (content_len != NULL) *content_len = scr->pos - content_start;
-            }
-        }
-    }
-
-    if (success && end != NULL) *end = scr->pos;
 
     return success;
 }

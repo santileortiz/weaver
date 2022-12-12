@@ -312,7 +312,7 @@ int main(int argc, char** argv)
                 test_push (t, "Matches expected HTML");
 
                 string_t html_str = {0};
-                str_cat_html (&html_str, note->html, 2);
+                if (note->html != NULL) str_cat_html (&html_str, note->html, 2);
                 test_str (t, str_data(&html_str), expected_html);
                 str_free(&html_str);
 
