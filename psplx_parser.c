@@ -180,6 +180,8 @@ void psx_warning_ctx (struct psx_parser_ctx_t *ctx, char *format, ...)
     str_cat_c (ctx->error_msg, "\n");
 }
 
+// TODO: Rewrite this as a function that recives a scanner_t and can be called
+// iteratively to yield all parameters.
 bool ps_parse_tag_parameters (struct psx_parser_state_t *ps, struct psx_tag_parameters_t *parameters)
 {
     bool has_parameters = false;
@@ -261,6 +263,27 @@ bool ps_parse_tag_parameters (struct psx_parser_state_t *ps, struct psx_tag_para
     return has_parameters;
 }
 
+void psx_match_tag_parameters (struct scanner_t *scr,
+                               char **parameters, uint32_t *parameters_len)
+{
+    if (scr_curr_char(scr) == '[') {
+        scr_advance_char (scr);
+
+        char *parameters_start = scr->pos;
+        while (!scr->is_eof && scr_curr_char(scr) != ']') {
+            scr_match_double_quoted_string (scr);
+
+            scr_advance_char (scr);
+        }
+
+        if (parameters != NULL) *parameters = parameters_start;
+        if (parameters_len != NULL) *parameters_len = scr->pos - parameters_start;
+
+        // Advance over ] character
+        scr_advance_char (scr);
+    }
+}
+
 struct psx_token_t ps_next_peek(struct psx_parser_state_t *ps)
 {
     STACK_ALLOCATE (struct psx_token_t, tok);
@@ -321,7 +344,7 @@ struct psx_token_t ps_next_peek(struct psx_parser_state_t *ps)
         }
 
     } else if (scr_match_str(PS_SCR, "\\code")) {
-        ps_parse_tag_parameters(ps, NULL);
+        psx_match_tag_parameters(PS_SCR, NULL, NULL);
 
         if (scr_match_str(PS_SCR, "\n")) {
             tok->type = TOKEN_TYPE_CODE_HEADER;
@@ -394,21 +417,17 @@ bool ps_match(struct psx_parser_state_t *ps, enum psx_token_type_t type, char *v
     return match;
 }
 
-bool psx_match_tag_id (char *str, char *pos,
+bool psx_match_tag_id (struct scanner_t *scr,
                        char *start_chars,
 
-                       // Out
-                       char **tag, uint32_t *tag_len,
-                       char **end)
+                       char **tag, uint32_t *tag_len)
 {
-    bool success = true;
+    bool success = false;
 
-    STACK_ALLOCATE(struct scanner_t, scr);
-    scr->str = str;
-    scr->pos = pos;
-
+    struct scanner_t scr_bak = *scr;
     char *start = NULL;
     if (char_in_str (scr_curr_char(scr), start_chars)) {
+        success = true;
         scr_advance_char (scr);
 
         start = scr->pos;
@@ -419,16 +438,13 @@ bool psx_match_tag_id (char *str, char *pos,
         {
             scr_advance_char (scr);
         }
-
-    } else {
-        success = false;
     }
 
     if (success) {
         if (tag != NULL) *tag = start;
         if (tag_len != NULL) *tag_len = (scr->pos - start);
-
-        if (end != NULL) *end = scr->pos;
+    } else {
+        *scr = scr_bak;
     }
 
     return success;
@@ -439,7 +455,6 @@ struct psx_token_t ps_inline_next_full(struct psx_parser_state_t *ps, bool escap
 {
     struct psx_token_t tok = {0};
 
-    char *new_pos = NULL;
     if (scr_is_eof(PS_SCR) || scr_curr_char(PS_SCR) == '\0') {
         // :eof_set
         ps->scr.is_eof = true;
@@ -455,17 +470,11 @@ struct psx_token_t ps_inline_next_full(struct psx_parser_state_t *ps, bool escap
         scr_advance_char (PS_SCR);
 
     } else if ((scr_curr_char(PS_SCR) == '\\' || scr_curr_char(PS_SCR) == '^') &&
-               psx_match_tag_id (ps->scr.str, scr_pos(PS_SCR), "\\^", &tok.value.s, &tok.value.len, &new_pos)) {
-        if (scr_curr_char(PS_SCR) == '\\') {
+               psx_match_tag_id (PS_SCR, "\\^", &tok.value.s, &tok.value.len)) {
+        if (*(tok.value.s - 1) == '\\') {
             tok.type = TOKEN_TYPE_TEXT_TAG;
         } else {
             tok.type = TOKEN_TYPE_DATA_TAG;
-        }
-
-        // This may be quite slow, but it ensures row and column count are
-        // consistent.
-        while (scr_pos(PS_SCR) != new_pos) {
-            scr_advance_char (PS_SCR);
         }
 
     } else if (ps_is_operator(ps)) {
@@ -604,19 +613,12 @@ bool psx_extract_until_unescaped_operator (struct psx_parser_state_t *ps, char c
     return success;
 }
 
-bool psx_match_tag_content (char *str, char *pos,
+bool psx_match_tag_content (struct scanner_t *scr,
                             bool expect_balanced_braces,
-
-                            // Out
-                            char **content, uint32_t *content_len,
-                            char **end)
+                            char **content, uint32_t *content_len)
 {
     char *res = NULL;
     uint32_t res_len = 0;
-
-    STACK_ALLOCATE(struct scanner_t, scr);
-    scr->str = str;
-    scr->pos = pos;
 
     if (scr_curr_char(scr) == '{') {
         if (!expect_balanced_braces) {
@@ -676,7 +678,6 @@ bool psx_match_tag_content (char *str, char *pos,
 
     if (content != NULL) *content = res;
     if (content_len != NULL) *content_len = res_len;
-    if (res != NULL && end != NULL) *end = scr->pos;
 
     return res != NULL;
 }
@@ -685,12 +686,10 @@ bool psx_cat_tag_content (struct psx_parser_state_t *ps, string_t *str, bool exp
 {
     char *content;
     uint32_t content_len;
-    char *end;
-    psx_match_tag_content (ps->scr.str, ps->scr.pos, expect_balanced_braces, &content, &content_len, &end);
+    psx_match_tag_content (PS_SCR, expect_balanced_braces, &content, &content_len);
 
     if (content != NULL) {
         strn_cat_c (str, content, content_len);
-        ps->scr.pos = end;
     }
 
     return content != NULL;
@@ -1853,44 +1852,17 @@ bool parse_note_title (char *path, char *note_text, string_t *title, struct splx
     return success;
 }
 
-void psx_match_tag_data (char *str, char *pos,
+void psx_match_tag_data (struct scanner_t *scr,
                          bool expect_balanced_braces,
 
                          // Out
                          char **parameters, uint32_t *parameters_len,
-                         char **content, uint32_t *content_len,
-                         char **end)
+                         char **content, uint32_t *content_len)
 {
-    STACK_ALLOCATE(struct scanner_t, scr);
-    scr->str = str;
-    scr->pos = pos;
-
     if (scr_curr_char(scr) == '[' || scr_curr_char(scr) == '{' || scr_curr_char(scr) == '|') {
-        // Parameters
-        if (scr_curr_char(scr) == '[') {
-            scr_advance_char (scr);
-
-            char *parameters_start = scr->pos;
-            while (!scr->is_eof && scr_curr_char(scr) != ']') {
-                scr_match_double_quoted_string (scr);
-
-                scr_advance_char (scr);
-            }
-
-            if (parameters != NULL) *parameters = parameters_start;
-            if (parameters_len != NULL) *parameters_len = scr->pos - parameters_start;
-
-            // Advance over ] character
-            scr_advance_char (scr);
-
-            if (end != NULL) *end = scr->pos;
-        }
-
-        // Content
-        psx_match_tag_content(str, scr->pos, expect_balanced_braces, content, content_len, &scr->pos);
+        psx_match_tag_parameters(scr, parameters, parameters_len);
+        psx_match_tag_content(scr, expect_balanced_braces, content, content_len);
     }
-
-    if (end != NULL) *end = scr->pos;
 }
 
 // Because we want to be very flexible but easy to learn, that often means
@@ -1925,15 +1897,13 @@ bool psx_match_tag (char *str, char *pos,
 
     bool after_line_break = (pos > str && scr_prev_char(scr) == '\n');
 
-    success = psx_match_tag_id(str, pos, start_chars,
-                               tag, tag_len,
-                               &scr->pos);
+    success = psx_match_tag_id(scr, start_chars,
+                               tag, tag_len);
 
-    psx_match_tag_data(str, scr->pos,
+    psx_match_tag_data(scr,
                        balanced_brace_content,
                        parameters, parameters_len,
-                       content, content_len,
-                       &scr->pos);
+                       content, content_len);
 
     if (at_end_of_block != NULL) {
         *at_end_of_block = false;
