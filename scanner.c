@@ -32,15 +32,9 @@ char scr_prev_char (struct scanner_t *scr)
 }
 
 static inline
-bool scr_is_eof (struct scanner_t *scr)
-{
-    return scr->is_eof;
-}
-
-static inline
 char scr_next_char (struct scanner_t *scr)
 {
-    if (scr_is_eof(scr)) return '\0';
+    if (scr->is_eof) return '\0';
     return *(scr->pos+1);
 }
 
@@ -53,13 +47,13 @@ bool scr_is_start (struct scanner_t *scr)
 static inline
 bool scr_is_digit (struct scanner_t *scr)
 {
-    return !scr_is_eof(scr) && char_in_str(scr_curr_char(scr), "1234567890");
+    return !scr->is_eof && char_in_str(scr_curr_char(scr), "1234567890");
 }
 
 static inline
 bool scr_is_space (struct scanner_t *scr)
 {
-    return !scr_is_eof(scr) && is_space(scr->pos);
+    return !scr->is_eof && is_space(scr->pos);
 }
 
 void scr_advance_char (struct scanner_t *scr)
@@ -123,7 +117,7 @@ bool scr_match_until_unescaped_operator (struct scanner_t *scr, char operator, c
 
     struct scanner_t scr_bak = *scr;
     char *start = scr->pos;
-    while (!scr_is_eof(scr) && scr_curr_char(scr) != operator) {
+    while (!scr->is_eof && scr_curr_char(scr) != operator) {
         scr_advance_char (scr);
 
         if (scr_curr_char(scr) == operator && scr_prev_char(scr) == '\\') {
@@ -170,7 +164,7 @@ bool scr_match_double_quoted_string (struct scanner_t *scr)
 sstring_t scr_advance_line(struct scanner_t *scr)
 {
     char *start = scr->pos;
-    while (!scr_is_eof(scr) && scr_curr_char(scr) != '\n') {
+    while (!scr->is_eof && scr_curr_char(scr) != '\n') {
         scr_advance_char (scr);
     }
 

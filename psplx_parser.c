@@ -111,7 +111,7 @@ bool char_is_operator (char c)
 static inline
 bool ps_is_operator (struct psx_parser_state_t *ps)
 {
-    return !scr_is_eof(PS_SCR) && char_is_operator(scr_curr_char(PS_SCR));
+    return !PS_SCR->is_eof && char_is_operator(scr_curr_char(PS_SCR));
 }
 
 BINARY_TREE_NEW (sstring_map, sstring_t, sstring_t, strncmp(a.s, b.s, MIN(a.len, b.len)))
@@ -194,7 +194,7 @@ bool ps_parse_tag_parameters (struct psx_parser_state_t *ps, struct psx_tag_para
     if (scr_curr_char(PS_SCR) == '[') {
         has_parameters = true;
 
-        while (!scr_is_eof(PS_SCR) && scr_curr_char(PS_SCR) != ']') {
+        while (!PS_SCR->is_eof && scr_curr_char(PS_SCR) != ']') {
             scr_advance_char (PS_SCR);
 
             char *start = scr_pos(PS_SCR);
@@ -204,7 +204,7 @@ bool ps_parse_tag_parameters (struct psx_parser_state_t *ps, struct psx_tag_para
                 // :scr_match_double_quoted_string
             }
 
-            while (!scr_is_eof(PS_SCR) &&
+            while (!PS_SCR->is_eof &&
                    scr_curr_char(PS_SCR) != ',' &&
                    scr_curr_char(PS_SCR) != '=' &&
                    scr_curr_char(PS_SCR) != ']')
@@ -212,7 +212,7 @@ bool ps_parse_tag_parameters (struct psx_parser_state_t *ps, struct psx_tag_para
                 scr_advance_char (PS_SCR);
             }
 
-            if (scr_is_eof(PS_SCR)) {
+            if (PS_SCR->is_eof) {
                 has_parameters = false;
             }
 
@@ -229,14 +229,14 @@ bool ps_parse_tag_parameters (struct psx_parser_state_t *ps, struct psx_tag_para
                 scr_advance_char (PS_SCR);
 
                 char *value_start = scr_pos(PS_SCR);
-                while (!scr_is_eof(PS_SCR) &&
+                while (!PS_SCR->is_eof &&
                        scr_curr_char(PS_SCR) != ',' &&
                        scr_curr_char(PS_SCR) != ']')
                 {
                     scr_advance_char (PS_SCR);
                 }
 
-                if (scr_is_eof(PS_SCR)) {
+                if (PS_SCR->is_eof) {
                     has_parameters = false;
                 }
 
@@ -296,7 +296,7 @@ struct psx_token_t ps_next_peek(struct psx_parser_state_t *ps)
     tok->type = TOKEN_TYPE_PARAGRAPH;
 
     char *non_space_pos = scr_pos(PS_SCR);
-    if (scr_is_eof(PS_SCR) || scr_curr_char(PS_SCR) == '\0') {
+    if (PS_SCR->is_eof || scr_curr_char(PS_SCR) == '\0') {
         // :eof_set
         ps->scr.is_eof = true;
         ps->is_eol = true;
@@ -431,7 +431,7 @@ bool psx_match_tag_id (struct scanner_t *scr,
         scr_advance_char (scr);
 
         start = scr->pos;
-        while (!scr_is_eof(scr) &&
+        while (!scr->is_eof &&
                !char_is_operator(scr_curr_char(scr)) &&
                !scr_is_space(scr) &&
                scr_curr_char(scr) != '\n')
@@ -455,7 +455,7 @@ struct psx_token_t ps_inline_next_full(struct psx_parser_state_t *ps, bool escap
 {
     struct psx_token_t tok = {0};
 
-    if (scr_is_eof(PS_SCR) || scr_curr_char(PS_SCR) == '\0') {
+    if (PS_SCR->is_eof || scr_curr_char(PS_SCR) == '\0') {
         // :eof_set
         ps->scr.is_eof = true;
 
@@ -495,7 +495,7 @@ struct psx_token_t ps_inline_next_full(struct psx_parser_state_t *ps, bool escap
 
     } else {
         char *start = scr_pos(PS_SCR);
-        while (!scr_is_eof(PS_SCR) && !ps_is_operator(ps) && !scr_is_space(PS_SCR)) {
+        while (!PS_SCR->is_eof && !ps_is_operator(ps) && !scr_is_space(PS_SCR)) {
             scr_advance_char (PS_SCR);
         }
 
@@ -580,7 +580,7 @@ bool psx_extract_until_unescaped_operator (struct psx_parser_state_t *ps, char c
     bool success = true;
 
     char *last_start = scr_pos(PS_SCR);
-    while (!scr_is_eof(PS_SCR)) {
+    while (!PS_SCR->is_eof) {
         scr_advance_char (PS_SCR);
 
         if (scr_curr_char(PS_SCR) == c) {
@@ -670,7 +670,7 @@ bool psx_match_tag_content (struct scanner_t *scr,
             // \code|SENTINEL|int a[2] = {1,2}SENTINEL
         }
 
-        if (!scr_is_eof(scr) && content_start != NULL) {
+        if (!scr->is_eof && content_start != NULL) {
             res = content_start;
             res_len = scr->pos - content_start;
         }
@@ -987,7 +987,7 @@ void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html
     // parser would  better?, but it's just a feeling, It's possible the code
     // will still look the same.
     DYNAMIC_ARRAY_APPEND (ps->block_unit_stack, psx_block_unit_new (&ps->pool, BLOCK_UNIT_TYPE_ROOT, container));
-    while (!scr_is_eof(PS_SCR) && !ps->error) {
+    while (!PS_SCR->is_eof && !ps->error) {
         struct psx_token_t tok = ps_inline_next (ps);
 
         str_set (&buff, "");
@@ -1259,7 +1259,7 @@ void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html
                 psx_warning (ps, "broken entity link, couldn't find entity for name: %s", str_data (&buff));
             }
 
-        } else if (scr_is_eof(PS_SCR)) {
+        } else if (PS_SCR->is_eof) {
             // do nothing
 
         } else {
@@ -1372,7 +1372,7 @@ void psx_block_tree_user_callbacks_full (struct psx_parser_ctx_t *ctx, struct bl
         struct str_replacement_t *replacements = NULL;
         struct str_replacement_t *replacements_end = NULL;
         char *block_start = ps_inline->scr.pos;
-        while (!scr_is_eof(&ps_inline->scr) && !ps_inline->error) {
+        while (!ps_inline->scr.is_eof && !ps_inline->error) {
             char *tag_start = ps_inline->scr.pos;
             struct psx_token_t tok = ps_inline_next (ps_inline);
             if (ps_match(ps_inline, TOKEN_TYPE_TEXT_TAG, NULL)) {
@@ -1453,7 +1453,7 @@ void psx_create_links_full (struct psx_parser_ctx_t *ctx, struct psx_block_t **r
         struct psx_parser_state_t *ps_inline = &_ps_inline;
         ps_init (ps_inline, str_data(&block->inline_content));
 
-        while (!scr_is_eof(&ps_inline->scr) && !ps_inline->error) {
+        while (!&ps_inline->scr.is_eof && !ps_inline->error) {
             ps_inline_next (ps_inline);
             if (ps_match(ps_inline, TOKEN_TYPE_TEXT_TAG, "note")) {
                 string_t target_note_title = {0};
@@ -1948,7 +1948,7 @@ void psx_append_paragraph_continuation_lines (struct psx_parser_state_t *ps, str
 
 void psx_parse (struct psx_parser_state_t *ps)
 {
-    while (!scr_is_eof(PS_SCR) && !ps->error) {
+    while (!PS_SCR->is_eof && !ps->error) {
         struct psx_token_t tok = ps_next(ps);
 
         // TODO: I think the fact that I have to do this here, means we
