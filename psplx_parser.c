@@ -1453,7 +1453,7 @@ void psx_create_links_full (struct psx_parser_ctx_t *ctx, struct psx_block_t **r
         struct psx_parser_state_t *ps_inline = &_ps_inline;
         ps_init (ps_inline, str_data(&block->inline_content));
 
-        while (!&ps_inline->scr.is_eof && !ps_inline->error) {
+        while (!ps_inline->scr.is_eof && !ps_inline->error) {
             ps_inline_next (ps_inline);
             if (ps_match(ps_inline, TOKEN_TYPE_TEXT_TAG, "note")) {
                 string_t target_note_title = {0};
@@ -1479,6 +1479,7 @@ void psx_create_links_full (struct psx_parser_ctx_t *ctx, struct psx_block_t **r
 
 
 char *note_internal_attributes[] = {"name", "a", "link", "backlink"};
+char *block_internal_attributes[] = {"a"};
 
 void attributes_html_append (struct html_t *html, struct psx_block_t *block, struct html_element_t *parent,
                              char **skip_attrs, int skip_attrs_len)
@@ -1614,7 +1615,7 @@ void attributed_block_html_append (struct psx_parser_ctx_t *ctx, struct html_t *
     }
     html_element_attribute_set (html, block_attributes, "style", str_data(&style));
 
-    attributes_html_append (html, block, block_attributes, NULL, 0);
+    attributes_html_append (html, block, block_attributes, block_internal_attributes, ARRAY_SIZE(block_internal_attributes));
 }
 #endif
 
