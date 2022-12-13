@@ -21,3 +21,9 @@ GGGGGGGGGGGGGGGGGGGGGG a article ;
 _ a article ;
   author q"XXXXXXXXXXXXXXX" ;
 
+_ a type2 ;
+  attr3 "Yet Another Value" ;
+
+_ a type3 ;
+  attr4 123 ;
+

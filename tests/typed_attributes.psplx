@@ -34,9 +34,19 @@ PSPLX version of the test created for the bug described in
 :id_attribute_string_aliasing
 
 ^article{
-   id GGGGGGGGGGGGGGGGGGGGGG;
+  id GGGGGGGGGGGGGGGGGGGGGG;
 }
 
 ^article{
-   author q"XXXXXXXXXXXXXXX";
+  author q"XXXXXXXXXXXXXXX";
 }
+
+## Attributed heading
+^type2{
+  attr3 "Yet Another Value";
+}
+
+- Attributed list Item
+  ^type3{
+    attr4 123;
+  }

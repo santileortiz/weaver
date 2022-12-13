@@ -1478,7 +1478,7 @@ void psx_create_links_full (struct psx_parser_ctx_t *ctx, struct psx_block_t **r
 }
 
 
-char *note_internal_attributes[] = {"name", "a", "link", "backlink", "poo"};
+char *note_internal_attributes[] = {"name", "a", "link", "backlink"};
 
 void attributes_html_append (struct html_t *html, struct psx_block_t *block, struct html_element_t *parent,
                              char **skip_attrs, int skip_attrs_len)
@@ -1534,7 +1534,7 @@ void attributes_html_append (struct html_t *html, struct psx_block_t *block, str
             // NOTE: This additionar wrapper div for values is added so that they
             // wrap nicely and are left aligned with all other values.
             struct html_element_t *values = html_new_element (html, "div");
-            html_element_attribute_set (html, values, "style", "row-gap: 3px; display: flex; flex-wrap: wrap;");
+            html_element_attribute_set (html, values, "style", "row-gap: 3px; display: flex; flex-wrap: wrap; overflow-x: auto;");
             LINKED_LIST_FOR (struct splx_node_list_t *, curr_list_node, curr_attribute->value) {
                 struct html_element_t *value = html_new_element (html, "div");
                 html_element_class_add (html, value, "attribute-value");
@@ -1733,6 +1733,8 @@ void psx_parse_block_attributes (struct psx_parser_state_t *ps, struct psx_block
         block->data = splx_node_get_or_create(ps->ctx.sd, node_id, SPLX_NODE_TYPE_OBJECT);
     }
 
+    scr_consume_spaces (PS_SCR);
+
     struct psx_token_t tok = ps_inline_next (ps);
     if (ps_match(ps, TOKEN_TYPE_DATA_TAG, NULL)) {
         assert(ps->ctx.sd != NULL);
@@ -1896,6 +1898,7 @@ bool psx_match_tag (char *str, char *pos,
     scr->pos = pos;
 
     bool after_line_break = (pos > str && scr_prev_char(scr) == '\n');
+    scr_consume_spaces (scr);
 
     success = psx_match_tag_id(scr, start_chars,
                                tag, tag_len);
@@ -1908,7 +1911,7 @@ bool psx_match_tag (char *str, char *pos,
     if (at_end_of_block != NULL) {
         *at_end_of_block = false;
 
-        if (scr_match_str (scr, "\n\n") && after_line_break)  {
+        if ((scr_match_str (scr, "\n\n") || scr_match_str (scr, "\n\0")) && after_line_break)  {
             *at_end_of_block = true;
         }
     }
@@ -2010,6 +2013,8 @@ void psx_parse (struct psx_parser_state_t *ps)
                 psx_error (ps, "only the note title can have heading level 1");
             }
 
+            psx_parse_block_attributes(ps, heading_block, NULL);
+
             // :pop_leaf_blocks
             ps->block_stack_len--;
 
@@ -2104,7 +2109,7 @@ void psx_parse (struct psx_parser_state_t *ps)
                 list_block->list_type = tok.type;
             }
 
-           struct psx_block_t *list_item = psx_push_block(ps, psx_container_block_new(ps, BLOCK_TYPE_LIST_ITEM, tok.margin));
+            struct psx_block_t *list_item = psx_push_block(ps, psx_container_block_new(ps, BLOCK_TYPE_LIST_ITEM, tok.margin));
 
             struct psx_token_t tok_peek = ps_next_peek(ps);
             if (tok_peek.is_eol && tok_peek.type == TOKEN_TYPE_PARAGRAPH) {
@@ -2113,6 +2118,7 @@ void psx_parse (struct psx_parser_state_t *ps)
                 list_item->margin = tok_peek.margin;
                 struct psx_block_t *new_paragraph = psx_push_block(ps, psx_leaf_block_new(ps, BLOCK_TYPE_PARAGRAPH, tok_peek.margin, tok_peek.value));
                 psx_append_paragraph_continuation_lines (ps, new_paragraph);
+                psx_parse_block_attributes(ps, new_paragraph, NULL);
 
                 // :pop_leaf_blocks
                 ps->block_stack_len--;
