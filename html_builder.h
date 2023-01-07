@@ -115,6 +115,20 @@ void html_element_append_strn (struct html_t *html, struct html_element_t *html_
     LINKED_LIST_APPEND (html_element->children, new_text_node);
 }
 
+static inline
+bool html_element_child_ends_in_space (struct html_element_t *html_element)
+{
+    bool result = false;
+
+    if (html_element->children != NULL &&
+        str_len(&html_element->children_end->tag) == 0) {
+        char c = str_last(&html_element->children_end->text);
+        result = is_space(&c);
+    }
+
+    return result;
+}
+
 #define html_element_append_no_escape_cstr(html,html_element,cstr) html_element_append_no_escape_strn(html, html_element, strlen(cstr), cstr);
 void html_element_append_no_escape_strn (struct html_t *html, struct html_element_t *html_element, size_t len, char *text)
 {

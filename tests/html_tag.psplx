@@ -1,0 +1,24 @@
+# Test embedding of html
+
+\html{
+<select id="language-select">
+  <option value="en">English</option>
+  <option value="es">Spanish</option>
+</select>
+
+<div style="display:grid; grid-template-columns: auto auto; gap: 12px;">
+</div>
+}
+
+Paragraph not part of the HTML.
+
+\html|197|
+<select id="language-select">
+  <option value="en">English</option>
+  <option value="es">Spanish</option>
+</select>
+
+<div style="display:grid; grid-template-columns: auto auto; gap: 12px;">
+</div>
+
+Paragraph not part of the HTML.

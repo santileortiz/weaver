@@ -45,9 +45,29 @@ function toggle_sidebar ()
     }
 }
 
+// TODO: Can this be simplified?, according to the HTML spec in the script
+// element section, to run scripts they need to be added with the
+// document.write() method instead of setting the innerHTML attribute.
+function set_innerhtml_and_run_scripts(element, html) {
+    element.innerHTML = html;
+
+    for (let old_script of element.querySelectorAll("script")) {
+        const new_script = document.createElement("script");
+
+        for (let attr of old_script.attributes) {
+            new_script.setAttribute(attr.name, attr.value);
+        }
+
+        const scriptText = document.createTextNode(old_script.innerHTML);
+        new_script.appendChild(scriptText);
+
+        old_script.parentNode.replaceChild(new_script, old_script);
+    }
+}
+
 function note_text_to_element (container, id, note_html)
 {
-    container.insertAdjacentHTML('beforeend', note_html);
+    set_innerhtml_and_run_scripts(container, note_html);
 
     let new_expanded_note = document.getElementById(id);
     new_expanded_note.id = id
@@ -121,7 +141,6 @@ function reset_and_open_note(note_id)
             opened_notes.push(note_id)
 
             let note_container = document.getElementById("note-container")
-            note_container.innerHTML = ''
             note_text_to_element(note_container, note_id, response)
             set_breadcrumbs();
 
@@ -150,7 +169,6 @@ function open_note(note_id)
     get_note_and_run (note_id,
         function(response) {
             let note_container = document.getElementById("note-container");
-            note_container.innerHTML = ''
             note_text_to_element(note_container, note_id, response);
             set_breadcrumbs();
 
@@ -173,7 +191,6 @@ function open_notes(note_ids)
     get_note_and_run (note_id,
         function(response) {
             let note_container = document.getElementById("note-container")
-            note_container.innerHTML = ''
             note_text_to_element(note_container, note_id, response)
             set_breadcrumbs();
         }

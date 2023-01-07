@@ -573,6 +573,18 @@ def get_type_config(target_type):
             };
             ''')
 
+    elif target_type in ["fm3", "passport"]:
+        target_file_dir = 'identifications'
+        target_data_file = "identifications.tsplx"
+        tsplx_stub = textwrap.dedent(f'''\
+            {target_type} {{
+              person <+person+>;
+              file <+files+>;
+              issuing-date "<+date+>";
+              expiration-date "<+date+>";
+            }};
+            ''')
+
     elif target_type in ["person", "establishment"]:
         tsplx_stub = textwrap.dedent(f'''\
             {target_type}["<+name+>"]{{
@@ -890,7 +902,7 @@ def scan():
 
         elif c.lower() == 'p':
             path_to_scan = fu.mfd_new_page (mfd)
-            error, output = new_scan (path_to_scan, device=scanner_name)
+            error, output = new_scan (path_to_scan, resolution, device=scanner_name)
 
             if target_type != None:
                 tsplx_data = resolve_stub(target_type,

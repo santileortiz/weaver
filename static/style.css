@@ -79,6 +79,34 @@ a:hover {
     text-decoration: underline;
 }
 
+table {
+    border-collapse: collapse;
+}
+
+th {
+    border: 1px solid var(--secondary-fg-color);
+    padding: 8px 3px;
+}
+
+td {
+    border: 1px solid var(--secondary-fg-color);
+    padding: 3px;
+}
+
+select {
+    border: 1px solid #dadce0;
+    border-radius: 4px;
+    font-size: 14px;
+    margin: 8px;
+    height: 28px;
+    padding: 3px;
+    outline: none;
+}
+
+.hidden {
+    display: none;
+}
+
 #topbar {
     display: flex;
     align-items: center;
@@ -332,3 +360,12 @@ code {
     background-color: var(--secondary-bg-color);
 }
 
+.translation table {
+    display: flex;
+    justify-content: right;
+}
+
+.translation th {
+    font-weight: normal;
+    text-align: left;
+}

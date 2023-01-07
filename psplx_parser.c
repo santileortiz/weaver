@@ -266,27 +266,211 @@ bool ps_parse_tag_parameters (struct psx_parser_state_t *ps, struct psx_tag_para
 void psx_match_tag_parameters (struct scanner_t *scr,
                                char **parameters, uint32_t *parameters_len)
 {
+    struct scanner_t bak = *scr;
     if (scr_curr_char(scr) == '[') {
         scr_advance_char (scr);
 
         char *parameters_start = scr->pos;
-        while (!scr->is_eof && scr_curr_char(scr) != ']') {
+        while (!scr->is_eof &&
+               (!char_is_operator(scr_curr_char(scr)) || scr_curr_char(scr) == ',')) {
             scr_match_double_quoted_string (scr);
 
             scr_advance_char (scr);
         }
 
-        if (parameters != NULL) *parameters = parameters_start;
-        if (parameters_len != NULL) *parameters_len = scr->pos - parameters_start;
+        if (scr_curr_char (scr) == ']') {
+            if (parameters != NULL) *parameters = parameters_start;
+            if (parameters_len != NULL) *parameters_len = scr->pos - parameters_start;
 
-        // Advance over ] character
-        scr_advance_char (scr);
+            // Advance over ] character
+            scr_advance_char (scr);
+
+        } else {
+            *scr = bak;
+        }
     }
+}
+
+bool psx_match_tag_content (struct scanner_t *scr,
+                            bool expect_balanced_braces,
+                            char **content, uint32_t *content_len)
+{
+    char *res = NULL;
+    uint32_t res_len = 0;
+
+    if (scr_curr_char(scr) == '{') {
+        if (!expect_balanced_braces) {
+            scr_advance_char (scr);
+            scr_match_until_unescaped_operator (scr, '}', &res, &res_len);
+
+        } else {
+            struct scanner_t bak = *scr;
+            int brace_level = 1;
+
+            char *content_start = scr->pos + 1/*starting { character*/;
+            while (!scr->is_eof && brace_level != 0) {
+                scr_advance_char (scr);
+
+                if (scr_curr_char(scr) == '{') {
+                    brace_level++;
+                } else if (scr_curr_char(scr) == '}') {
+                    brace_level--;
+                }
+            }
+
+            if (!scr->is_eof && brace_level == 0) {
+                res = content_start;
+                res_len = scr->pos - content_start;
+                scr_advance_char (scr);
+
+            } else {
+                *scr = bak;
+            }
+        }
+
+    } else if (scr_curr_char(scr) == '|') {
+        scr_advance_char (scr);
+
+        char *start = scr->pos;
+        while (!scr->is_eof && *(scr->pos) != '|') {
+            scr_advance_char (scr);
+        }
+
+        char *content_start = NULL;
+        char *number_end;
+        size_t size = strtoul (start, &number_end, 10);
+        if (scr->pos == number_end) {
+            scr_advance_char (scr);
+            content_start = scr->pos;
+
+            // TODO: We may be going past the end of the note!!! this is
+            // unsafe!
+            scr->pos += size;
+
+        } else {
+            // TODO: Implement sentinel based tag content parsing
+            // \code|SENTINEL|int a[2] = {1,2}SENTINEL
+        }
+
+        if (!scr->is_eof && content_start != NULL) {
+            res = content_start;
+            res_len = scr->pos - content_start;
+        }
+    }
+
+    if (content != NULL) *content = res;
+    if (content_len != NULL) *content_len = res_len;
+
+    return res != NULL;
+}
+
+void psx_match_tag_data (struct scanner_t *scr,
+                         bool expect_balanced_braces,
+
+                         // Out
+                         char **parameters, uint32_t *parameters_len,
+                         char **content, uint32_t *content_len)
+{
+    if (scr_curr_char(scr) == '[' || scr_curr_char(scr) == '{' || scr_curr_char(scr) == '|') {
+        psx_match_tag_parameters(scr, parameters, parameters_len);
+        psx_match_tag_content(scr, expect_balanced_braces, content, content_len);
+    }
+}
+
+bool psx_match_tag_id (struct scanner_t *scr,
+                       char *start_chars,
+
+                       char **tag, uint32_t *tag_len)
+{
+    bool success = false;
+
+    struct scanner_t scr_bak = *scr;
+    char *start = NULL;
+    if (char_in_str (scr_curr_char(scr), start_chars)) {
+        success = true;
+        scr_advance_char (scr);
+
+        start = scr->pos;
+        while (!scr->is_eof &&
+               !char_is_operator(scr_curr_char(scr)) &&
+               !scr_is_space(scr) &&
+               scr_curr_char(scr) != '\n')
+        {
+            scr_advance_char (scr);
+        }
+    }
+
+    if (success) {
+        if (tag != NULL) *tag = start;
+        if (tag_len != NULL) *tag_len = (scr->pos - start);
+    } else {
+        *scr = scr_bak;
+    }
+
+    return success;
+}
+
+// Because we want to be very flexible but easy to learn, that often means
+// overloading a lot of functionality into very similar syntax. When writing
+// text, the concept of "weird" behavior is being overloaded into the tag
+// concept. Tags may behave differently depending on their position and we now
+// have text and data tags etc. This function matches a tag and returns all the
+// positioning information that we may need to make follow up decision on how we
+// process a specific tag.
+//
+// A notable aspect of this function is that it's pure, in the sense that it has
+// absolutely no side effects. Its memory allocation profile is net zero. It
+// just performs a sophisticated string matching then returns enough pointers
+// for other functions to actually perform the necessary side effects. Or not,
+// in fact, not doing anything is probably the most commonly ovelooked use case.
+bool psx_match_tag (char *str, char *pos,
+                    char *start_chars,
+                    bool balanced_brace_content,
+
+                    // Out
+                    char **tag, uint32_t *tag_len,
+                    char **parameters, uint32_t *parameters_len,
+                    char **content, uint32_t *content_len,
+                    char **end,
+                    bool *at_end_of_block)
+{
+    bool success = true;
+
+    STACK_ALLOCATE(struct scanner_t, scr);
+    scr->str = str;
+    scr->pos = pos;
+
+    bool after_line_break = (pos > str && scr_prev_char(scr) == '\n');
+    scr_consume_spaces (scr);
+
+    success = psx_match_tag_id(scr, start_chars,
+                               tag, tag_len);
+
+    if (success) {
+        psx_match_tag_data(scr,
+                           balanced_brace_content,
+                           parameters, parameters_len,
+                           content, content_len);
+
+        if (at_end_of_block != NULL) {
+            *at_end_of_block = false;
+
+            if ((scr_match_str (scr, "\n\n") || scr_match_str (scr, "\n\0")) && after_line_break)  {
+                *at_end_of_block = true;
+            }
+        }
+
+        if (end != NULL) *end = scr->pos;
+    }
+
+    return success;
 }
 
 struct psx_token_t ps_next_peek(struct psx_parser_state_t *ps)
 {
     STACK_ALLOCATE (struct psx_token_t, tok);
+
+    bool multiline_tag = false;
 
     char *backup_pos = scr_pos(PS_SCR);
     int backup_column_number = ps->scr.column_number;
@@ -359,6 +543,30 @@ struct psx_token_t ps_next_peek(struct psx_parser_state_t *ps)
             ps->scr.column_number = backup_column_number;
         }
 
+    } else if (psx_match_tag(PS_SCR->str, PS_SCR->pos, "\\", true,
+                             NULL, NULL,
+                             NULL, NULL,
+                             NULL, NULL,
+                             &PS_SCR->pos,
+                             NULL) ||
+               psx_match_tag(PS_SCR->str, PS_SCR->pos, "\\", false,
+                             NULL, NULL,
+                             NULL, NULL,
+                             NULL, NULL,
+                             &PS_SCR->pos,
+                             NULL))
+    {
+        // A tag may contain empty lines in its content. Match such tags at the
+        // start of a block and skip over those empty lines so they don't cause
+        // a paragraph break. All these lines will be passed as a token of type
+        // TOKEN_TYPE_PARAGRAPH.
+
+        multiline_tag = true;
+        scr_advance_line (PS_SCR);
+
+        tok->value = sstr_strip(SSTRING(backup_pos, PS_SCR->pos - backup_pos));
+        tok->is_eol = true;
+
     } else if (scr_match_str(PS_SCR, "|")) {
         tok->value = scr_advance_line (PS_SCR);
         tok->is_eol = true;
@@ -366,13 +574,13 @@ struct psx_token_t ps_next_peek(struct psx_parser_state_t *ps)
 
     } else if (scr_match_str(PS_SCR, "\n")) {
         tok->type = TOKEN_TYPE_BLANK_LINE;
+
     }
 
-    if (tok->type == TOKEN_TYPE_PARAGRAPH) {
+    if (tok->type == TOKEN_TYPE_PARAGRAPH && !multiline_tag) {
         tok->value = sstr_strip(scr_advance_line (PS_SCR));
         tok->is_eol = true;
     }
-
 
     // Because we are only peeking, restore the old position and store the
     // resulting one in a separate variable.
@@ -415,39 +623,6 @@ bool ps_match(struct psx_parser_state_t *ps, enum psx_token_type_t type, char *v
     }
 
     return match;
-}
-
-bool psx_match_tag_id (struct scanner_t *scr,
-                       char *start_chars,
-
-                       char **tag, uint32_t *tag_len)
-{
-    bool success = false;
-
-    struct scanner_t scr_bak = *scr;
-    char *start = NULL;
-    if (char_in_str (scr_curr_char(scr), start_chars)) {
-        success = true;
-        scr_advance_char (scr);
-
-        start = scr->pos;
-        while (!scr->is_eof &&
-               !char_is_operator(scr_curr_char(scr)) &&
-               !scr_is_space(scr) &&
-               scr_curr_char(scr) != '\n')
-        {
-            scr_advance_char (scr);
-        }
-    }
-
-    if (success) {
-        if (tag != NULL) *tag = start;
-        if (tag_len != NULL) *tag_len = (scr->pos - start);
-    } else {
-        *scr = scr_bak;
-    }
-
-    return success;
 }
 
 #define ps_inline_next(ps) ps_inline_next_full(ps,true)
@@ -611,75 +786,6 @@ bool psx_extract_until_unescaped_operator (struct psx_parser_state_t *ps, char c
     }
 
     return success;
-}
-
-bool psx_match_tag_content (struct scanner_t *scr,
-                            bool expect_balanced_braces,
-                            char **content, uint32_t *content_len)
-{
-    char *res = NULL;
-    uint32_t res_len = 0;
-
-    if (scr_curr_char(scr) == '{') {
-        if (!expect_balanced_braces) {
-            scr_advance_char (scr);
-            scr_match_until_unescaped_operator (scr, '}', &res, &res_len);
-
-        } else {
-            int brace_level = 1;
-
-            char *content_start = scr->pos + 1/*starting { character*/;
-            while (!scr->is_eof && brace_level != 0) {
-                scr_advance_char (scr);
-
-                if (scr_curr_char(scr) == '{') {
-                    brace_level++;
-                } else if (scr_curr_char(scr) == '}') {
-                    brace_level--;
-                }
-            }
-
-            if (!scr->is_eof && brace_level == 0) {
-                res = content_start;
-                res_len = scr->pos - content_start;
-                scr_advance_char (scr);
-            }
-        }
-
-    } else if (scr_curr_char(scr) == '|') {
-        scr_advance_char (scr);
-
-        char *start = scr->pos;
-        while (!scr->is_eof && *(scr->pos) != '|') {
-            scr_advance_char (scr);
-        }
-
-        char *content_start = NULL;
-        char *number_end;
-        size_t size = strtoul (start, &number_end, 10);
-        if (scr->pos == number_end) {
-            scr_advance_char (scr);
-            content_start = scr->pos;
-
-            // TODO: We may be going past the end of the note!!! this is
-            // unsafe!
-            scr->pos += size;
-
-        } else {
-            // TODO: Implement sentinel based tag content parsing
-            // \code|SENTINEL|int a[2] = {1,2}SENTINEL
-        }
-
-        if (!scr->is_eof && content_start != NULL) {
-            res = content_start;
-            res_len = scr->pos - content_start;
-        }
-    }
-
-    if (content != NULL) *content = res;
-    if (content_len != NULL) *content_len = res_len;
-
-    return res != NULL;
 }
 
 bool psx_cat_tag_content (struct psx_parser_state_t *ps, string_t *str, bool expect_balanced_braces)
@@ -994,9 +1100,16 @@ void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html
         if (ps_match(ps, TOKEN_TYPE_TEXT, NULL) || ps_match(ps, TOKEN_TYPE_SPACE, NULL)) {
             struct psx_block_unit_t *curr_unit = DYNAMIC_ARRAY_GET_LAST(ps->block_unit_stack);
 
-            str_set_sstr (&buff, &tok.value);
-            str_replace (&buff, "\n", " ", NULL);
-            html_element_append_strn (html, curr_unit->html_element, str_len(&buff), str_data(&buff));
+            // Don't append a space token if it's at the beginning of a
+            // paragraph (there is no HTML chidren), or if the last children of
+            // the paragraph ended in space.
+            if (!ps_match(ps, TOKEN_TYPE_SPACE, NULL) ||
+                (curr_unit->html_element->children != NULL && !html_element_child_ends_in_space(curr_unit->html_element)))
+            {
+                str_set_sstr (&buff, &tok.value);
+                str_replace (&buff, "\n", " ", NULL);
+                html_element_append_strn (html, curr_unit->html_element, str_len(&buff), str_data(&buff));
+            }
 
         } else if (ps_match(ps, TOKEN_TYPE_OPERATOR, "}") && DYNAMIC_ARRAY_GET_LAST(ps->block_unit_stack)->type != BLOCK_UNIT_TYPE_ROOT) {
             psx_block_unit_pop (ps);
@@ -1851,71 +1964,6 @@ bool parse_note_title (char *path, char *note_text, string_t *title, struct splx
     }
 
     ps_destroy (ps);
-
-    return success;
-}
-
-void psx_match_tag_data (struct scanner_t *scr,
-                         bool expect_balanced_braces,
-
-                         // Out
-                         char **parameters, uint32_t *parameters_len,
-                         char **content, uint32_t *content_len)
-{
-    if (scr_curr_char(scr) == '[' || scr_curr_char(scr) == '{' || scr_curr_char(scr) == '|') {
-        psx_match_tag_parameters(scr, parameters, parameters_len);
-        psx_match_tag_content(scr, expect_balanced_braces, content, content_len);
-    }
-}
-
-// Because we want to be very flexible but easy to learn, that often means
-// overloading a lot of functionality into very similar syntax. When writing
-// text, the concept of "weird" behavior is being overloaded into the tag
-// concept. Tags may behave differently depending on their position and we now
-// have text and data tags etc. This function matches a tag and returns all the
-// positioning information that we may need to make follow up decision on how we
-// process a specific tag.
-//
-// A notable aspect of this function is that it's pure, in the sense that it has
-// absolutely no side effects. Its memory allocation profile is net zero. It
-// just performs a sophisticated string matching then returns enough pointers
-// for other functions to actually perform the necessary side effects. Or not,
-// in fact, not doing anything is probably the most commonly ovelooked use case.
-bool psx_match_tag (char *str, char *pos,
-                    char *start_chars,
-                    bool balanced_brace_content,
-
-                    // Out
-                    char **tag, uint32_t *tag_len,
-                    char **parameters, uint32_t *parameters_len,
-                    char **content, uint32_t *content_len,
-                    char **end,
-                    bool *at_end_of_block)
-{
-    bool success = true;
-
-    STACK_ALLOCATE(struct scanner_t, scr);
-    scr->str = str;
-    scr->pos = pos;
-
-    bool after_line_break = (pos > str && scr_prev_char(scr) == '\n');
-    scr_consume_spaces (scr);
-
-    success = psx_match_tag_id(scr, start_chars,
-                               tag, tag_len);
-
-    psx_match_tag_data(scr,
-                       balanced_brace_content,
-                       parameters, parameters_len,
-                       content, content_len);
-
-    if (at_end_of_block != NULL) {
-        *at_end_of_block = false;
-
-        if ((scr_match_str (scr, "\n\n") || scr_match_str (scr, "\n\0")) && after_line_break)  {
-            *at_end_of_block = true;
-        }
-    }
 
     return success;
 }
