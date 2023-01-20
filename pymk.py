@@ -1039,6 +1039,16 @@ def parse_timestamp(timestamp, min_date):
 
     return result
 
+def print_row(columns, column_widths=[26, 13], spacing=2):
+    padded_columns = []
+    for i, column in enumerate(columns):
+        if i < len(column_widths):
+            padded_columns.append(column.ljust(column_widths[i]))
+        else:
+            padded_columns.append(column)
+    print((" "*spacing).join(padded_columns))
+    print()
+
 def files_date_sort():
     """
     Tries to figure out the chronological order of files, using the file's
@@ -1071,14 +1081,16 @@ def files_date_sort():
     assumed_default_utc_offset = []
     timestamped_paths = []
     for dirpath, dirnames, filenames in os.walk(directory):
-        for fname in filenames:
+        for fname in natsorted(filenames):
             path = path_cat(dirpath, fname)
             if path.lower().endswith(".jpg") or path.lower().endswith(".jpeg") or path.lower().endswith(".heic") or path.lower().endswith(".heif"):
-                output = ex(f"exiftool -s -H -u -DateTimeOriginal -OffsetTimeOriginal -GPSDateStamp -GPSTimeStamp '{path}'", ret_stdout=True, echo=False)
+                output = ex(f"exiftool -s -H -u -DateTimeOriginal -OffsetTimeOriginal -GPSDateStamp -GPSTimeStamp -Model '{path}'", ret_stdout=True, echo=False)
 
                 if len(output) > 0:
                     lines = [x for x in output.split('\n')]
                     fields = {x[1]:x[3:] for x in map(lambda x: x.split(), lines)}
+
+                    model = " ".join(fields['Model'])
 
                     timestamp = None
                     if 'OffsetTimeOriginal' in fields.keys() and 'DateTimeOriginal' in fields.keys():
@@ -1096,6 +1108,11 @@ def files_date_sort():
                         timestamp = f"{datetime_value[0].replace(':','-')}T{datetime_value[1]}{default_utc_offset}"
                         assumed_default_utc_offset.append(path)
 
+                    elif 'OffsetTimeOriginal' not in fields.keys() and 'DateTimeOriginal' in fields.keys():
+                        datetime_value = fields['DateTimeOriginal']
+                        print_row([f"{datetime_value[0].replace(':','-')}T{datetime_value[1]}+??:??", model, fname])
+                        unsortable.append(path)
+
                     else:
                         unsortable.append(path)
 
@@ -1103,7 +1120,7 @@ def files_date_sort():
                         parsed_timestamp = parse_timestamp(timestamp, min_date)
                         if parsed_timestamp:
                             timestamped_paths.append((parsed_timestamp, path))
-                            print(timestamp, fname)
+                            print_row([timestamp, model, fname])
                         else:
                             unsortable.append(path)
 
@@ -1118,7 +1135,7 @@ def files_date_sort():
                     fields = {x[1]:x[3:] for x in map(lambda x: x.split(), lines)}
                     datetime_value = fields['CreateDate']
                     timestamp = f"{datetime_value[0].replace(':','-')}T{datetime_value[1]}"
-                    print(timestamp, fname)
+                    print_row([timestamp, '-', fname])
 
                     parsed_timestamp = parse_timestamp(timestamp, min_date)
                     if parsed_timestamp:
@@ -1138,7 +1155,7 @@ def files_date_sort():
                     fields = {x[1]:x[3:] for x in map(lambda x: x.split(), lines)}
                     datetime_value = fields['CreateDate']
                     timestamp = f"{datetime_value[0].replace(':','-')}T{datetime_value[1]}"
-                    print(timestamp, fname)
+                    print_row([timestamp, '-', fname])
 
                     parsed_timestamp = parse_timestamp(timestamp, min_date)
                     if parsed_timestamp:
@@ -1220,9 +1237,9 @@ def files_date_sort():
         unsortable = [p for p in unsortable if p not in sidecar_paths]
 
     if len(unsortable) > 0:
-        print()
-        print (ecma_red('error:') + ' could not sort:')
-        print ('  ' + '\n  '.join(map(lambda x: f"'{x}'", unsortable)))
+        print('', file=sys.stderr)
+        print (ecma_red('error:') + ' could not sort:', file=sys.stderr)
+        print ('  ' + '\n  '.join(map(lambda x: f"'{x}'", unsortable)), file=sys.stderr)
 
 
 def dir_import():
