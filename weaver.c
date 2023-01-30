@@ -78,19 +78,25 @@ void rt_init (struct note_runtime_t *rt, struct splx_data_t *config)
 
 struct config_t {
     string_t config_path;
-    string_t source_path;
-    string_t files_path;
+
+    string_t source_notes_path;
+    string_t source_files_path;
+
     string_t target_path;
+    string_t target_notes_path;
 };
 
 void cfg_destroy (struct config_t *cfg)
 {
     str_free (&cfg->config_path);
-    str_free (&cfg->source_path);
+    str_free (&cfg->source_notes_path);
+    str_free (&cfg->source_files_path);
     str_free (&cfg->target_path);
+    str_free (&cfg->target_notes_path);
 }
 
-#define APP_HOME "~/.weaver"
+#define APP_HOME_DIR "~/.weaver"
+#define DEFAULT_TARGET_DIR "~/.cache/weaver/www/"
 
 enum cli_command_t {
     CLI_COMMAND_GENERATE,
@@ -126,26 +132,25 @@ int main(int argc, char** argv)
 
     STACK_ALLOCATE (struct config_t, cfg);
 
-    str_set_path (&cfg->source_path, APP_HOME "/notes/");
-    str_set_path (&cfg->files_path, APP_HOME "/files/");
-    str_set_path (&cfg->target_path, "~/.cache/weaver/www/notes/");
-    str_set_path (&cfg->config_path, APP_HOME "/config.tsplx");
+    str_set_path (&cfg->source_notes_path, APP_HOME_DIR "/notes/");
+    str_set_path (&cfg->source_files_path, APP_HOME_DIR "/files/");
+    str_set_path (&cfg->config_path, APP_HOME_DIR "/config.tsplx");
 
     struct splx_data_t config = {0};
     tsplx_parse_name (&config, str_data(&cfg->config_path));
     rt_init (rt, &config);
 
-    rt->vlt.base_dir = str_data(&cfg->files_path);
+    rt->vlt.base_dir = str_data(&cfg->source_files_path);
     vlt_init (&rt->vlt);
 
     // TODO: Read these paths from some configuration file and from command line
     // parameters.
-    if (!dir_exists (str_data(&cfg->source_path))) {
+    if (!dir_exists (str_data(&cfg->source_notes_path))) {
         success = false;
         printf (ECMA_RED("error: ") "source directory does not exist\n");
     }
 
-    if (!ensure_path_exists (str_data(&cfg->files_path))) {
+    if (!ensure_path_exists (str_data(&cfg->source_files_path))) {
         success = false;
         printf (ECMA_RED("error: ") "files directory could not be created\n");
     }
@@ -177,6 +182,18 @@ int main(int argc, char** argv)
     }
 
     char *output_dir = get_cli_arg_opt_ctx (cli_ctx, "--output-dir", argv, argc);
+    if (output_dir != NULL) {
+        str_set_path (&cfg->target_path, output_dir);
+    } else {
+        str_set_path (&cfg->target_path, DEFAULT_TARGET_DIR);
+    }
+
+    string_t output_data_file = {0};
+    str_set_path (&output_data_file, str_data(&cfg->target_path));
+    path_cat (&output_data_file, "data.js");
+
+    str_set_path (&cfg->target_notes_path, str_data(&cfg->target_path));
+    path_cat (&cfg->target_notes_path, "notes");
 
     char *no_opt = get_cli_no_opt_arg_full (cli_ctx, argv, argc, command == CLI_COMMAND_NONE ? 1 : 2);
 
@@ -215,7 +232,7 @@ int main(int argc, char** argv)
         }
 
     } else {
-        rt_init_push_dir (rt, str_data(&cfg->source_path));
+        rt_init_push_dir (rt, str_data(&cfg->source_notes_path));
     }
 
     // PROCESS DATA
@@ -224,7 +241,7 @@ int main(int argc, char** argv)
 
         rt_late_user_callbacks (rt);
 
-        render_links(rt);
+        render_all_backlinks(rt);
     }
 
     //print_splx_dump (&rt->sd, rt->sd.entities);
@@ -232,6 +249,8 @@ int main(int argc, char** argv)
     // GENERATE OUTPUT
     if (success) {
         if (command == CLI_COMMAND_GENERATE) {
+            path_ensure_dir (str_data(&cfg->target_notes_path));
+
             if (output_type == CLI_OUTPUT_TYPE_STATIC_SITE) {
                 bool has_output = false;
                 if (!has_js) {
@@ -239,10 +258,10 @@ int main(int argc, char** argv)
                     has_output = true;
                 }
 
-                if (!require_target_dir || output_dir != NULL) {
+                if (!require_target_dir || str_len(&cfg->target_notes_path) > 0) {
                     string_t html_path = {0};
-                    if (output_dir != NULL) {
-                        str_set_path (&html_path, output_dir);
+                    if (str_len(&cfg->target_notes_path) > 0) {
+                        str_set_path (&html_path, str_data(&cfg->target_notes_path));
                         path_ensure_dir (str_data(&html_path));
                     } else {
                         str_set (&html_path, str_data(&cfg->target_path));
@@ -281,6 +300,99 @@ int main(int argc, char** argv)
                     // sources didn't change.
                     printf (ECMA_RED("error: ") "refusing to generate static site. Using command line input but output directory is missing as parameter, use --output-dir\n");
                 }
+
+                string_t generated_data = {0};
+                str_cat_c(&generated_data, "virtual_entities = {\n");
+
+                LINKED_LIST_FOR (struct splx_node_list_t *, curr_list_node, rt->sd.entities->floating_values) {
+                    struct splx_node_t *entity = curr_list_node->node;
+
+                    if (!splx_node_is_referenceable (entity)) {
+                        struct splx_node_t *virtual_id = splx_node_get_attribute (entity, "t:virtual_id");
+
+                        // Generate PSPLX
+                        string_t psplx = {0};
+                        str_cat_c (&psplx, "# ");
+
+                        char *name_str = NULL;
+                        {
+                            string_t *name = splx_node_get_name (entity);
+                            if (name != NULL) {
+                                name_str = str_data(name);
+                            } else {
+                                name_str = "<++>";
+                            }
+                        }
+                        str_cat_c (&psplx, name_str);
+                        str_cat_c (&psplx, "\n");
+
+                        struct splx_node_list_t *types = splx_node_get_attributes (entity, "a");
+                        LINKED_LIST_FOR (struct splx_node_list_t *, curr_attr, types) {
+                            struct splx_node_t *node = curr_attr->node;
+
+                            str_cat_c (&psplx, "^");
+                            str_cat_c (&psplx, str_data(&node->str));
+                        }
+
+                        str_replace (&psplx, "\n", "\\n", NULL);
+
+
+                        // Generate HTML
+                        string_t html = {0};
+
+                        STACK_ALLOCATE (struct note_t, dummy_note);
+                        note_init (dummy_note);
+                        str_set (&dummy_note->title, name_str);
+
+                        STACK_ALLOCATE (struct psx_parser_state_t, ps);
+                        STACK_ALLOCATE (struct psx_parser_ctx_t, ctx);
+                        ps->block_allocation.pool = &ps->pool;
+
+                        dummy_note->tree = psx_container_block_new(ps, BLOCK_TYPE_ROOT, 0);
+                        dummy_note->tree->data = entity;
+                        struct psx_block_t *heading = psx_container_block_new(ps, BLOCK_TYPE_HEADING, 0);
+                        str_set (&heading->inline_content, name_str);
+                        heading->heading_number = 1;
+                        LINKED_LIST_APPEND (dummy_note->tree->block_content, heading);
+
+                        dummy_note->html = html_new (&dummy_note->pool, "div");
+                        if (virtual_id != NULL) {
+                            html_element_attribute_set (dummy_note->html, dummy_note->html->root, "id", str_data(splx_node_get_id (virtual_id)));
+                        }
+                        block_tree_to_html (ctx, dummy_note->html, dummy_note->tree, dummy_note->html->root);
+                        render_backlinks (rt, dummy_note);
+                        str_cat_html (&html, dummy_note->html, 2);
+                        str_replace (&html, "\n", "\\n", NULL);
+                        str_replace (&html, "'", "\\'", NULL);
+                        note_destroy (dummy_note);
+                        ps_destroy (ps);
+
+
+                        // Generate TSPLX
+                        string_t tsplx = {0};
+                        str_cat_splx_canonical (&tsplx, &rt->sd, entity);
+                        str_replace (&tsplx, "\n", "\\n", NULL);
+
+
+                        if (virtual_id != NULL) {
+                            str_cat_printf(&generated_data,
+                                "  '%s': {psplx: '%s', html: '%s', tsplx: '%s', 'title': '%s'},\n",
+                                str_data(splx_node_get_id (virtual_id)),
+                                str_data(&psplx),
+                                str_data(&html),
+                                str_data(&tsplx),
+                                name_str);
+                        }
+
+                        str_free (&tsplx);
+                        str_free (&html);
+                        str_free (&psplx);
+                    }
+                }
+
+                str_cat_c(&generated_data, "};\n");
+                full_file_write (str_data(&generated_data), str_len(&generated_data), str_data(&output_data_file));
+                str_free (&generated_data);
 
             } else if (rt->notes_len == 1) {
                 if (output_type == CLI_OUTPUT_TYPE_HTML) {

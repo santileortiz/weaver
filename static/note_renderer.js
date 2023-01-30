@@ -70,7 +70,6 @@ function note_text_to_element (container, id, note_html)
     set_innerhtml_and_run_scripts(container, note_html);
 
     let new_expanded_note = document.getElementById(id);
-    new_expanded_note.id = id
     new_expanded_note.classList.add("note")
 
     if (note_has_scroll()) {
@@ -86,7 +85,7 @@ function copy_note_cmd ()
     // Is this necessary?...
     document.body.appendChild(dummy_input);
 
-    dummy_input.value = "gvim ~/.weaver/notes/" + opened_notes[opened_notes.length-1]
+    dummy_input.value = "gvim ~/.weaver/notes/" + opened_notes[opened_notes.length-1][1]
     dummy_input.select();
     dummy_input.setSelectionRange(0, 99999);
 
@@ -113,8 +112,6 @@ function set_breadcrumbs()
     breadcrumbs.innerHTML = "";
     let i = 0
     for (; i<opened_notes.length; i++) {
-        var note_id = opened_notes[i];
-
         if (i>0) {
             let sep = document.createElement("span");
             sep.classList.add("crumb-separator")
@@ -122,12 +119,46 @@ function set_breadcrumbs()
             breadcrumbs.appendChild(sep);
         }
 
+        var note_type = opened_notes[i][0];
+        var note_id = opened_notes[i][1];
+
         let crumb = document.createElement("div");
         crumb.classList.add("crumb")
-        crumb.innerHTML = id_to_note_title[note_id];
-        crumb.setAttribute("onclick", "open_note('" + note_id + "');")
-        breadcrumbs.appendChild(crumb);
+
+        if (note_type === "normal") {
+            crumb.innerHTML = id_to_note_title[note_id];
+            crumb.setAttribute("onclick", "open_note('" + note_id + "');")
+            breadcrumbs.appendChild(crumb);
+
+        } else if (note_type === "virtual") {
+            crumb.innerHTML = virtual_entities[note_id].title;
+            crumb.setAttribute("onclick", "open_virtual_entity('" + note_id + "');")
+            breadcrumbs.appendChild(crumb);
+        }
     }
+}
+
+function push_state ()
+{
+    let state = "";
+    let is_first = true;
+    for (let [type, id] of opened_notes) {
+        if (is_first) {
+            state += "?";
+            is_first = false;
+        } else {
+            state += "&";
+        }
+
+        if (type === "normal") {
+            state += "n=";
+        } else {
+            state += "v=";
+        }
+
+        state += id;
+    }
+    history.pushState(null, "", state)
 }
 
 // NOTE: This pushes a new state. Intended for use in places where we handle
@@ -138,13 +169,12 @@ function reset_and_open_note(note_id)
     get_note_and_run (note_id,
         function(response) {
             opened_notes = []
-            opened_notes.push(note_id)
+            opened_notes.push(["normal", note_id])
 
             let note_container = document.getElementById("note-container")
             note_text_to_element(note_container, note_id, response)
             set_breadcrumbs();
-
-            history.pushState(null, "", "?n=" + opened_notes.join("&n="))
+            push_state();
         }
     )
 
@@ -152,15 +182,40 @@ function reset_and_open_note(note_id)
 }
 
 // :pushes_state
-function open_note(note_id)
+function open_virtual_entity(note_id)
 {
-    if (opened_notes.includes(note_id)) {
+    let opened_note_ids = opened_notes.map(e => e[1]);
+    if (opened_note_ids.includes(note_id)) {
         let params = url_parameters();
-        var idx = opened_notes.findIndex(e => e == note_id);
+        var idx = opened_note_ids.findIndex(e => e == note_id);
         opened_notes.length = idx + 1;
 
     } else {
-        opened_notes.push(note_id);
+        opened_notes.push(["virtual", note_id]);
+    }
+
+    let expanded_note = document.querySelector(".note");
+    expanded_note.innerHTML = '';
+
+    let note_container = document.getElementById("note-container");
+    note_text_to_element(note_container, note_id, virtual_entities[note_id].html);
+    set_breadcrumbs();
+    push_state();
+
+    return false;
+}
+
+// :pushes_state
+function open_note(note_id)
+{
+    let opened_note_ids = opened_notes.map(e => e[1]);
+    if (opened_note_ids.includes(note_id)) {
+        let params = url_parameters();
+        var idx = opened_note_ids.findIndex(e => e == note_id);
+        opened_notes.length = idx + 1;
+
+    } else {
+        opened_notes.push(["normal", note_id]);
     }
 
     let expanded_note = document.querySelector(".note");
@@ -171,8 +226,7 @@ function open_note(note_id)
             let note_container = document.getElementById("note-container");
             note_text_to_element(note_container, note_id, response);
             set_breadcrumbs();
-
-            history.pushState(null, "", "?n=" + opened_notes.join("&n="));
+            push_state();
         }
     );
 
@@ -182,26 +236,36 @@ function open_note(note_id)
 // Unlike reset_and_open_note() and open_note(), this one doesn't push a state.
 // It's intended to be used in handlers for events that need to change the
 // openened notes.
-function open_notes(note_ids)
-{
-    opened_notes = note_ids
-
-    let note_id = note_ids[note_ids.length - 1] 
-
-    get_note_and_run (note_id,
-        function(response) {
-            let note_container = document.getElementById("note-container")
-            note_text_to_element(note_container, note_id, response)
-            set_breadcrumbs();
-        }
-    )
-}
-
 function navigate_to_current_url()
 {
     let params = url_parameters()
     if (params != null) {
-        open_notes (params["n"])
+        opened_notes = [];
+        for (let [key, note_id] of params[""]) {
+            if (key === "n") {
+                opened_notes.push(["normal", note_id]);
+            } else if (key === "v") {
+                opened_notes.push(["virtual", note_id]);
+            }
+        }
+
+        let note_type, note_id;
+        [note_type, note_id] = opened_notes[opened_notes.length - 1]
+
+        if (note_type === "normal") {
+            get_note_and_run (note_id,
+                function(response) {
+                    let note_container = document.getElementById("note-container")
+                    note_text_to_element(note_container, note_id, response)
+                    set_breadcrumbs();
+                }
+            )
+
+        } else if (note_type === "virtual") {
+            let note_container = document.getElementById("note-container")
+            note_text_to_element(note_container, note_id, virtual_entities[note_id].html)
+            set_breadcrumbs();
+        }
 
     } else {
         // By default open the first note

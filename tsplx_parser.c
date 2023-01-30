@@ -32,9 +32,25 @@ char* splx_get_node_id_str (struct splx_data_t *sd, char *id)
     return node_id_str;
 }
 
-char* splx_get_node_id (struct splx_data_t *sd, struct splx_node_t *node)
+char* splx_node_get_node_id_str (struct splx_data_t *sd, struct splx_node_t *node)
 {
     return splx_get_node_id_str (sd, str_data(&node->str));
+}
+
+static inline
+string_t* splx_node_get_id (struct splx_node_t *node)
+{
+    return &node->str;
+}
+
+struct splx_node_t* splx_get_node_by_id(struct splx_data_t *sd, char *id)
+{
+    return cstr_to_splx_node_map_get (&sd->nodes, id);
+}
+
+static inline bool splx_node_is_referenceable(struct splx_node_t *node)
+{
+    return str_len(splx_node_get_id (node)) > 0;
 }
 
 #define TSPLX_TOKEN_TYPES_TABLE                        \
@@ -446,7 +462,9 @@ void splx_node_add (struct splx_data_t *sd, struct splx_node_t *node)
     if (splx_node_has_name (node) &&
         node->type != SPLX_NODE_TYPE_INTEGER &&
         node->type != SPLX_NODE_TYPE_STRING &&
-        node->type != SPLX_NODE_TYPE_SOFT_REFERENCE) {
+        node->type != SPLX_NODE_TYPE_SOFT_REFERENCE &&
+        splx_node_is_referenceable(node))
+    {
         cstr_to_splx_node_map_insert (&sd->nodes, str_data(&node->str), node);
     }
 
@@ -465,7 +483,8 @@ void splx_node_add (struct splx_data_t *sd, struct splx_node_t *node)
 struct splx_node_t* splx_node (struct splx_data_t *sd, char *c_str, enum splx_node_type_t type)
 {
     struct splx_node_t *node = splx_node_new (sd);
-    str_set (&node->str, c_str);
+
+    if (c_str != NULL) str_set (&node->str, c_str);
     node->type = type;
     splx_node_add (sd, node);
 
@@ -638,6 +657,48 @@ struct splx_node_t* splx_get_node_by_name(struct splx_data_t *sd, char *name)
     return result;
 }
 
+struct query_ctx_t {
+    bool done;
+    struct splx_node_list_t *curr_node;
+};
+
+struct splx_node_t* splx_next_by_name(struct query_ctx_t *ctx, struct splx_data_t *sd, char *name)
+{
+    assert (ctx != NULL);
+
+    if (ctx->done) return NULL;
+
+    struct splx_node_t *result = NULL;
+
+    if (ctx->curr_node == NULL) {
+        ctx->curr_node = sd->entities->floating_values;
+    }
+
+    LINKED_LIST_FOR (struct splx_node_list_t *, curr_list_node, ctx->curr_node) {
+        struct splx_node_t *entity = curr_list_node->node;
+
+        struct splx_node_list_t *names = splx_node_get_attributes (entity, "name");
+        LINKED_LIST_FOR (struct splx_node_list_t *, curr_name, names) {
+            struct splx_node_t *node = curr_name->node;
+
+            if (node->type == SPLX_NODE_TYPE_STRING && strcmp(str_data(&node->str), name) == 0) {
+                result = entity;
+                break;
+            }
+        }
+
+        if (result != NULL) break;
+    }
+
+    if (curr_list_node != NULL) {
+        ctx->curr_node = curr_list_node->next;
+    } else {
+        ctx->done = true;
+    }
+
+    return result;
+}
+
 // TODO: Actually search for a specific type
 struct splx_node_t* splx_get_node_by_default_constructor(struct splx_data_t *sd, char *type, char *name)
 {
@@ -650,7 +711,7 @@ struct splx_node_t* splx_get_node_by_default_constructor(struct splx_data_t *sd,
         LINKED_LIST_FOR (struct splx_node_list_t *, curr_name, names) {
             struct splx_node_t *node = curr_name->node;
 
-            if (node->type == SPLX_NODE_TYPE_STRING && strcmp(str_data(&node->str), name) == 0) {
+            if (strcmp(str_data(&node->str), name) == 0) {
                 result = entity;
                 break;
             }
@@ -1299,7 +1360,7 @@ struct splx_node_list_t* tps_subject_node_list_from_tmp_node (struct splx_data_t
     struct splx_node_list_t *subject_node_list;
 
     struct splx_node_t *subject_node = cstr_to_splx_node_map_get (&sd->nodes, str_data(&node->str));
-    if (str_len(&node->str) == 0 &&         // Node is unreferenceable
+    if (!splx_node_is_referenceable(node) &&     // Node is unreferenceable
         node->attributes.num_nodes == 0 &&  // Has no triples
         node->floating_values != NULL)      // Has floating values
     {
@@ -1639,7 +1700,7 @@ bool tps_parse_node (struct tsplx_parser_state_t *tps, struct splx_node_t *root_
                 if (triple[0].type == SPLX_NODE_TYPE_OBJECT) {
                     // Completed a triple with respect to the current object.
 
-                    char *predicate_str = splx_get_node_id (sd, &triple[0]);
+                    char *predicate_str = splx_node_get_node_id_str (sd, &triple[0]);
                     if (strcmp(predicate_str, "id") == 0) {
                         tps_resolve_id_attribute(tps, sd, curr_object, &triple[1]);
 
@@ -1671,7 +1732,7 @@ bool tps_parse_node (struct tsplx_parser_state_t *tps, struct splx_node_t *root_
                 splx_node_add (sd, new_node);
                 curr_object = new_node;
 
-                char *predicate_str = splx_get_node_id (sd, &triple[1]);
+                char *predicate_str = splx_node_get_node_id_str (sd, &triple[1]);
                 if (strcmp(predicate_str, "id") == 0) {
                     tps_resolve_id_attribute(tps, sd, curr_object, &triple[2]);
 
@@ -1774,16 +1835,17 @@ bool splx_node_get_value_cstr_arr (struct splx_data_t *sd, struct splx_node_t *n
 
 // Common Queries
 
-string_t* splx_node_get_id (struct splx_node_t *node)
-{
-    return &node->str;
-}
-
 struct splx_node_t* splx_node_get_attribute (struct splx_node_t *node, char *attr)
 {
+    struct splx_node_t *result = NULL;
+
     struct splx_node_list_t *values = splx_node_get_attributes(node, attr);
-    assert(values->next == NULL);
-    return values->node;
+    if (values != NULL) {
+        assert(values->next == NULL);
+        result = values->node;
+    }
+
+    return result;
 }
 
 string_t* splx_node_get_name (struct splx_node_t *node)
@@ -1791,5 +1853,22 @@ string_t* splx_node_get_name (struct splx_node_t *node)
     // TODO: If there are multiple names, don't just return the first one. When
     // reification is supported we should allow sorting by reification tags.
     struct splx_node_list_t *values = splx_node_get_attributes(node, "name");
-    return &values->node->str;
+    return values ? &values->node->str : NULL;
+}
+
+bool splx_node_attribute_contains (struct splx_node_t *node, char *attr, char *value)
+{
+    bool found = false;
+
+    struct splx_node_list_t *attributes = splx_node_get_attributes (node, attr);
+    LINKED_LIST_FOR (struct splx_node_list_t *, curr_attr, attributes) {
+        struct splx_node_t *node = curr_attr->node;
+
+        if (strcmp(str_data(&node->str), value) == 0) {
+            found = true;
+            break;
+        }
+    }
+
+    return found;
 }

@@ -227,15 +227,6 @@ def generate ():
     title_notes = store_get ('title_notes', [])
     note_title_to_id, id_to_note_title = gn.get_note_maps(source_notes_dir)
 
-    root_notes, note_links, note_backlinks = gn.get_note_graph(source_notes_dir, note_title_to_id, ["note", "summary"])
-
-    orphan_notes = [n for n in root_notes if n not in title_notes]
-    if len (orphan_notes) > 0:
-        print ("Orphan notes:")
-        for orphan in orphan_notes:
-            print (f"{path_cat(source_notes_dir, orphan)} - {id_to_note_title[orphan]}")
-        print()
-
     env = Environment(
         loader=FileSystemLoader(templates_dir),
         autoescape=select_autoescape(['html']),
@@ -265,7 +256,7 @@ def generate ():
     # TODO: The HTML generator should only process source notes that changed.
     # Currently it generates all notes, all the time.
     if success:
-        ex (f'./bin/weaver generate --static --output-dir {path_cat(out_dir, notes_dirname)}')
+        ex (f'./bin/weaver generate --static --output-dir {out_dir}')
 
 
 ensure_dir ("bin")

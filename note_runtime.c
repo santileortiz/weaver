@@ -42,17 +42,23 @@ struct note_t* rt_get_note_by_id (char *id)
     return id_to_note_get (&rt->notes_by_id, id);
 }
 
-void rt_link_entities (char *src_id, char *tgt_id)
+void rt_link_entities (struct splx_node_t *src, struct splx_node_t *tgt)
+{
+    struct note_runtime_t *rt = rt_get ();
+
+    // TODO: Instead of just printing a page's backling once, we should provide
+    // more context about where the link is coming from in each repetition.
+    splx_node_attribute_append_once (&rt->sd, src, "link", tgt);
+    splx_node_attribute_append_once (&rt->sd, tgt, "backlink", src);
+}
+
+void rt_link_entities_by_id (char *src_id, char *tgt_id)
 {
     struct note_runtime_t *rt = rt_get ();
 
     struct splx_node_t *src_node = splx_node_get_or_create(&rt->sd, src_id, SPLX_NODE_TYPE_OBJECT);
     struct splx_node_t *tgt_node = splx_node_get_or_create(&rt->sd, tgt_id, SPLX_NODE_TYPE_OBJECT);
-
-    // TODO: Instead of just printing a page's backling once, we should provide
-    // more context about where the link is coming from in each repetition.
-    splx_node_attribute_append_once (&rt->sd, src_node, "link", tgt_node);
-    splx_node_attribute_append_once (&rt->sd, tgt_node, "backlink", src_node);
+    rt_link_entities (src_node, tgt_node);
 }
 
 void rt_process_note (mem_pool_t *pool_out, struct file_vault_t *vlt, struct splx_data_t *sd, struct note_t *note)

@@ -801,6 +801,10 @@ bool psx_cat_tag_content (struct psx_parser_state_t *ps, string_t *str, bool exp
     return content != NULL;
 }
 
+// TODO: This should also be rewritten, I think we can instead call into
+// psx_match_tag_data() and reuse that parsing logic. Then proceed to perform
+// parameter parsing. This would decouple a bit tag parsing from parameter
+// parsing.
 #define ps_parse_tag(ps,end) ps_parse_tag_full(&ps->pool,ps,end,false)
 struct psx_tag_t* ps_parse_tag_full (mem_pool_t *pool, struct psx_parser_state_t *ps, char **end, bool expect_balanced_braces)
 {
@@ -1064,6 +1068,24 @@ struct html_element_t* html_append_note_link(struct html_t *html, struct html_el
     html_element_attribute_set (html, link_element, "href", "#");
 
     str_set_printf (&buff, "return open_note('%s');", target_id);
+    html_element_attribute_set (html, link_element, "onclick", str_data(&buff));
+    html_element_class_add (html, link_element, "note-link");
+
+    html_element_append_strn (html, link_element, text_len, text);
+    html_element_append_child (html, parent, link_element);
+
+    str_free(&buff);
+    return link_element;
+}
+
+struct html_element_t* html_append_entity_link(struct html_t *html, struct html_element_t *parent, char *target_id, char *text, int text_len)
+{
+    string_t buff = {0};
+
+    struct html_element_t *link_element = html_new_element (html, "a");
+    html_element_attribute_set (html, link_element, "href", "#");
+
+    str_set_printf (&buff, "return open_virtual_entity('%s');", target_id);
     html_element_attribute_set (html, link_element, "onclick", str_data(&buff));
     html_element_class_add (html, link_element, "note-link");
 
@@ -1346,30 +1368,35 @@ void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html
                 str_set_sstr (&buff, &tag->parameters.positional->v);
                 str_set_sstr (&type, &tag->token.value);
 
+                // TODO: Handle case when multiple entities match.
                 target = splx_get_node_by_default_constructor(&rt->sd, str_data(&type), str_data(&buff));
+                assert (target != NULL);
+
                 str_free (&type);
-            }
 
-            if (target != NULL) {
-                rt_link_entities (ctx->id, str_data(&target->str));
 
-                html_append_note_link (html,
-                    psx_get_head_html_element(ps),
-                    str_data(splx_node_get_id(target)),
-                    str_data(&buff),
-                    str_len(&buff));
+                if (splx_node_is_referenceable(target)) {
+                    rt_link_entities_by_id (ctx->id, str_data(splx_node_get_id(target)));
+                    html_append_note_link (html,
+                        psx_get_head_html_element(ps),
+                        str_data(splx_node_get_id(target)),
+                        str_data(&buff),
+                        str_len(&buff));
+
+                } else {
+                    struct splx_node_t *virtual_id = splx_node_get_attribute (target, "t:virtual_id");
+
+                    rt_link_entities (ctx->note->tree->data, target);
+                    html_append_entity_link (html,
+                        psx_get_head_html_element(ps),
+                        str_data(splx_node_get_id (virtual_id)),
+                        str_data(&buff),
+                        str_len(&buff));
+                }
 
             } else {
                 ps_restore_pos (ps, original_pos);
                 ps_html_cat_literal_tag (ps, tag, html);
-            }
-
-            if (tag->token.value.len > 0 && tag->parameters.positional != NULL && target == NULL) {
-                // TODO: Handle broken links!!
-                //html_element_class_add (html, link_element, "note-link-broken");
-
-                // :target_note_not_found_error
-                psx_warning (ps, "broken entity link, couldn't find entity for name: %s", str_data (&buff));
             }
 
         } else if (PS_SCR->is_eof) {
@@ -1547,6 +1574,17 @@ void psx_block_tree_user_callbacks_full (struct psx_parser_ctx_t *ctx, struct bl
     }
 }
 
+void psx_set_virtual_id (struct splx_node_t *node)
+{
+    // TODO: Use random canonical ID instead of sequential integer.
+    struct note_runtime_t *rt = rt_get();
+    string_t virtual_id = {0};
+    str_set_printf (&virtual_id, "%i", rt->next_virtual_id);
+    splx_node_attribute_append_c_str(&rt->sd, node, "t:virtual_id", str_data(&virtual_id), SPLX_NODE_TYPE_STRING);
+    rt->next_virtual_id++;
+    str_free(&virtual_id);
+}
+
 #define psx_create_links(ctx,root) psx_create_links_full(ctx,root,NULL)
 void psx_create_links_full (struct psx_parser_ctx_t *ctx, struct psx_block_t **root, struct psx_block_t **block_p)
 {
@@ -1579,10 +1617,48 @@ void psx_create_links_full (struct psx_parser_ctx_t *ctx, struct psx_block_t **r
                 // will show the warning message later, when building the html.
                 // :target_note_not_found_error
                 if (target_note != NULL) {
-                    rt_link_entities (current_note->id, target_note->id);
+                    rt_link_entities_by_id (current_note->id, target_note->id);
                 }
 
                 str_free (&target_note_title);
+
+            } else if (ps_match(ps_inline, TOKEN_TYPE_DATA_TAG, NULL)) {
+                struct splx_data_t *sd = &ctx->rt->sd;
+                char *parameters = NULL;
+                uint32_t parameters_len = 0;
+
+                psx_match_tag_data (&ps_inline->scr, true, &parameters, &parameters_len, NULL, NULL);
+
+                if (parameters_len > 0) {
+                    string_t tag_name = {0};
+                    str_set_sstr(&tag_name, &ps_inline->token.value);
+
+                    // TODO: What should happen if an inline data tag has content?...
+                    // TODO: What if it has multiple parameters or named parameters?
+
+                    struct query_ctx_t qctx = {0};
+                    string_t name = strn_new (parameters, parameters_len);
+
+                    bool found = false;
+                    struct splx_node_t *entity = NULL;
+                    while ((entity = splx_next_by_name (&qctx, sd, str_data(&name))) != NULL) {
+                        if (!splx_node_is_referenceable(entity) && splx_node_attribute_contains(entity, "a", str_data(&tag_name))) {
+                            splx_node_attribute_append_c_str(sd, entity, "a", str_data(&tag_name), SPLX_NODE_TYPE_OBJECT);
+                            break;
+                        }
+                        found = true;
+                    }
+
+                    if (!found && entity == NULL) {
+                        entity = splx_node (sd, NULL, SPLX_NODE_TYPE_OBJECT);
+                        psx_set_virtual_id(entity);
+                        splx_node_attribute_append_c_str(sd, entity, "a", str_data(&tag_name), SPLX_NODE_TYPE_OBJECT);
+                        splx_node_attribute_append_c_str(sd, entity, "name", str_data(&name), SPLX_NODE_TYPE_OBJECT);
+                    }
+
+                    str_free(&tag_name);
+                    str_free(&name);
+                }
             }
         }
 
@@ -1591,8 +1667,8 @@ void psx_create_links_full (struct psx_parser_ctx_t *ctx, struct psx_block_t **r
 }
 
 
-char *note_internal_attributes[] = {"name", "a", "link", "backlink"};
-char *block_internal_attributes[] = {"a"};
+char *note_internal_attributes[] = {"name", "a", "t:virtual_id", "link", "backlink"};
+char *block_internal_attributes[] = {"a", "t:virtual_id"};
 
 void attributes_html_append (struct html_t *html, struct psx_block_t *block, struct html_element_t *parent,
                              char **skip_attrs, int skip_attrs_len)
@@ -1856,6 +1932,10 @@ void psx_parse_block_attributes (struct psx_parser_state_t *ps, struct psx_block
         // :block_data_node_instantiation
         if (block->data == NULL) {
             block->data = splx_node_get_or_create(ps->ctx.sd, node_id, SPLX_NODE_TYPE_OBJECT);
+
+            if (node_id == NULL) {
+                psx_set_virtual_id(block->data);
+            }
         }
 
         if (tok.value.len > 0) {
@@ -2362,38 +2442,43 @@ char* markup_to_html (
     return str_data(html_out);
 }
 
-void render_links(struct note_runtime_t *rt)
+void render_backlinks(struct note_runtime_t *rt, struct note_t *note)
+{
+    struct splx_node_list_t *backlinks = splx_node_get_attributes (note->tree->data, "backlink");
+    int num_backlinks = 0;
+    {
+        LINKED_LIST_FOR (struct splx_node_list_t *, curr_list_node, backlinks) {
+            num_backlinks++;
+        }
+    }
+
+    if (num_backlinks > 0) {
+        struct html_t *html = note->html;
+
+        struct html_element_t *title = html_new_element (html, "h4");
+        html_element_append_child(html, html->root, title);
+        html_element_append_cstr(html, title, "Backlinks");
+
+        struct html_element_t *backlinks_element = html_new_element (html, "div");
+        html_element_append_child(html, html->root, backlinks_element);
+        html_element_class_add (html, backlinks_element, "backlinks");
+
+        LINKED_LIST_FOR (struct splx_node_list_t *, curr_list_node, backlinks) {
+            struct splx_node_t *node = curr_list_node->node;
+
+            struct html_element_t *wrapper = html_new_element (html, "p");
+            html_element_append_child(html, backlinks_element, wrapper);
+
+            string_t *name = splx_node_get_name (node);
+            html_append_note_link (html, wrapper, str_data(&node->str), str_data(name), str_len(name));
+        }
+    }
+}
+
+void render_all_backlinks(struct note_runtime_t *rt)
 {
     LINKED_LIST_FOR (struct note_t *, curr_note, rt->notes) {
-        struct splx_node_list_t *backlinks = splx_node_get_attributes (curr_note->tree->data, "backlink");
-        int num_backlinks = 0;
-        {
-            LINKED_LIST_FOR (struct splx_node_list_t *, curr_list_node, backlinks) {
-                num_backlinks++;
-            }
-        }
-
-        if (num_backlinks > 0) {
-            struct html_t *html = curr_note->html;
-
-            struct html_element_t *title = html_new_element (html, "h4");
-            html_element_append_child(html, html->root, title);
-            html_element_append_cstr(html, title, "Backlinks");
-
-            struct html_element_t *backlinks_element = html_new_element (html, "div");
-            html_element_append_child(html, html->root, backlinks_element);
-            html_element_class_add (html, backlinks_element, "backlinks");
-
-            LINKED_LIST_FOR (struct splx_node_list_t *, curr_list_node, backlinks) {
-                struct splx_node_t *node = curr_list_node->node;
-
-                struct html_element_t *wrapper = html_new_element (html, "p");
-                html_element_append_child(html, backlinks_element, wrapper);
-
-                string_t *name = splx_node_get_name (node);
-                html_append_note_link (html, wrapper, str_data(&node->str), str_data(name), str_len(name));
-            }
-        }
+        render_backlinks (rt, curr_note);
     }
 }
 
@@ -2444,7 +2529,7 @@ PSX_USER_TAG_CB (summary_tag_handler)
 
         psx_replace_block_multiple (block_allocation, block, result, result_end);
 
-        rt_link_entities(ctx->note->id, note->id);
+        rt_link_entities_by_id(ctx->note->id, note->id);
 
         // TODO: Add some user defined wrapper that allows setting a different
         // style for blocks of summary. For example if we ever get inline
@@ -2570,13 +2655,16 @@ PSX_LATE_USER_TAG_CB(entity_list_tag_handler)
                 //html_element_append_cstr (note->html, paragraph, str_data(title));
 
                 string_t *title = splx_node_get_name(entity);
-                struct note_t *target_note = rt_get_note_by_title (title);
-                if (target_note != NULL) {
-                    html_append_note_link (note->html,
-                                           paragraph,
-                                           target_note->id,
-                                           str_data(title),
-                                           str_len(title));
+
+                if (title != NULL) {
+                    struct note_t *target_note = rt_get_note_by_title (title);
+                    if (target_note != NULL) {
+                        html_append_note_link (note->html,
+                                               paragraph,
+                                               target_note->id,
+                                               str_data(title),
+                                               str_len(title));
+                    }
                 }
             }
         }

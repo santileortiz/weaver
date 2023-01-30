@@ -53,6 +53,9 @@ function ajax_get (target, callback, async=true)
 //    the order they were in the URL. Flags already present are left in the
 //    original position.
 //  - Don't replace + with space.
+//  - The "" key will store an array of length 2 arrays where the first element
+//    is the key and the second is the value. Useful when it's desireable to keep
+//    the ordering of parameters across different keys.
 //
 // TODO: Test all these details are true in most browsers. Tested in Chrome.
 //
@@ -87,7 +90,7 @@ function url_parameters(flags)
     // window.location.href. Not sure if this happens in all browsers.
     let query = /\?([^#]+)/.exec(window.location.href)
     if (query != null) {
-        params = {}
+        params = {"": []}
 
         let parameter_components = query[1].split("&")
         for (let i=0; i<parameter_components.length; i++) {
@@ -101,7 +104,11 @@ function url_parameters(flags)
                 if (params[key] == undefined) {
                     params[key] = []
                 }
-                params[key].push(decodeURIComponent(key_value[2]))
+
+                let value = decodeURIComponent(key_value[2]);
+
+                params[key].push(value);
+                params[""].push([key, value]);
 
             } else if (flags != undefined && flags != null) {
                 let flag = decodeURIComponent(key_value[1])

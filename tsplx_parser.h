@@ -69,6 +69,7 @@ struct splx_node_list_t* splx_node_get_attributes (struct splx_node_t *node, cha
 struct splx_node_t* splx_node_get_attribute (struct splx_node_t *node, char *attr);
 string_t* splx_node_get_name (struct splx_node_t *node);
 struct splx_node_t* splx_get_node_by_name(struct splx_data_t *sd, char *name);
+bool splx_node_attribute_contains (struct splx_node_t *node, char *attr, char *value);
 
 #define TSPLX_PARSER_H
 #endif
