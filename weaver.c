@@ -324,6 +324,7 @@ int main(int argc, char** argv)
                             }
                         }
                         str_cat_c (&psplx, name_str);
+                        str_replace (&psplx, "\n", " ", NULL);
                         str_cat_c (&psplx, "\n");
 
                         struct splx_node_list_t *types = splx_node_get_attributes (entity, "a");
@@ -334,6 +335,7 @@ int main(int argc, char** argv)
                             str_cat_c (&psplx, str_data(&node->str));
                         }
 
+                        str_replace (&psplx, "'", "\\'", NULL);
                         str_replace (&psplx, "\n", "\\n", NULL);
 
 
@@ -362,17 +364,23 @@ int main(int argc, char** argv)
                         block_tree_to_html (ctx, dummy_note->html, dummy_note->tree, dummy_note->html->root);
                         render_backlinks (rt, dummy_note);
                         str_cat_html (&html, dummy_note->html, 2);
-                        str_replace (&html, "\n", "\\n", NULL);
                         str_replace (&html, "'", "\\'", NULL);
+                        str_replace (&html, "\n", "\\n", NULL);
                         note_destroy (dummy_note);
                         ps_destroy (ps);
 
 
                         // Generate TSPLX
                         string_t tsplx = {0};
-                        str_cat_splx_canonical (&tsplx, &rt->sd, entity);
+                        str_cat_splx_canonical_shallow (&tsplx, entity);
+                        str_replace (&psplx, "'", "\\'", NULL);
                         str_replace (&tsplx, "\n", "\\n", NULL);
 
+
+                        string_t name_escaped = {0};
+                        str_set (&name_escaped, name_str);
+                        str_replace (&name_escaped, "\n", " ", NULL);
+                        str_replace (&name_escaped, "'", "\\'", NULL);
 
                         if (virtual_id != NULL) {
                             str_cat_printf(&generated_data,
@@ -381,7 +389,7 @@ int main(int argc, char** argv)
                                 str_data(&psplx),
                                 str_data(&html),
                                 str_data(&tsplx),
-                                name_str);
+                                str_data(&name_escaped));
                         }
 
                         str_free (&tsplx);

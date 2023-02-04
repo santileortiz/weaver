@@ -60,6 +60,7 @@ void set_expected_subtype_path (string_t *str, char *name, char *extension)
 
 #define TEST_EXTENSION_TTL "ttl"
 #define TEST_EXTENSION_CANONICAL "canonical.tsplx"
+#define TEST_EXTENSION_CANONICAL_SHALLOW "canonical_shallow.tsplx"
 
 int main(int argc, char** argv)
 {
@@ -101,11 +102,25 @@ int main(int argc, char** argv)
                 expected_canonical = full_file_read (NULL, str_data(&buff), NULL);
             }
 
-            if (expected_ttl == NULL || expected_canonical == NULL) {
+            set_expected_subtype_path (&buff, test_name->v, TEST_EXTENSION_CANONICAL_SHALLOW);
+            char *expected_shallow = NULL;
+            if (path_exists (str_data(&buff))) {
+                expected_shallow = full_file_read (NULL, str_data(&buff), NULL);
+            }
+
+            if (expected_ttl == NULL || expected_canonical == NULL || expected_shallow == NULL) {
                 string_t missing_info = {0};
 
                 if (expected_canonical == NULL) {
                     str_cat_c (&missing_info, "!canonical");
+                }
+
+                if (expected_shallow == NULL) {
+                    if (str_len (&missing_info) && str_last (&missing_info) != ' ') {
+                        str_cat_c (&missing_info, " ");
+                    }
+
+                    str_cat_c (&missing_info, "!shallow");
                 }
 
                 if (expected_ttl == NULL) {
@@ -173,6 +188,14 @@ int main(int argc, char** argv)
                     free (expected_canonical);
                 }
 
+                if (!parsing_failed && expected_shallow != NULL) {
+                    str_set (&buff, "");
+                    test_push (t, "Canonical shallow matches");
+                    str_cat_splx_canonical_shallow (&buff, sd.root);
+                    test_str (t, str_data(&buff), expected_shallow);
+                    free (expected_shallow);
+                }
+
                 if (!parsing_failed && expected_ttl != NULL) {
                     str_set (&buff, "");
                     test_push (t, "Matches expected turtle");
@@ -213,27 +236,40 @@ int main(int argc, char** argv)
                 printf ("\n");
 
                 if (success) {
-                    string_t tsplx_formatted = {0};
-                    str_cat_splx_canonical (&tsplx_formatted, &sd, sd.root);
+                    string_t tsplx_dump = {0};
+                    str_cat_splx_canonical (&tsplx_dump, &sd, sd.root);
                     printf (ECMA_MAGENTA("CANONICAL") "\n");
-                    prnt_debug_string (str_data(&tsplx_formatted));
+                    prnt_debug_string (str_data(&tsplx_dump));
 
                     set_expected_subtype_path (&buff, test_name, TEST_EXTENSION_CANONICAL);
-                    print_diff_str_to_expected_file (&tsplx_formatted, str_data (&buff));
-                    str_free (&tsplx_formatted);
+                    print_diff_str_to_expected_file (&tsplx_dump, str_data (&buff));
+                    str_free (&tsplx_dump);
                 }
 
                 printf ("\n");
 
                 if (success) {
-                    string_t tsplx_formatted = {0};
-                    str_cat_splx_ttl (&tsplx_formatted, &sd, sd.root);
+                    string_t tsplx_shallow = {0};
+                    str_cat_splx_canonical_shallow (&tsplx_shallow, sd.root);
+                    printf (ECMA_MAGENTA("SHALLOW") "\n");
+                    prnt_debug_string (str_data(&tsplx_shallow));
+
+                    set_expected_subtype_path (&buff, test_name, TEST_EXTENSION_CANONICAL_SHALLOW);
+                    print_diff_str_to_expected_file (&tsplx_shallow, str_data (&buff));
+                    str_free (&tsplx_shallow);
+                }
+
+                printf ("\n");
+
+                if (success) {
+                    string_t ttl = {0};
+                    str_cat_splx_ttl (&ttl, &sd, sd.root);
                     printf (ECMA_MAGENTA("TTL") "\n");
-                    prnt_debug_string (str_data(&tsplx_formatted));
+                    prnt_debug_string (str_data(&ttl));
 
                     set_expected_subtype_path (&buff, test_name, TEST_EXTENSION_TTL);
-                    print_diff_str_to_expected_file (&tsplx_formatted, str_data (&buff));
-                    str_free (&tsplx_formatted);
+                    print_diff_str_to_expected_file (&ttl, str_data (&buff));
+                    str_free (&ttl);
                 }
 
                 if (str_len(&error_msg) > 0) {

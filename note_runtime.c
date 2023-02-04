@@ -44,6 +44,8 @@ struct note_t* rt_get_note_by_id (char *id)
 
 void rt_link_entities (struct splx_node_t *src, struct splx_node_t *tgt)
 {
+    assert (src != NULL && tgt != NULL);
+
     struct note_runtime_t *rt = rt_get ();
 
     // TODO: Instead of just printing a page's backling once, we should provide

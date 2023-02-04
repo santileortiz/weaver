@@ -1,0 +1,18 @@
+5; 6; 7; obj1; "tag2";
+[
+  _ a my-type2 ;
+    prop2 "root _ value1" ;
+];
+42; "tag3"; "tag4"; obj2; obj5;
+
+prop2 "root value3" ;
+prop3 [
+    _ a my-type3 ;
+      prop1 "_ value1" ;
+  ] ;
+  "root value1" ;
+  "root value2" ;
+  11 ;
+  obj4 ;
+  12 ;
+  13 ;

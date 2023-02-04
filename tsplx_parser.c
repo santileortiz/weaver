@@ -53,6 +53,11 @@ static inline bool splx_node_is_referenceable(struct splx_node_t *node)
     return str_len(splx_node_get_id (node)) > 0;
 }
 
+static inline bool splx_node_is_unreferenceable(struct splx_node_t *node)
+{
+    return node != NULL && node->type == SPLX_NODE_TYPE_OBJECT && !splx_node_is_referenceable(node);
+}
+
 #define TSPLX_TOKEN_TYPES_TABLE                        \
     TOKEN_TYPES_ROW(TSPLX_TOKEN_TYPE_UNKNOWN)          \
     TOKEN_TYPES_ROW(TSPLX_TOKEN_TYPE_COMMENT)          \
@@ -681,7 +686,7 @@ struct splx_node_t* splx_next_by_name(struct query_ctx_t *ctx, struct splx_data_
         LINKED_LIST_FOR (struct splx_node_list_t *, curr_name, names) {
             struct splx_node_t *node = curr_name->node;
 
-            if (node->type == SPLX_NODE_TYPE_STRING && strcmp(str_data(&node->str), name) == 0) {
+            if (strcmp(str_data(&node->str), name) == 0) {
                 result = entity;
                 break;
             }
@@ -690,7 +695,7 @@ struct splx_node_t* splx_next_by_name(struct query_ctx_t *ctx, struct splx_data_
         if (result != NULL) break;
     }
 
-    if (curr_list_node != NULL) {
+    if (curr_list_node != NULL && result == NULL) {
         ctx->curr_node = curr_list_node->next;
     } else {
         ctx->done = true;
@@ -897,7 +902,7 @@ void tps_cat_floating_literals (string_t *str, struct splx_data_t *sd,
 
             } else {
                 str_cat_indented_c (str, "[\n", curr_indent);
-                str_cat_splx_canonical_full(str,sd,curr_node, curr_indent + SPLX_STR_INDENT,printed_nodes);
+                str_cat_splx_canonical_full(str, sd, curr_node, curr_indent + SPLX_STR_INDENT, printed_nodes);
                 str_cat_indented_c (str, "]", curr_indent);
             }
 
@@ -920,7 +925,7 @@ void tps_cat_floating_literals (string_t *str, struct splx_data_t *sd,
 
 // TODO: It's a bit cumbersome to have to pass sd here. It's only used to detect
 // if the node is the root node. I think serializing should be independent of
-// weather or not a node is the root.
+// whether or not a node is the root.
 void str_cat_splx_canonical_full (string_t *str, struct splx_data_t *sd,
                                   struct splx_node_t *node,
                                   int curr_indent,
@@ -1108,6 +1113,237 @@ void str_cat_splx_canonical(string_t *str, struct splx_data_t *sd, struct splx_n
     str_cat_splx_canonical_full (str, sd, node, 0, &printed_nodes);
     cstr_to_splx_node_map_destroy (&printed_nodes);
 }
+
+
+void str_cat_splx_canonical_shallow_full (string_t *str, struct splx_node_t *root, struct splx_node_t *node, int curr_indent);
+
+void tps_cat_floating_literals_shallow (string_t *str,
+                                        struct splx_node_t *root,
+                                        struct splx_node_t *node,
+                                        struct splx_node_list_t *floating_objects,
+                                        int curr_indent)
+{
+    struct splx_node_t *prev_node = NULL;
+    LINKED_LIST_FOR (struct splx_node_list_t*, curr_node_list_element, node->floating_values) {
+        struct splx_node_t *curr_node = curr_node_list_element->node;
+
+        if (curr_node_list_element == floating_objects) break;
+
+        if (splx_node_is_unreferenceable(prev_node) || splx_node_is_unreferenceable(curr_node))
+        {
+            if (str_last(str) != '\n') {
+                str_cat_c (str, "\n");
+            }
+
+            str_cat_char (str, ' ', curr_indent);
+
+        } else if (prev_node != NULL) {
+            str_cat_c (str, " ");
+        }
+
+        if (curr_node->type == SPLX_NODE_TYPE_OBJECT) {
+            if (splx_node_is_referenceable(curr_node))
+            {
+                splx_cat_node_identifier(str, curr_indent, curr_node);
+
+            } else {
+                str_cat_indented_c (str, "[\n", curr_indent);
+                str_cat_splx_canonical_shallow_full (str, root, curr_node, curr_indent + SPLX_STR_INDENT);
+                str_cat_indented_c (str, "]", curr_indent);
+            }
+
+        } else {
+            str_cat_literal_node (str, curr_node);
+        }
+
+        str_cat_c (str, ";");
+
+        prev_node = curr_node;
+    }
+}
+
+void str_cat_splx_canonical_shallow_full (string_t *str, struct splx_node_t *root, struct splx_node_t *node, int curr_indent)
+{
+    bool is_triple = false;
+    if (splx_node_has_name (node)) {
+        str_cat_indented_c (str, str_data(&node->str), curr_indent);
+
+    } else if (root != node) {
+        str_cat_indented_c (str, "_", curr_indent);
+        is_triple = true;
+    }
+
+    if (node->attributes.num_nodes == 0 && node->floating_values == NULL) {
+        str_cat_c (str, " ;");
+    }
+
+    struct splx_node_t *prev_node = NULL;
+    struct splx_node_list_t *floating_objects = node->floating_values;
+    LINKED_LIST_FOR (struct splx_node_list_t*, curr_node_list_element, node->floating_values) {
+        struct splx_node_t *curr_node = curr_node_list_element->node;
+
+        if (curr_node->type == SPLX_NODE_TYPE_OBJECT &&
+            (prev_node == NULL || prev_node->type != SPLX_NODE_TYPE_OBJECT || splx_node_is_referenceable (prev_node)))
+        {
+            floating_objects = curr_node_list_element;
+        }
+        prev_node = curr_node;
+    }
+
+    while (floating_objects != NULL && splx_node_is_referenceable (floating_objects->node)) {
+        floating_objects = floating_objects->next;
+    }
+
+    if (!is_triple &&
+        (node->attributes.num_nodes == 0 || !splx_node_has_name (node)) &&
+        node->floating_values != floating_objects)
+    {
+        tps_cat_floating_literals_shallow (str, root, node, floating_objects, curr_indent);
+    }
+
+    if ((!is_triple && node->floating_values != NULL && node->attributes.num_nodes > 0) ||
+        (node->attributes.num_nodes <= 0 && node->floating_values != NULL && floating_objects != NULL && node->floating_values != floating_objects))
+    {
+        str_cat_c (str, "\n\n");
+    }
+
+
+    if (node->attributes.num_nodes > 0) {
+        int attr_cnt = 0;
+        bool is_first_predicate = true;
+        BINARY_TREE_FOR (cstr_to_splx_node_list_map, &node->attributes, curr_attribute) {
+            if (is_first_predicate) {
+                if (root != node) {
+                    str_cat_c (str, " ");
+                }
+                str_cat_c (str, curr_attribute->key);
+
+            } else {
+                if (!is_triple) {
+                    str_cat_indented_c (str, curr_attribute->key, curr_indent);
+                } else {
+                    str_cat_indented_c (str, curr_attribute->key, curr_indent+SPLX_STR_INDENT);
+                }
+            }
+            is_first_predicate = false;
+
+            bool is_first_value = true;
+            LINKED_LIST_FOR (struct splx_node_list_t *, curr_node_list_element, curr_attribute->value) {
+                struct splx_node_t *curr_node = curr_node_list_element->node;
+
+                int indent_levels = 0;
+                if (is_first_value) {
+                    str_cat_c (str, " ");
+
+                } else {
+                    indent_levels = 1;
+                    if (is_triple) indent_levels = 2;
+                    str_cat_char (str, ' ', curr_indent + indent_levels*SPLX_STR_INDENT);
+                }
+
+                if (curr_node->type == SPLX_NODE_TYPE_OBJECT) {
+                    if (splx_node_is_referenceable(curr_node)) {
+                        splx_cat_node_identifier (str, curr_indent, curr_node);
+
+                    } else {
+                        str_cat_indented_c (str, "[\n", curr_indent + indent_levels*SPLX_STR_INDENT);
+
+                        indent_levels = 1;
+                        if (is_triple) indent_levels = 2;
+                        str_cat_splx_canonical_shallow_full(str, root, curr_node, curr_indent + (indent_levels+1)*SPLX_STR_INDENT);
+                        str_cat_indented_c (str, "]", curr_indent + indent_levels*SPLX_STR_INDENT);
+                    }
+
+                } else {
+                    str_cat_literal_node (str, curr_node);
+                }
+
+                if (curr_node_list_element->next != NULL) {
+                    str_cat_c (str, " ;\n");
+                }
+
+                is_first_value = false;
+            }
+
+            attr_cnt++;
+            str_cat_c (str, " ;\n");
+        }
+
+    }
+
+    if (root != node && node->floating_values != NULL) {
+        str_cat_indented_c (str, "{\n", curr_indent + (is_triple ? 1 : 0)*SPLX_STR_INDENT);
+    } else if (splx_node_has_name(node) && node->attributes.num_nodes == 0) {
+        str_cat_c (str, "\n");
+    } else if (node->attributes.num_nodes > 0 && floating_objects != NULL && node->floating_values != floating_objects) {
+        str_cat_c (str, "\n");
+    }
+
+    int floating_indent = 0;
+    if (is_triple) floating_indent = 2*SPLX_STR_INDENT;
+
+    bool is_first_floating_object = true;
+    enum splx_node_type_t prev_type = SPLX_NODE_TYPE_UNKNOWN;
+    {
+        if (is_triple) {
+            tps_cat_floating_literals_shallow (str, root, node, floating_objects, curr_indent + 2*SPLX_STR_INDENT);
+
+            if (str_last(str) != '\n') {
+                str_cat_c (str, "\n");
+            }
+
+            if (floating_objects != NULL && floating_objects != node->floating_values) {
+                str_cat_c (str, "\n");
+            }
+        }
+
+        LINKED_LIST_FOR (struct splx_node_list_t*, curr_node_list_element, floating_objects) {
+            struct splx_node_t *curr_node = curr_node_list_element->node;
+
+            if (curr_node->type == SPLX_NODE_TYPE_OBJECT) {
+                if (!is_first_floating_object) {
+                    str_cat_c (str, "\n");
+                }
+                str_cat_splx_canonical_shallow_full(str, root, curr_node, curr_indent + floating_indent);
+
+            } else {
+                if (is_first_floating_object || curr_node->type != prev_type) {
+                    if (!is_first_floating_object) {
+                        str_cat_c (str, "\n");
+                    }
+                    str_cat_char (str, ' ', curr_indent + floating_indent);
+                } else {
+                    str_cat_c (str, " ");
+                }
+
+                str_cat_literal_node (str, curr_node);
+                str_cat_c (str, ";");
+            }
+
+            prev_type = curr_node->type;
+            is_first_floating_object = false;
+        }
+    }
+
+    if (str_last(str) != '\n'){
+        str_cat_c (str, "\n");
+    }
+
+    if (root != node && node->floating_values != NULL) {
+        str_cat_indented_c (str, "}\n", curr_indent + (is_triple ? 1 : 0)*SPLX_STR_INDENT);
+    }
+
+    if (str_last(str) != '\n'){
+        str_cat_c (str, "\n");
+    }
+}
+
+static inline
+void str_cat_splx_canonical_shallow(string_t *str, struct splx_node_t *node)
+{
+    str_cat_splx_canonical_shallow_full (str, node, node, 0);
+}
+
 
 void str_cat_literal_node_ttl (string_t *str, struct splx_node_t *node)
 {
