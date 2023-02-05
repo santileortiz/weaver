@@ -1632,6 +1632,42 @@ void psx_set_virtual_id (struct splx_node_t *node)
     str_free(&virtual_id);
 }
 
+void psx_create_link(struct splx_data_t *sd,
+                     struct splx_node_t *src_entity, char *src_id,
+                     string_t *tgt_type, string_t *tgt_name)
+{
+    struct query_ctx_t qctx = {0};
+
+    bool found = false;
+    struct splx_node_t *tgt_entity = NULL;
+    while ((tgt_entity = splx_next_by_name (&qctx, sd, str_data(tgt_name))) != NULL) {
+        if (!splx_node_is_referenceable(tgt_entity) && splx_node_attribute_contains(tgt_entity, "a", str_data(tgt_type))) {
+            splx_node_attribute_append_c_str(sd, tgt_entity, "a", str_data(tgt_type), SPLX_NODE_TYPE_OBJECT);
+            break;
+        }
+
+        if (splx_node_attribute_contains(tgt_entity, "a", str_data(tgt_type))) {
+            found = true;
+            break;
+        }
+    }
+
+    if (!found && tgt_entity == NULL) {
+        tgt_entity = splx_node (sd, NULL, SPLX_NODE_TYPE_OBJECT);
+        psx_set_virtual_id(tgt_entity);
+        splx_node_attribute_append_c_str(sd, tgt_entity, "a", str_data(tgt_type), SPLX_NODE_TYPE_OBJECT);
+        splx_node_attribute_append_c_str(sd, tgt_entity, "name", str_data(tgt_name), SPLX_NODE_TYPE_OBJECT);
+    }
+
+    if (tgt_entity != NULL) {
+        if(splx_node_is_referenceable(tgt_entity)) {
+            rt_link_entities_by_id (src_id, str_data(splx_node_get_id(tgt_entity)));
+        } else {
+            rt_link_entities (src_entity, tgt_entity);
+        }
+    }
+}
+
 #define psx_create_links(ctx,root) psx_create_links_full(ctx,root,NULL)
 void psx_create_links_full (struct psx_parser_ctx_t *ctx, struct psx_block_t **root, struct psx_block_t **block_p)
 {
@@ -1688,87 +1724,39 @@ void psx_create_links_full (struct psx_parser_ctx_t *ctx, struct psx_block_t **r
                 psx_match_tag_data (&ps_inline->scr, true, NULL, NULL, NULL, NULL);
 
             } else if (ps_match(ps_inline, TOKEN_TYPE_DATA_TAG, NULL)) {
-                struct splx_data_t *sd = &ctx->rt->sd;
                 char *parameters = NULL;
                 uint32_t parameters_len = 0;
 
                 psx_match_tag_data (&ps_inline->scr, true, &parameters, &parameters_len, NULL, NULL);
 
                 if (parameters_len > 0) {
-                    string_t tag_name = {0};
-                    str_set_sstr(&tag_name, &ps_inline->token.value);
+                    string_t type = {0};
+                    str_set_sstr(&type, &ps_inline->token.value);
+                    string_t name = strn_new (parameters, parameters_len);
 
                     // TODO: What should happen if an inline data tag has content?...
                     // TODO: What if it has multiple parameters or named parameters?
 
-                    struct query_ctx_t qctx = {0};
-                    string_t name = strn_new (parameters, parameters_len);
+                    psx_create_link(&ctx->rt->sd, ctx->note->tree->data, ctx->note->id, &type, &name);
 
-                    bool found = false;
-                    struct splx_node_t *entity = NULL;
-                    while ((entity = splx_next_by_name (&qctx, sd, str_data(&name))) != NULL) {
-                        if (!splx_node_is_referenceable(entity) && splx_node_attribute_contains(entity, "a", str_data(&tag_name))) {
-                            splx_node_attribute_append_c_str(sd, entity, "a", str_data(&tag_name), SPLX_NODE_TYPE_OBJECT);
-                            break;
-                        }
-                        found = true;
-                    }
-
-                    if (!found && entity == NULL) {
-                        entity = splx_node (sd, NULL, SPLX_NODE_TYPE_OBJECT);
-                        psx_set_virtual_id(entity);
-                        splx_node_attribute_append_c_str(sd, entity, "a", str_data(&tag_name), SPLX_NODE_TYPE_OBJECT);
-                        splx_node_attribute_append_c_str(sd, entity, "name", str_data(&name), SPLX_NODE_TYPE_OBJECT);
-                    }
-
-                    str_free(&tag_name);
+                    str_free(&type);
                     str_free(&name);
                 }
 
             } else if (ps_match(ps_inline, TOKEN_TYPE_TEXT_TAG, NULL)) {
-                struct splx_data_t *sd = &ctx->rt->sd;
                 char *content = NULL;
                 uint32_t content_len = 0;
 
                 psx_match_tag_data (&ps_inline->scr, true, NULL, NULL, &content, &content_len);
 
                 if (content_len > 0) {
-                    string_t tag_name = {0};
-                    str_set_sstr(&tag_name, &ps_inline->token.value);
-
-                    struct query_ctx_t qctx = {0};
+                    string_t type = {0};
+                    str_set_sstr(&type, &ps_inline->token.value);
                     string_t name = strn_new (content, content_len);
 
-                    bool found = false;
-                    struct splx_node_t *entity = NULL;
-                    while ((entity = splx_next_by_name (&qctx, sd, str_data(&name))) != NULL) {
-                        if (!splx_node_is_referenceable(entity) && !splx_node_attribute_contains(entity, "a", str_data(&tag_name))) {
-                            splx_node_attribute_append_c_str(sd, entity, "a", str_data(&tag_name), SPLX_NODE_TYPE_OBJECT);
-                            break;
-                        }
+                    psx_create_link(&ctx->rt->sd, ctx->note->tree->data, ctx->note->id, &type, &name);
 
-                        if (splx_node_attribute_contains(entity, "a", str_data(&tag_name))) {
-                            found = true;
-                            break;
-                        }
-                    }
-
-                    if (!found && entity == NULL) {
-                        entity = splx_node (sd, NULL, SPLX_NODE_TYPE_OBJECT);
-                        psx_set_virtual_id(entity);
-                        splx_node_attribute_append_c_str(sd, entity, "a", str_data(&tag_name), SPLX_NODE_TYPE_OBJECT);
-                        splx_node_attribute_append_c_str(sd, entity, "name", str_data(&name), SPLX_NODE_TYPE_OBJECT);
-                    }
-
-                    if (found || entity != NULL) {
-                        if(splx_node_is_referenceable(entity)) {
-                            rt_link_entities_by_id (ctx->note->id, str_data(splx_node_get_id(entity)));
-                        } else {
-                            rt_link_entities (ctx->note->tree->data, entity);
-                        }
-                    }
-
-                    str_free(&tag_name);
+                    str_free(&type);
                     str_free(&name);
                 }
             }
