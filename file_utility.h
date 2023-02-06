@@ -126,7 +126,9 @@ uint64_t canonical_id_parse (char *s, size_t len)
 
 char id_value_to_digit['X' - '0' + 1] = {'X','W','V','R','Q','P','M','J','H','G','F','C','9','8','7','6','5','4','3','2'};
 
-void canonical_id_cat (uint64_t id, string_t *s)
+#define ID_DEFAULT_LEN 10
+
+void str_cat_id (string_t *s, uint64_t id)
 {
     string_t buff = {0};
     while (id > 0) {
@@ -135,11 +137,32 @@ void canonical_id_cat (uint64_t id, string_t *s)
     }
 
     char *reverse_id = str_data(&buff);
-    str_cat_char(s, 'X', MAX(0, 10 - str_len(&buff)));
+    str_cat_char(s, 'X', MAX(0, ID_DEFAULT_LEN - str_len(&buff)));
     for (int i=str_len(&buff)-1; i>=0; i--) {
         str_cat_char(s, reverse_id[i], 1);
     }
 }
+
+// NOTE: Use srand() ONCE before using this.
+void strn_cat_id_random (string_t *s, int len)
+{
+    string_t tmp = {0};
+
+    // Uses an approximation of log_2(20^len)
+    //   log_2(20^x) = x*log_2(20) ~ x*4.5
+    str_cat_id (&tmp, rand_bits((len*9) >> 1));
+    strn_cat_c (s, str_data(&tmp), len);
+
+    str_free (&tmp);
+}
+
+// NOTE: Use srand() ONCE before using this.
+static inline
+void str_cat_id_random(string_t *s)
+{
+    strn_cat_id_random(s, ID_DEFAULT_LEN);
+}
+
 
 static inline
 sstring_t r_group (Resub m, int i)

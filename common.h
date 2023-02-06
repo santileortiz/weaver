@@ -2288,6 +2288,31 @@ void ascii_tbl_sep (struct ascii_tbl_t *tbl)
     }
 }
 
+#define IMAX_BITS(m) ((m)/((m)%255+1) / 255%255*8 + 7-86/((m)%255+12))
+#define RAND_MAX_WIDTH IMAX_BITS(RAND_MAX)
+_Static_assert((RAND_MAX & (RAND_MAX + 1u)) == 0, "RAND_MAX isn't a Mersenne number");
+
+// NOTE: Remember to call srand() ONCE before using this.
+uint64_t rand_bits(size_t num_bits)
+{
+  assert(num_bits <= 64);
+
+  uint64_t r = 0;
+  for (int i = 0; i < num_bits; i += RAND_MAX_WIDTH) {
+    r <<= RAND_MAX_WIDTH;
+    r ^= (unsigned) rand();
+  }
+
+  return r;
+}
+
+// NOTE: Remember to call srand() ONCE before using this.
+static inline
+uint64_t rand_u64()
+{
+  return rand_bits (sizeof(uint64_t));
+}
+
 // Function that returns an integer in [min,max] with a uniform distribution.
 // NOTE: Remember to call srand() ONCE before using this.
 #define rand_int_max(max) rand_int_range(0,max)

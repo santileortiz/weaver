@@ -10,7 +10,6 @@ import curses, time
 from natsort import natsorted
 import random
 import psutil
-import uuid
 import json
 from zipfile import ZipFile
 from urllib.parse import urlparse, urlunparse, ParseResult
@@ -138,7 +137,7 @@ def new_note ():
     is_vim_mode = get_cli_bool_opt('--vim')
     ensure_dir(source_notes_dir)
 
-    new_note_path = path_cat(source_notes_dir, str(uuid.uuid4()))
+    new_note_path = fu.new_unique_canonical_path(source_notes_dir)
 
     if not is_vim_mode:
         ex ('touch ' + new_note_path)
@@ -256,7 +255,7 @@ def generate ():
     # TODO: The HTML generator should only process source notes that changed.
     # Currently it generates all notes, all the time.
     if success:
-        ex (f'./bin/weaver generate --static --output-dir {out_dir}')
+        ex (f'./bin/weaver generate --static --verbose')
 
 
 ensure_dir ("bin")
@@ -1443,6 +1442,7 @@ def id():
         _, name = fu.new_canonical_name(idx=idx)
         ids.append(name)
     print (" ".join(ids))
+
 
 telegram_api_id_pname = 'telegram_api_id'
 telegram_api_hash_pname = 'telegram_api_hash'

@@ -165,6 +165,9 @@ def new_unique_canonical_name (path, idx=None, prefix=None, location=[], name=No
 
     return new_fname
 
+def new_unique_canonical_path (*args, **kwargs):
+    return path_cat(args[0], new_unique_canonical_name(*args, **kwargs))
+
 def file_canonical_rename (path, target,
         prefix, idx, identifier, location, name,
         verbose, dry_run, keep_name=None, force_rename=False, original_names=None, error_if_target_exists=False):

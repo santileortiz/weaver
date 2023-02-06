@@ -84,8 +84,18 @@ function copy_note_cmd ()
     let dummy_input = document.createElement("input");
     // Is this necessary?...
     document.body.appendChild(dummy_input);
+    let open_note = opened_notes[opened_notes.length-1]
 
-    dummy_input.value = "gvim ~/.weaver/notes/" + opened_notes[opened_notes.length-1][1]
+    let psplx = "";
+    if (open_note[0] === "virtual") {
+        let unescaped = virtual_entities[open_note[1]].psplx;
+        unescaped = unescaped.replace("\n", "\\n");
+        unescaped = unescaped.replace("\"", "\\\"");
+        unescaped = unescaped.replace("#", "\\#");
+        psplx = ` -c ':r! printf "${unescaped}"'`;
+    }
+
+    dummy_input.value = "gvim ~/.weaver/notes/" + open_note[1] + psplx
     dummy_input.select();
     dummy_input.setSelectionRange(0, 99999);
 

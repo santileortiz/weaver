@@ -125,6 +125,9 @@ int main(int argc, char** argv)
 #ifdef NO_JS
     has_js = 0;
 #endif
+
+    srandom(time(NULL));
+
     if (get_cli_bool_opt_ctx (cli_ctx, "--has-js", argv, argc)) return has_js;
 
     // TODO: If configuration file doesn't exist, copy the default one from the
@@ -142,23 +145,6 @@ int main(int argc, char** argv)
 
     rt->vlt.base_dir = str_data(&cfg->source_files_path);
     vlt_init (&rt->vlt);
-
-    // TODO: Read these paths from some configuration file and from command line
-    // parameters.
-    if (!dir_exists (str_data(&cfg->source_notes_path))) {
-        success = false;
-        printf (ECMA_RED("error: ") "source directory does not exist\n");
-    }
-
-    if (!ensure_path_exists (str_data(&cfg->source_files_path))) {
-        success = false;
-        printf (ECMA_RED("error: ") "files directory could not be created\n");
-    }
-
-    if (!ensure_path_exists (str_data(&cfg->target_path))) {
-        success = false;
-        printf (ECMA_RED("error: ") "target directory could not be created\n");
-    }
 
     string_t error_msg = {0};
 
@@ -181,11 +167,33 @@ int main(int argc, char** argv)
         output_type = CLI_OUTPUT_TYPE_CSV;
     }
 
+    bool is_verbose = get_cli_bool_opt_ctx (cli_ctx, "--verbose", argv, argc);
+
     char *output_dir = get_cli_arg_opt_ctx (cli_ctx, "--output-dir", argv, argc);
     if (output_dir != NULL) {
         str_set_path (&cfg->target_path, output_dir);
     } else {
         str_set_path (&cfg->target_path, DEFAULT_TARGET_DIR);
+
+        struct splx_node_t *tgt_dir = splx_node_get_attribute (config.root, CFG_TARGET_DIR);
+        if (tgt_dir != NULL) {
+            str_set_path (&cfg->target_path, str_data(&tgt_dir->str));
+        }
+    }
+
+    if (!ensure_path_exists (str_data(&cfg->target_path))) {
+        success = false;
+        printf (ECMA_RED("error: ") "target directory could not be created\n");
+    }
+
+    if (!dir_exists (str_data(&cfg->source_notes_path))) {
+        success = false;
+        printf (ECMA_RED("error: ") "source directory does not exist\n");
+    }
+
+    if (!ensure_path_exists (str_data(&cfg->source_files_path))) {
+        success = false;
+        printf (ECMA_RED("error: ") "files directory could not be created\n");
     }
 
     string_t output_data_file = {0};
@@ -259,6 +267,11 @@ int main(int argc, char** argv)
                 }
 
                 if (!require_target_dir || str_len(&cfg->target_notes_path) > 0) {
+                    // Clear the notes directory before writing into it.
+                    if (path_exists(str_data(&cfg->target_notes_path))) {
+                        path_rmrf(str_data(&cfg->target_notes_path));
+                    }
+
                     string_t html_path = {0};
                     if (str_len(&cfg->target_notes_path) > 0) {
                         str_set_path (&html_path, str_data(&cfg->target_notes_path));
@@ -401,6 +414,10 @@ int main(int argc, char** argv)
                 str_cat_c(&generated_data, "};\n");
                 full_file_write (str_data(&generated_data), str_len(&generated_data), str_data(&output_data_file));
                 str_free (&generated_data);
+
+                if (is_verbose) {
+                    printf ("target: %s\n", str_data(&cfg->target_path));
+                }
 
             } else if (rt->notes_len == 1) {
                 if (output_type == CLI_OUTPUT_TYPE_HTML) {

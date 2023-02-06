@@ -55,5 +55,4 @@ void rt_link_entities (struct splx_node_t *src, struct splx_node_t *tgt);
 void rt_queue_late_callback (struct note_t *note, struct psx_tag_t *tag, struct html_element_t *html_placeholder, psx_late_user_tag_cb_t *cb);
 
 #define CFG_TITLE_NOTES "title-notes"
-#define CFG_SOURCE_DIR "source-dir"
 #define CFG_TARGET_DIR "target-dir"

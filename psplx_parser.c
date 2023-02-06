@@ -1623,10 +1623,9 @@ void psx_block_tree_user_callbacks_full (struct psx_parser_ctx_t *ctx, struct bl
 
 void psx_set_virtual_id (struct splx_node_t *node)
 {
-    // TODO: Use random canonical ID instead of sequential integer.
     struct note_runtime_t *rt = rt_get();
     string_t virtual_id = {0};
-    str_set_printf (&virtual_id, "%i", rt->next_virtual_id);
+    str_cat_id_random (&virtual_id);
     splx_node_attribute_append_c_str(&rt->sd, node, "t:virtual_id", str_data(&virtual_id), SPLX_NODE_TYPE_STRING);
     rt->next_virtual_id++;
     str_free(&virtual_id);
@@ -1641,7 +1640,7 @@ void psx_create_link(struct splx_data_t *sd,
     bool found = false;
     struct splx_node_t *tgt_entity = NULL;
     while ((tgt_entity = splx_next_by_name (&qctx, sd, str_data(tgt_name))) != NULL) {
-        if (!splx_node_is_referenceable(tgt_entity) && splx_node_attribute_contains(tgt_entity, "a", str_data(tgt_type))) {
+        if (!splx_node_is_referenceable(tgt_entity) && !splx_node_attribute_contains(tgt_entity, "a", str_data(tgt_type))) {
             splx_node_attribute_append_c_str(sd, tgt_entity, "a", str_data(tgt_type), SPLX_NODE_TYPE_OBJECT);
             break;
         }
@@ -2605,8 +2604,16 @@ PSX_USER_TAG_CB (summary_tag_handler)
         struct psx_block_t *result = NULL;
         struct psx_block_t *result_end = NULL;
 
+        // We don't want this additional parsing of summarized notes to
+        // interfere with the parent note. That's why we need empty_ctx and
+        // empty_sd. Just passing ctx causes the parent note to get all the
+        // attributes of the summarized ones.
         mem_pool_t pool = {0};
-        struct psx_block_t *note_tree = parse_note_text (&pool, ctx, str_data(&note->psplx));
+        STACK_ALLOCATE (struct splx_data_t, empty_sd);
+        STACK_ALLOCATE (struct psx_parser_ctx_t, empty_ctx);
+        empty_ctx->sd = empty_sd;
+        struct psx_block_t *note_tree = parse_note_text (&pool, empty_ctx, str_data(&note->psplx));
+        splx_destroy (empty_sd);
 
         struct psx_block_t *title = note_tree->block_content;
         struct psx_block_t *new_title = psx_block_new_cpy (block_allocation, title);
