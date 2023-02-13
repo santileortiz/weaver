@@ -2543,34 +2543,39 @@ char* markup_to_html (
 
 void render_backlinks(struct note_runtime_t *rt, struct note_t *note)
 {
-    struct splx_node_list_t *backlinks = splx_node_get_attributes (note->tree->data, "backlink");
-    int num_backlinks = 0;
-    {
-        LINKED_LIST_FOR (struct splx_node_list_t *, curr_list_node, backlinks) {
-            num_backlinks++;
+    if (note->tree != NULL) {
+        struct splx_node_list_t *backlinks = splx_node_get_attributes (note->tree->data, "backlink");
+        int num_backlinks = 0;
+        {
+            LINKED_LIST_FOR (struct splx_node_list_t *, curr_list_node, backlinks) {
+                num_backlinks++;
+            }
         }
-    }
 
-    if (num_backlinks > 0) {
-        struct html_t *html = note->html;
+        if (num_backlinks > 0) {
+            struct html_t *html = note->html;
 
-        struct html_element_t *title = html_new_element (html, "h4");
-        html_element_append_child(html, html->root, title);
-        html_element_append_cstr(html, title, "Backlinks");
+            struct html_element_t *title = html_new_element (html, "h4");
+            html_element_append_child(html, html->root, title);
+            html_element_append_cstr(html, title, "Backlinks");
 
-        struct html_element_t *backlinks_element = html_new_element (html, "div");
-        html_element_append_child(html, html->root, backlinks_element);
-        html_element_class_add (html, backlinks_element, "backlinks");
+            struct html_element_t *backlinks_element = html_new_element (html, "div");
+            html_element_append_child(html, html->root, backlinks_element);
+            html_element_class_add (html, backlinks_element, "backlinks");
 
-        LINKED_LIST_FOR (struct splx_node_list_t *, curr_list_node, backlinks) {
-            struct splx_node_t *node = curr_list_node->node;
+            LINKED_LIST_FOR (struct splx_node_list_t *, curr_list_node, backlinks) {
+                struct splx_node_t *node = curr_list_node->node;
 
-            struct html_element_t *wrapper = html_new_element (html, "p");
-            html_element_append_child(html, backlinks_element, wrapper);
+                struct html_element_t *wrapper = html_new_element (html, "p");
+                html_element_append_child(html, backlinks_element, wrapper);
 
-            string_t *name = splx_node_get_name (node);
-            html_append_note_link (html, wrapper, str_data(&node->str), str_data(name), str_len(name));
+                string_t *name = splx_node_get_name (node);
+                html_append_note_link (html, wrapper, str_data(&node->str), str_data(name), str_len(name));
+            }
         }
+
+    } else {
+        // :empty_note_file
     }
 }
 
@@ -2724,22 +2729,32 @@ PSX_LATE_USER_TAG_CB(orphan_list_tag_handler)
             }
         }
 
-        struct splx_node_list_t *backlinks = splx_node_get_attributes (curr_note->tree->data, "backlink");
-        if (backlinks == NULL && !is_title_note) {
-            struct html_element_t *list_item = html_new_element (note->html, "li");
-            html_element_append_child (note->html, html_placeholder, list_item);
+        if (curr_note->tree != NULL) {
+            struct splx_node_list_t *backlinks = splx_node_get_attributes (curr_note->tree->data, "backlink");
+            if (backlinks == NULL && !is_title_note) {
+                struct html_element_t *list_item = html_new_element (note->html, "li");
+                html_element_append_child (note->html, html_placeholder, list_item);
 
-            struct html_element_t *paragraph = html_new_element (note->html, "p");
-            html_element_append_child (note->html, list_item, paragraph);
+                struct html_element_t *paragraph = html_new_element (note->html, "p");
+                html_element_append_child (note->html, list_item, paragraph);
 
-            struct note_t *target_note = rt_get_note_by_title (&curr_note->title);
-            if (target_note != NULL) {
-                html_append_note_link (note->html,
-                    paragraph,
-                    target_note->id,
-                    str_data(&curr_note->title),
-                    str_len(&curr_note->title));
+                struct note_t *target_note = rt_get_note_by_title (&curr_note->title);
+                if (target_note != NULL) {
+                    html_append_note_link (note->html,
+                        paragraph,
+                        target_note->id,
+                        str_data(&curr_note->title),
+                        str_len(&curr_note->title));
+                }
             }
+
+        } else {
+            // A note with empty content will hit this and would crash if we
+            // don't check.
+            // TODO: Make it so we don't need to check for this and notes that
+            // are empty files are properly handled. Probably just by warning
+            // about them in the console.
+            // :empty_note_file
         }
     }
 }
