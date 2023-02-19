@@ -3,6 +3,26 @@ from mkpy.utility import *
 from natsort import natsorted
 import random
 import errno
+import glob
+
+def replace_subpath(path, old_path, new_path):
+    return path.replace(old_path.rstrip(os.sep), new_path.rstrip(os.sep), 1)
+
+def copy_changed(src, dst):
+    paths = glob.glob(path_cat(src, '/**'), recursive=True)
+    file_paths = []
+
+    for path in paths:
+        if path_isdir (path):
+            ensure_dir (replace_subpath(path, src, dst))
+        else:
+            file_paths.append(path)
+
+    file_dict = {}
+    for fname in file_paths:
+        file_dict[fname] = replace_subpath(fname, src, dst)
+
+    install_files(file_dict, '/')
 
 canonical_fname_r = '^(?:(?P<idx>[0-9]*)_)?(?:(?P<prefix>.*?)_)?(?P<id>[23456789CFGHJMPQRVWX]{8,})(?P<location>(?:\.[0-9]+)+)?(?: (?P<name>.+))?\.(?P<extension>.*)$'
 

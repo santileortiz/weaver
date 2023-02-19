@@ -1,6 +1,5 @@
 #!/usr/bin/python3
 from mkpy.utility import *
-import common_note_graph as gn
 import file_utility as fu
 import file_utility_tests
 
@@ -13,7 +12,6 @@ import psutil
 import json
 from zipfile import ZipFile
 from urllib.parse import urlparse, urlunparse, ParseResult
-from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 # This directory contains user data/configuration. It's essentially what needs
 # to be backed up if you want to restore functionality after a OS reinstall.
@@ -44,7 +42,6 @@ ensure_dir(out_dir)
 
 # These directories are part of the code checkout and are used to generate the
 # static website.
-templates_dir = 'templates'
 static_dir = 'static'
 
 def default ():
@@ -187,62 +184,9 @@ def search_notes ():
 
             note_f.close()
 
-def add_title_note ():
-    title_notes = store_get ('title_notes', [])
-    title_notes.append(get_cli_no_opt()[0])
-    store ('title_notes', title_notes)
-
-def remove_title_note ():
-    title_notes = store_get ('title_notes', [])
-    note_id = get_cli_no_opt()[0]
-    if note_id in title_notes:
-        title_notes.remove(note_id)
-        store ('title_notes', title_notes)
-    else:
-        print ("There's no title note with identifier " + note_id)
-
-def sort_title_notes ():
-    title_notes = store_get ('title_notes', [])
-
-    _, id_to_note_title = gn.get_note_maps(source_notes_dir)
-    for i, note_id in enumerate(title_notes, 1):
-        print (str(i) + ' ' + id_to_note_title[note_id])
-    print()
-
-    order_str = input('Specify new title order (numbers separated by spaces): ')
-    order = [int(v) for v in order_str.split()]
-
-    title_notes_cpy = title_notes[:]
-    new_title_notes = []
-    for i in order:
-        new_title_notes.append(title_notes_cpy[i-1])
-        title_notes.remove(title_notes_cpy[i-1])
-
-    new_title_notes += title_notes
-    print ('\nNew title notes:\n' + str(new_title_notes))
-    store ('title_notes', new_title_notes)
-
 def generate ():
-    title_notes = store_get ('title_notes', [])
-    note_title_to_id, id_to_note_title = gn.get_note_maps(source_notes_dir)
-
-    env = Environment(
-        loader=FileSystemLoader(templates_dir),
-        autoescape=select_autoescape(['html']),
-        trim_blocks=True,
-        lstrip_blocks=True
-    )
-    env.globals = globals()
-
-    for tname in env.list_templates():
-        template = env.get_template (tname)
-
-        out_path = path_cat(out_dir, tname)
-        ensure_dir (path_dirname(out_path))
-        template.stream(locals()).dump(out_path)
-
-    gn.copy_changed(static_dir, out_dir)
-    gn.copy_changed(source_files_dir, path_cat(out_dir, files_dirname))
+    fu.copy_changed(static_dir, out_dir)
+    fu.copy_changed(source_files_dir, path_cat(out_dir, files_dirname))
 
     success = True
     if c_needs_rebuild ('weaver.c', './bin/weaver') or ex (f'./bin/weaver --has-js', echo=False) == 0:
@@ -252,10 +196,23 @@ def generate ():
         else:
             print()
 
-    # TODO: The HTML generator should only process source notes that changed.
-    # Currently it generates all notes, all the time.
     if success:
         ex (f'./bin/weaver generate --static --verbose')
+
+def publish ():
+    fu.copy_changed(static_dir, out_dir)
+    fu.copy_changed(source_files_dir, path_cat(out_dir, files_dirname))
+
+    success = True
+    if c_needs_rebuild ('weaver.c', './bin/weaver') or ex (f'./bin/weaver --has-js', echo=False) == 0:
+        print ('Building weaver...')
+        if weaver_build (True) != 0:
+            success = False
+        else:
+            print()
+
+    if success:
+        ex (f'./bin/weaver generate --static --public --verbose')
 
 
 ensure_dir ("bin")
@@ -276,6 +233,8 @@ def check_js_toggle():
 
 def common_build(c_sources, out_fname, use_js, subprocess_test=True):
     global C_FLAGS
+
+    c_sources += " lib/cJSON.c lib/mustach.c lib/mustach-wrap.c lib/mustach-cjson.c"
 
     if use_js:
         c_sources += " lib/duktape.c"

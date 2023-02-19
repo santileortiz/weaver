@@ -17,9 +17,6 @@
           </button>
 
           <div id="sidebar">
-              {% for note_id in title_notes %}
-              <a onclick='return reset_and_open_note("{{ note_id }}")' href="#">{{ id_to_note_title[note_id] }}</a>
-              {% endfor %}
           </div>
 
           <div style="width: 100%; height: 100%; display:flex; flex-direction: column;">

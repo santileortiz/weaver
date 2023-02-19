@@ -32,6 +32,10 @@ struct note_runtime_t {
     int title_note_ids_len;
     char **title_note_ids;
 
+    bool is_public;
+    int private_types_len;
+    char **private_types;
+
     struct block_allocation_t block_allocation;
 
     struct id_to_note_t notes_by_id;
@@ -54,5 +58,7 @@ void rt_link_entities_by_id (char *src_id, char *tgt_id);
 void rt_link_entities (struct splx_node_t *src, struct splx_node_t *tgt);
 void rt_queue_late_callback (struct note_t *note, struct psx_tag_t *tag, struct html_element_t *html_placeholder, psx_late_user_tag_cb_t *cb);
 
-#define CFG_TITLE_NOTES "title-notes"
 #define CFG_TARGET_DIR "target-dir"
+#define CFG_TITLE_NOTES "title-notes"
+#define CFG_PUBLIC_TITLE_NOTES "public-title-notes"
+#define CFG_PRIVATE_TYPES "private-types"

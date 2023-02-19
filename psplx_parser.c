@@ -2128,8 +2128,7 @@ bool parse_note_title (char *path, char *note_text, string_t *title, struct splx
 {
     bool success = true;
 
-    struct psx_parser_state_t _ps = {0};
-    struct psx_parser_state_t *ps = &_ps;
+    STACK_ALLOCATE(struct psx_parser_state_t, ps);
     ps->ctx.path = path;
     ps->ctx.sd = sd;
     ps_init (ps, note_text);

@@ -1,8 +1,13 @@
 /*
  * Copyright (C) 2021 Santiago León O.
  */
-
 #include "common.h"
+
+#include "lib/cJSON.h"
+#include "lib/mustach.h"
+#include "lib/mustach-wrap.h"
+#include "lib/mustach-cjson.h"
+
 #include "scanner.c"
 #include "binary_tree.c"
 #include "test_logger.c"
@@ -67,7 +72,12 @@ void rt_init (struct note_runtime_t *rt, struct splx_data_t *config)
     rt->notes_by_id.pool = &rt->pool;
     rt->notes_by_title.pool = &rt->pool;
 
-    splx_get_value_cstr_arr (config, &rt->pool, CFG_TITLE_NOTES, &rt->title_note_ids, &rt->title_note_ids_len);
+    if (!rt->is_public) {
+        splx_get_value_cstr_arr (config, &rt->pool, CFG_TITLE_NOTES, &rt->title_note_ids, &rt->title_note_ids_len);
+    } else {
+        splx_get_value_cstr_arr (config, &rt->pool, CFG_PUBLIC_TITLE_NOTES, &rt->title_note_ids, &rt->title_note_ids_len);
+    }
+    splx_get_value_cstr_arr (config, &rt->pool, CFG_PRIVATE_TYPES, &rt->private_types, &rt->private_types_len);
 
     rt->user_late_cb_tree.pool = &rt->pool;
     psx_populate_internal_late_cb_tree (&rt->user_late_cb_tree);
@@ -111,6 +121,42 @@ enum cli_output_type_t {
     CLI_OUTPUT_TYPE_DEFAULT
 };
 
+// TODO: We don't really need to use templates, we can just output this data in
+// the same way we're doing with virtual entities. This would remove the
+// dependency on cJSON and Mustache. It would also make the binary portable as
+// it won't require the templaates directory to be carried together with it, or
+// to embed the files as resources inside the binary.
+void process_templates(struct note_runtime_t *rt, struct config_t *cfg) {
+    cJSON *public_notes_obj = cJSON_CreateStringArray((const char * const*)rt->title_note_ids, rt->title_note_ids_len);
+    cJSON *root_obj = cJSON_CreateObject();
+    cJSON_AddItemToObject(root_obj, "title_notes", public_notes_obj);
+
+    cJSON *id_to_note_title = cJSON_CreateObject();
+    LINKED_LIST_FOR (struct note_t*, curr_note, rt->notes) {
+        cJSON_AddStringToObject(id_to_note_title, curr_note->id, str_data(&curr_note->title));
+    }
+    cJSON_AddItemToObject(root_obj, "id_to_note_title", id_to_note_title);
+
+    PATH_FOR("templates", it) {
+        if (!it.is_dir) {
+            uint64_t template_str_len;
+            char *template_str = full_file_read (NULL, str_data(&it.path), &template_str_len);
+            size_t out_len;
+            char *out;
+            mustach_cJSON_mem(template_str, 0, root_obj, 0, &out, &out_len);
+
+            string_t output_file = {0};
+            str_set(&output_file, str_data(&cfg->target_path));
+            str_cat_path (&output_file, it.basename);
+            full_file_write (out, out_len, str_data(&output_file));
+
+            free(out);
+        }
+    }
+
+    cJSON_Delete(root_obj);
+}
+
 int main(int argc, char** argv)
 {
     int retval = 0;
@@ -141,6 +187,8 @@ int main(int argc, char** argv)
 
     struct splx_data_t config = {0};
     tsplx_parse_name (&config, str_data(&cfg->config_path));
+
+    rt->is_public = get_cli_bool_opt_ctx (cli_ctx, "--public", argv, argc);
     rt_init (rt, &config);
 
     rt->vlt.base_dir = str_data(&cfg->source_files_path);
@@ -313,6 +361,9 @@ int main(int argc, char** argv)
                     // sources didn't change.
                     printf (ECMA_RED("error: ") "refusing to generate static site. Using command line input but output directory is missing as parameter, use --output-dir\n");
                 }
+
+
+                process_templates (rt, cfg);
 
                 string_t generated_data = {0};
                 str_cat_c(&generated_data, "virtual_entities = {\n");

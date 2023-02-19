@@ -287,4 +287,14 @@ window.addEventListener('popstate', (event) => {
     navigate_to_current_url()
 });
 
+let sidebar = document.getElementById("sidebar");
+for (let i=0; i<title_notes.length; i++) {
+    let note_id = title_notes[i];
+    let title_link = document.createElement("a");
+    title_link.setAttribute("onclick", "return reset_and_open_note('" + note_id + "');");
+    title_link.setAttribute("href", "#");
+    title_link.innerHTML = id_to_note_title[note_id];
+    sidebar.appendChild(title_link);
+}
+
 navigate_to_current_url()
