@@ -234,8 +234,6 @@ def check_js_toggle():
 def common_build(c_sources, out_fname, use_js, subprocess_test=True):
     global C_FLAGS
 
-    c_sources += " lib/cJSON.c lib/mustach.c lib/mustach-wrap.c lib/mustach-cjson.c"
-
     if use_js:
         c_sources += " lib/duktape.c"
     else:

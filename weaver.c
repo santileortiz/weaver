@@ -2,12 +2,6 @@
  * Copyright (C) 2021 Santiago León O.
  */
 #include "common.h"
-
-#include "lib/cJSON.h"
-#include "lib/mustach.h"
-#include "lib/mustach-wrap.h"
-#include "lib/mustach-cjson.h"
-
 #include "scanner.c"
 #include "binary_tree.c"
 #include "test_logger.c"
@@ -120,42 +114,6 @@ enum cli_output_type_t {
     CLI_OUTPUT_TYPE_CSV,
     CLI_OUTPUT_TYPE_DEFAULT
 };
-
-// TODO: We don't really need to use templates, we can just output this data in
-// the same way we're doing with virtual entities. This would remove the
-// dependency on cJSON and Mustache. It would also make the binary portable as
-// it won't require the templaates directory to be carried together with it, or
-// to embed the files as resources inside the binary.
-void process_templates(struct note_runtime_t *rt, struct config_t *cfg) {
-    cJSON *public_notes_obj = cJSON_CreateStringArray((const char * const*)rt->title_note_ids, rt->title_note_ids_len);
-    cJSON *root_obj = cJSON_CreateObject();
-    cJSON_AddItemToObject(root_obj, "title_notes", public_notes_obj);
-
-    cJSON *id_to_note_title = cJSON_CreateObject();
-    LINKED_LIST_FOR (struct note_t*, curr_note, rt->notes) {
-        cJSON_AddStringToObject(id_to_note_title, curr_note->id, str_data(&curr_note->title));
-    }
-    cJSON_AddItemToObject(root_obj, "id_to_note_title", id_to_note_title);
-
-    PATH_FOR("templates", it) {
-        if (!it.is_dir) {
-            uint64_t template_str_len;
-            char *template_str = full_file_read (NULL, str_data(&it.path), &template_str_len);
-            size_t out_len;
-            char *out;
-            mustach_cJSON_mem(template_str, 0, root_obj, 0, &out, &out_len);
-
-            string_t output_file = {0};
-            str_set(&output_file, str_data(&cfg->target_path));
-            str_cat_path (&output_file, it.basename);
-            full_file_write (out, out_len, str_data(&output_file));
-
-            free(out);
-        }
-    }
-
-    cJSON_Delete(root_obj);
-}
 
 int main(int argc, char** argv)
 {
@@ -363,9 +321,29 @@ int main(int argc, char** argv)
                 }
 
 
-                process_templates (rt, cfg);
-
                 string_t generated_data = {0};
+
+                bool is_first = true;
+                str_cat_c(&generated_data, "title_notes = [");
+                for (int i=0; i<rt->title_note_ids_len; i++) {
+                    if (!is_first) str_cat_c(&generated_data, ",");
+                    is_first = false;
+
+                    str_cat_printf(&generated_data, "\"%s\"", rt->title_note_ids[i]);
+                }
+                str_cat_c(&generated_data, "];\n\n");
+
+                is_first = true;
+                str_cat_c(&generated_data, "id_to_note_title = {");
+                LINKED_LIST_FOR (struct note_t*, curr_note, rt->notes) {
+                    if (!is_first) str_cat_c(&generated_data, ", ");
+                    is_first = false;
+
+                    str_cat_printf(&generated_data, "\"%s\":\"%s\"", curr_note->id, str_data(&curr_note->title));
+                }
+                str_cat_c(&generated_data, "};\n\n");
+
+
                 str_cat_c(&generated_data, "virtual_entities = {\n");
 
                 LINKED_LIST_FOR (struct splx_node_list_t *, curr_list_node, rt->sd.entities->floating_values) {
