@@ -1066,12 +1066,60 @@ struct psx_tag_t* psx_parse_tag_note (struct psx_parser_state_t *ps, char **orig
     return tag;
 }
 
-struct html_element_t* html_append_note_link(struct html_t *html, struct html_element_t *parent, char *target_id, char *text, int text_len)
+static inline
+bool entity_is_visible(struct splx_node_t *node)
+{
+    struct note_runtime_t *rt = rt_get();
+
+    bool is_visible = true;
+
+    if (rt != NULL && rt->is_public) {
+        for (int i=0; i<rt->private_types_len; i++) {
+            if (splx_node_attribute_contains(node, "a", rt->private_types[i])) {
+                is_visible = false;
+            }
+        }
+    }
+
+    return is_visible;
+}
+
+static inline
+bool entity_is_visible_id(char *id)
+{
+    struct note_runtime_t *rt = rt_get();
+
+    bool is_visible = true;
+
+    if (rt != NULL) {
+        struct splx_node_t *entity = splx_get_node_by_id (&rt->sd, id);
+        is_visible = entity_is_visible (entity);
+    }
+
+    return is_visible;
+}
+
+void psx_maybe_warn_hidden_target(struct psx_parser_state_t *ps, char *target_id)
+{
+    struct note_runtime_t *rt = rt_get();
+    if (rt != NULL && ps != NULL) {
+        struct splx_node_t *tgt = splx_get_node_by_id (&rt->sd, target_id);
+        if (!entity_is_visible (tgt)) {
+            string_t *name = splx_node_get_name (tgt);
+            psx_warning (ps, "generated link to hidden target: %s", str_data(name));
+        }
+    }
+}
+
+struct html_element_t* html_append_note_link(struct psx_parser_state_t *ps, struct html_t *html, struct html_element_t *parent, char *target_id, char *text, int text_len)
 {
     string_t buff = {0};
 
+    psx_maybe_warn_hidden_target (ps, target_id);
+
     struct html_element_t *link_element = html_new_element (html, "a");
-    html_element_attribute_set (html, link_element, "href", "#");
+    str_set_printf (&buff, "?n=%s", target_id);
+    html_element_attribute_set (html, link_element, "href", str_data(&buff));
 
     str_set_printf (&buff, "return open_note('%s');", target_id);
     html_element_attribute_set (html, link_element, "onclick", str_data(&buff));
@@ -1084,12 +1132,15 @@ struct html_element_t* html_append_note_link(struct html_t *html, struct html_el
     return link_element;
 }
 
-struct html_element_t* html_append_entity_link(struct html_t *html, struct html_element_t *parent, char *target_id, char *text, int text_len)
+struct html_element_t* html_append_entity_link(struct psx_parser_state_t *ps, struct html_t *html, struct html_element_t *parent, char *target_id, char *text, int text_len)
 {
     string_t buff = {0};
 
+    psx_maybe_warn_hidden_target (ps, target_id);
+
     struct html_element_t *link_element = html_new_element (html, "a");
-    html_element_attribute_set (html, link_element, "href", "#");
+    str_set_printf (&buff, "?v=%s", target_id);
+    html_element_attribute_set (html, link_element, "href", str_data(&buff));
 
     str_set_printf (&buff, "return open_virtual_entity('%s');", target_id);
     html_element_attribute_set (html, link_element, "onclick", str_data(&buff));
@@ -1102,7 +1153,29 @@ struct html_element_t* html_append_entity_link(struct html_t *html, struct html_
     return link_element;
 }
 
-void html_append_link (struct html_t *html, struct html_element_t *parent,
+void psx_advance_until (struct psx_parser_state_t *ps, char delimiter)
+{
+    while (!ps->scr.is_eof && !ps->error) {
+        ps_inline_next (ps);
+        if (ps_match(ps, TOKEN_TYPE_TEXT, NULL)) {
+            char *s = sstr_find_char(&ps->token.value, delimiter);
+            if (s != NULL) {
+                ps->scr.pos = s+1;
+                return;
+            }
+
+        } else if (ps_match(ps, TOKEN_TYPE_TEXT_TAG, NULL) ||
+                   ps_match(ps, TOKEN_TYPE_DATA_TAG, NULL))
+        {
+            // Skip tag's content.
+            psx_match_tag_data (&ps->scr, true, NULL, NULL, NULL, NULL);
+        }
+    }
+}
+
+void html_append_link (struct psx_parser_state_t *ps,
+                       struct html_t *html,
+                       struct html_element_t *parent,
                        string_t *type, string_t *name)
 {
     // TODO: Some types pass null here, see references.
@@ -1110,30 +1183,62 @@ void html_append_link (struct html_t *html, struct html_element_t *parent,
 
     struct note_runtime_t *rt = rt_get();
 
-    // TODO: Handle case when multiple entities match.
-    struct splx_node_t *target = splx_get_node_by_default_constructor(&rt->sd, str_data(type), str_data(name));
+    struct splx_node_t *target = splx_get_node_by_name_optional_type(&rt->sd, str_data(type), str_data(name));
 
-    // TODO: Should really be...
+    // TODO: Should really be doing...
     //assert (target != NULL);
     //
     // Can't do because some entities may not be created because
     // we don't recurse into \todo and \block when creating links
     // :recursive_create_links
     if (target != NULL) {
-        if (splx_node_is_referenceable(target)) {
-            html_append_note_link (html,
-                                   parent,
-                                   str_data(splx_node_get_id(target)),
-                                   str_data(name),
-                                   str_len(name));
+        // Maybe redact instead of creating a link
+        bool redacted = false;
+        if (rt!=NULL && rt->is_public && !entity_is_visible(target)) {
+            struct html_element_t *parent = psx_get_head_html_element(ps);
 
-        } else {
-            struct splx_node_t *virtual_id = splx_node_get_attribute (target, "t:virtual_id");
-            html_append_entity_link (html,
-                                     parent,
-                                     str_data(splx_node_get_id (virtual_id)),
-                                     str_data(name),
-                                     str_len(name));
+            bool found = false;
+            struct html_element_t *prev_element = NULL;
+            struct html_element_t *new_end = NULL;
+            LINKED_LIST_FOR (struct html_element_t *, element, parent->children) {
+                char *text = str_data(&element->text);
+                if (text[0] == '(') {
+                    found = true;
+                    new_end = prev_element;
+                }
+
+                if (text != NULL && !is_empty_str (text)) {
+                    prev_element = element;
+                }
+            }
+
+            if (found && new_end) {
+                // TODO: This leaks the nodes that were redacted.
+                new_end->next = NULL;
+                parent->children_end = new_end;
+
+                psx_advance_until (ps, ')');
+
+                redacted = true;
+            }
+        }
+
+        if (!redacted) {
+            if (splx_node_is_referenceable(target)) {
+                html_append_note_link (ps, html,
+                                       parent,
+                                       str_data(splx_node_get_id(target)),
+                                       str_data(name),
+                                       str_len(name));
+
+            } else {
+                struct splx_node_t *virtual_id = splx_node_get_attribute (target, "t:virtual_id");
+                html_append_entity_link (ps, html,
+                                         parent,
+                                         str_data(splx_node_get_id (virtual_id)),
+                                         str_data(name),
+                                         str_len(name));
+            }
         }
 
     } else {
@@ -1354,30 +1459,6 @@ void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html
                 psx_append_inline_code_element (ps, html, &content);
             }
 
-        } else if (ps_match(ps, TOKEN_TYPE_TEXT_TAG, "note")) {
-            struct note_t *target_note = NULL;
-            struct psx_tag_t *tag = psx_parse_tag_note (ps, &original_pos, &target_note, &buff);
-
-            if (tag->has_content && target_note != NULL) {
-                html_append_note_link (html,
-                    psx_get_head_html_element(ps),
-                    target_note->id,
-                    str_data(&tag->content),
-                    str_len(&tag->content));
-
-            } else {
-                ps_restore_pos (ps, original_pos);
-                ps_html_cat_literal_tag (ps, tag, html);
-            }
-
-            if (tag->has_content && target_note == NULL) {
-                // TODO: Handle broken links!!
-                //html_element_class_add (html, link_element, "note-link-broken");
-
-                // :target_note_not_found_error
-                psx_warning (ps, "broken note link, couldn't find note for title: %s", str_data (&buff));
-            }
-
         } else if (ps_match(ps, TOKEN_TYPE_TEXT_TAG, "html")) {
             struct psx_tag_t *tag = ps_parse_tag (ps, &original_pos);
             if (tag->has_content) {
@@ -1416,7 +1497,7 @@ void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html
 
                     str_set (&name, str_data(&tag->content));
                     str_set_sstr (&type, &tag->token.value);
-                    html_append_link (html, psx_get_head_html_element(ps), &type, &name);
+                    html_append_link (ps, html, psx_get_head_html_element(ps), &type, &name);
 
                     str_free (&type);
                     str_free (&name);
@@ -1436,7 +1517,7 @@ void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html
 
                 str_set_sstr (&name, &tag->parameters.positional->v);
                 str_set_sstr (&type, &tag->token.value);
-                html_append_link (html, psx_get_head_html_element(ps), &type, &name);
+                html_append_link (ps, html, psx_get_head_html_element(ps), &type, &name);
 
                 str_free (&type);
                 str_free (&name);
@@ -1651,6 +1732,15 @@ void psx_create_link(struct splx_data_t *sd,
         }
     }
 
+    //if (tgt_entity == NULL) {
+    //    qctx = ZERO_INIT(struct query_ctx_t);
+    //    tgt_entity = splx_next_by_name (&qctx, sd, str_data(tgt_name));
+
+    //    if (tgt_entity != NULL) {
+    //        splx_node_attribute_append_c_str(sd, tgt_entity, "a", str_data(tgt_type), SPLX_NODE_TYPE_OBJECT);
+    //    }
+    //}
+
     if (!found && tgt_entity == NULL) {
         tgt_entity = splx_node (sd, NULL, SPLX_NODE_TYPE_OBJECT);
         psx_set_virtual_id(tgt_entity);
@@ -1682,13 +1772,15 @@ void psx_create_links_full (struct psx_parser_ctx_t *ctx, struct psx_block_t **r
         }
 
     } else if (block->type != BLOCK_TYPE_CODE) {
-        struct psx_parser_state_t _ps_inline = {0};
-        struct psx_parser_state_t *ps_inline = &_ps_inline;
+        STACK_ALLOCATE (struct psx_parser_state_t, ps_inline);
         ps_init (ps_inline, str_data(&block->inline_content));
 
         while (!ps_inline->scr.is_eof && !ps_inline->error) {
             ps_inline_next (ps_inline);
             if (ps_match(ps_inline, TOKEN_TYPE_TEXT_TAG, "note")) {
+                // TODO: Remove this if condition... should use the generic one
+                // below. I tried, but for some reason it caused an infinite
+                // loop.
                 string_t target_note_title = {0};
 
                 struct note_t *target_note = NULL;
@@ -1911,7 +2003,11 @@ void block_tree_to_html (struct psx_parser_ctx_t *ctx, struct html_t *html, stru
 {
     string_t buff = {0};
 
-    if (block->type == BLOCK_TYPE_PARAGRAPH) {
+    struct note_runtime_t *rt = rt_get();
+    if (rt != NULL && rt->is_public && block->is_private) {
+        // Do nothing
+
+    } else if (block->type == BLOCK_TYPE_PARAGRAPH) {
         if (block->data == NULL) {
             struct html_element_t *new_dom_element = html_new_element (html, "p");
             html_element_append_child (html, parent, new_dom_element);
@@ -1987,18 +2083,28 @@ void block_tree_to_html (struct psx_parser_ctx_t *ctx, struct html_t *html, stru
         if (block->list_type == TOKEN_TYPE_NUMBERED_LIST) {
             new_dom_element = html_new_element (html, "ol");
         }
-        html_element_append_child (html, parent, new_dom_element);
 
+        // TODO: There's an unhandled case where all list items of a list are
+        // hidden, then the list itself should not be created.
         LINKED_LIST_FOR (struct psx_block_t*, sub_block, block->block_content) {
             block_tree_to_html(ctx, html, sub_block, new_dom_element);
         }
 
-    } else if (block->type == BLOCK_TYPE_LIST_ITEM) {
-        struct html_element_t *new_dom_element = html_new_element (html, "li");
         html_element_append_child (html, parent, new_dom_element);
 
+    } else if (block->type == BLOCK_TYPE_LIST_ITEM) {
+        struct html_element_t *new_dom_element = html_new_element (html, "li");
+
+        bool has_content = false;
         LINKED_LIST_FOR (struct psx_block_t*, sub_block, block->block_content) {
-            block_tree_to_html(ctx, html, sub_block, new_dom_element);
+            if (rt == NULL || !rt->is_public || !sub_block->is_private) {
+                block_tree_to_html(ctx, html, sub_block, new_dom_element);
+                has_content = true;
+            }
+        }
+
+        if (has_content) {
+            html_element_append_child (html, parent, new_dom_element);
         }
     }
 
@@ -2055,13 +2161,7 @@ void psx_parse_block_attributes (struct psx_parser_state_t *ps, struct psx_block
                 str_free (&s);
 
                 tok = ps_inline_next (ps);
-            } while (
-                ps_match(ps, TOKEN_TYPE_DATA_TAG, NULL) &&
-
-                // Double line breaks represent an empty line, this is what
-                // breaks a tag sequence.
-                !(scr_curr_char(PS_SCR) == '\n' && scr_next_char(PS_SCR) == '\n')
-            );
+            } while (ps_match(ps, TOKEN_TYPE_DATA_TAG, NULL));
 
             ps->scr.pos = internal_backup_pos;
             ps->scr.column_number = internal_backup_column_number;
@@ -2087,6 +2187,22 @@ void psx_parse_block_attributes (struct psx_parser_state_t *ps, struct psx_block
         ps->scr.pos = backup_pos;
         ps->scr.column_number = backup_column_number;
     }
+
+    struct note_runtime_t *rt = rt_get();
+    if (rt != NULL) {
+        for (int i=0; i<rt->private_types_len; i++) {
+            if (splx_node_attribute_contains(block->data, "a", rt->private_types[i])) {
+                block->is_private = true;
+            }
+        }
+    }
+}
+
+static inline
+bool note_is_visible (struct note_t *note)
+{
+    struct note_runtime_t *rt = rt_get();
+    return rt == NULL || !rt->is_public || !note->tree->is_private;
 }
 
 void psx_parse_note_title (struct psx_parser_state_t *ps, sstring_t *title, bool parse_attributes)
@@ -2547,7 +2663,12 @@ void render_backlinks(struct note_runtime_t *rt, struct note_t *note)
         int num_backlinks = 0;
         {
             LINKED_LIST_FOR (struct splx_node_list_t *, curr_list_node, backlinks) {
-                num_backlinks++;
+                struct splx_node_t *node = curr_list_node->node;
+
+                struct note_t *note = rt_get_note_by_id (str_data(splx_node_get_id(node)));
+                if (note_is_visible(note)) {
+                    num_backlinks++;
+                }
             }
         }
 
@@ -2565,11 +2686,14 @@ void render_backlinks(struct note_runtime_t *rt, struct note_t *note)
             LINKED_LIST_FOR (struct splx_node_list_t *, curr_list_node, backlinks) {
                 struct splx_node_t *node = curr_list_node->node;
 
-                struct html_element_t *wrapper = html_new_element (html, "p");
-                html_element_append_child(html, backlinks_element, wrapper);
+                struct note_t *note = rt_get_note_by_id (str_data(splx_node_get_id(node)));
+                if (note_is_visible(note)) {
+                    struct html_element_t *wrapper = html_new_element (html, "p");
+                    html_element_append_child(html, backlinks_element, wrapper);
 
-                string_t *name = splx_node_get_name (node);
-                html_append_note_link (html, wrapper, str_data(&node->str), str_data(name), str_len(name));
+                    string_t *name = splx_node_get_name (node);
+                    html_append_note_link (NULL, html, wrapper, str_data(&node->str), str_data(name), str_len(name));
+                }
             }
         }
 
@@ -2710,7 +2834,7 @@ void psx_populate_internal_cb_tree (struct psx_user_tag_cb_t *tree)
 // This is a different user callback implementation where a custom tag can be
 // defined, a placeholder HTML element will be emmitted at parse time, but the
 // callback will be deferred until later when all internal PSPLX parsing is
-// complete. This ensure for example that TSPLX contains all links. It also
+// complete. This ensures for example that TSPLX contains all links. It also
 // avoids the perills of being called during parsing execution and the
 // possibility of messing up the parser's state.
 
@@ -2730,7 +2854,7 @@ PSX_LATE_USER_TAG_CB(orphan_list_tag_handler)
 
         if (curr_note->tree != NULL) {
             struct splx_node_list_t *backlinks = splx_node_get_attributes (curr_note->tree->data, "backlink");
-            if (backlinks == NULL && !is_title_note) {
+            if (backlinks == NULL && !is_title_note && note_is_visible(curr_note)) {
                 struct html_element_t *list_item = html_new_element (note->html, "li");
                 html_element_append_child (note->html, html_placeholder, list_item);
 
@@ -2739,7 +2863,7 @@ PSX_LATE_USER_TAG_CB(orphan_list_tag_handler)
 
                 struct note_t *target_note = rt_get_note_by_title (&curr_note->title);
                 if (target_note != NULL) {
-                    html_append_note_link (note->html,
+                    html_append_note_link (NULL, note->html,
                         paragraph,
                         target_note->id,
                         str_data(&curr_note->title),
@@ -2762,12 +2886,16 @@ PSX_LATE_USER_TAG_CB(entity_list_tag_handler)
 {
     str_set(&html_placeholder->tag, "ul");
 
+    if (note->tree->data == NULL) {
+        note->tree->data = splx_node_get_or_create(&rt->sd, note->id, SPLX_NODE_TYPE_OBJECT);
+    }
+
     LINKED_LIST_FOR (struct splx_node_list_t *, curr_list_node, rt->sd.entities->floating_values) {
         struct splx_node_t *entity = curr_list_node->node;
 
         struct splx_node_list_t *types = splx_node_get_attributes (entity, "a");
         LINKED_LIST_FOR (struct splx_node_list_t *, curr_type, types) {
-            if (strcmp(str_data(&curr_type->node->str), str_data(&tag->content)) == 0) {
+            if (strcmp(str_data(&curr_type->node->str), str_data(&tag->content)) == 0 && entity_is_visible(entity)) {
                 struct html_element_t *list_item = html_new_element (note->html, "li");
                 html_element_append_child (note->html, html_placeholder, list_item);
 
@@ -2775,7 +2903,11 @@ PSX_LATE_USER_TAG_CB(entity_list_tag_handler)
                 html_element_append_child (note->html, list_item, paragraph);
 
                 string_t *name = splx_node_get_name(entity);
-                html_append_link (note->html, paragraph, &tag->content, name);
+                html_append_link (NULL, note->html, paragraph, &tag->content, name);
+
+                if (name != NULL) {
+                    psx_create_link(&rt->sd, note->tree->data, note->id, &tag->content, name);
+                }
             }
         }
     }

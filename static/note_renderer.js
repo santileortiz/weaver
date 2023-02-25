@@ -21,6 +21,14 @@ css_property_set ("--code-block-padding", code_block_padding + "px");
 
 let opened_notes = [];
 
+let content_max_width = 600;
+css_property_set ("--content-width", content_max_width + "px");
+
+function is_desktop()
+{
+    return window.matchMedia(`screen and (min-width: ${content_max_width}px)`).matches;
+}
+
 function note_has_scroll()
 {
     // NOTE: Probably breaks [1] if for some reason overflow is set to visible. But
@@ -31,17 +39,38 @@ function note_has_scroll()
     return note_container.clientHeight < note_container.scrollHeight;
 }
 
+function sidebar_set_visible (is_visible)
+{
+    let sidebar_style;
+
+    let topbar = document.getElementById("topbar");
+
+    if (is_visible) {
+        sidebar_style = "transform: translate(0); width: 240px; padding: calc(6px + var(--topbar-height)) 6px 6px 6px;";
+        sidebar.classList.remove ("hidden");
+        topbar.setAttribute("style", "padding-left:15px;");
+
+    } else {
+        sidebar_style =  "transform: translate(-240px); width: 0; padding: calc(6px + var(--topbar-height)) 6px 0 0;";
+        sidebar.classList.add("hidden")
+        topbar.removeAttribute("style");
+    }
+
+    if (!is_desktop()) {
+        sidebar_style += "position: absolute;";
+    }
+    sidebar.setAttribute("style", sidebar_style)
+}
+
 function toggle_sidebar ()
 {
     var sidebar = document.getElementById("sidebar");
     
     if (sidebar.classList.contains("hidden")) {
-        sidebar.setAttribute("style", "transform: translate(0); width: 240px;")
-        sidebar.classList.remove ("hidden");
+        sidebar_set_visible (true);
 
     } else {
-        sidebar.setAttribute("style", "transform: translate(-240px); width: 0;")
-        sidebar.classList.add("hidden")
+        sidebar_set_visible (false);
     }
 }
 
@@ -69,14 +98,22 @@ function note_text_to_element (container, id, note_html)
 {
     set_innerhtml_and_run_scripts(container, note_html);
 
-    let new_expanded_note = document.getElementById(id);
-    new_expanded_note.classList.add("note")
+    let new_note = document.getElementById(id);
+    new_note.classList.add("note")
 
-    if (note_has_scroll()) {
-        new_expanded_note.style.paddingBottom = "50vh";
+    if (is_desktop()) {
+        new_note.setAttribute("style", `width: ${content_max_width}px; padding-left: 96px; padding-right:96px; box-sizing: content-box;`);
+        sidebar_set_visible (true);
+    } else {
+        new_note.setAttribute("style", `width: 100%; padding-left: 24px; padding-right: 24px;`);
+        sidebar_set_visible (false);
     }
 
-    return new_expanded_note;
+    if (note_has_scroll()) {
+        new_note.style.paddingBottom = "50vh";
+    }
+
+    return new_note;
 }
 
 function copy_note_cmd ()
@@ -146,6 +183,13 @@ function set_breadcrumbs()
             breadcrumbs.appendChild(crumb);
         }
     }
+
+    // :hidden_scrollbar
+    let breadcrumbs_clip = document.getElementById("breadcrumbs-clip");
+    let scrollbar_width = breadcrumbs.clientHeight - breadcrumbs.offsetHeight;
+    breadcrumbs_clip.style.top = scrollbar_width/2 + "px";
+    breadcrumbs.style.bottom = scrollbar_width + "px";
+    breadcrumbs.scrollLeft = breadcrumbs.scrollWidth;
 }
 
 function push_state ()
@@ -292,7 +336,7 @@ for (let i=0; i<title_notes.length; i++) {
     let note_id = title_notes[i];
     let title_link = document.createElement("a");
     title_link.setAttribute("onclick", "return reset_and_open_note('" + note_id + "');");
-    title_link.setAttribute("href", "#");
+    title_link.setAttribute("href", "?n=" + note_id );
     title_link.innerHTML = id_to_note_title[note_id];
     sidebar.appendChild(title_link);
 }

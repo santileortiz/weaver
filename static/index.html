@@ -21,7 +21,9 @@
 
           <div style="width: 100%; height: 100%; display:flex; flex-direction: column;">
               <div id="topbar">
-                  <div id="breadcrumbs" style="display: inherit; margin-left: 12px;"></div>
+                  <div id="breadcrumbs-clip">
+                      <div id="breadcrumbs"></div>
+                  </div>
                   <div style="flex-shrink: 1; flex-grow: 1;"></div>
                   <button onclick="copy_note_cmd();">
                       <img src="edit.svg"></img>
@@ -36,7 +38,6 @@
 
       <script src="common.js"></script>
       <script src="data.js"></script>
-      <script src="note_data.js"></script>
       <script src="note_renderer.js"></script>
   </body>
 </html>

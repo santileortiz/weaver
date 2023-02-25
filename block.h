@@ -62,6 +62,7 @@ char* psx_block_type_names[] = {
 #undef BLOCK_TYPES_ROW
 
 struct psx_block_t {
+    bool is_private;
     enum psx_block_type_t type;
     int margin;
 

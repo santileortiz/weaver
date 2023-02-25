@@ -182,8 +182,35 @@ void rt_queue_late_callback (struct note_t *note, struct psx_tag_t *tag, struct 
     LINKED_LIST_APPEND(rt->invocations, invocation);
 }
 
+// At the moment we just ensure the orphan list callbacks are invoked at last,
+// while trying to preserve the previouse ordering. We may think of exposing
+// this step through user configuration, maybe callbacks should have priorities
+// assigned, or we may specify callback dependencies?.
+static inline
+int invocation_cmp (struct late_cb_invocation_t *a, struct late_cb_invocation_t *b)
+{
+    string_t a_tag = {0};
+    str_set_sstr (&a_tag, &a->tag->token.value);
+
+    string_t b_tag = {0};
+    str_set_sstr (&b_tag, &b->tag->token.value);
+
+    int result = 0;
+    if (strcmp(str_data(&a_tag), "orphan_list") == 0 && strcmp(str_data(&b_tag), "orphan_list") != 0) {
+        result = 1;
+    } else if (strcmp(str_data(&a_tag), "orphan_list") != 0 && strcmp(str_data(&b_tag), "orphan_list") == 0) {
+        result = -1;
+    }
+
+    return result;
+}
+
+templ_sort_stable_ll(invocation_sort,struct late_cb_invocation_t,invocation_cmp(a, b))
+
 void rt_late_user_callbacks(struct note_runtime_t *rt)
 {
+    invocation_sort (&rt->invocations, -1);
+
     LINKED_LIST_FOR (struct late_cb_invocation_t*, curr_invocation, rt->invocations) {
         curr_invocation->cb (rt,
             curr_invocation->note,

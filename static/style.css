@@ -7,7 +7,6 @@
     --secondary-fg-color: #3B454EB0;
     --title-color: #32383f;
 
-    --content-width: 708px;
     --sidebar-width: 240px;
     --topbar-height: 45px;
     --bleed: 6px;
@@ -114,8 +113,8 @@ select {
 
     flex-shrink: 0;
     flex-grow: 0;
-    padding-left: 15px;
-    padding-right: 15px;
+    padding-left: 44px;
+    padding-right: 12px;
 }
 
 #sidebar {
@@ -133,7 +132,6 @@ select {
     height: 100%;
     box-sizing: border-box;
 
-    padding: calc(6px + var(--topbar-height)) 6px 6px 6px;
 
     font-weight: 400;
     font-family: var(--heading-font);
@@ -171,7 +169,6 @@ code {
     margin-bottom: 1.0em;
 
     padding: var(--code-block-padding);
-    max-width: var(--content-width);
     overflow-x: auto;
 }
 
@@ -185,7 +182,6 @@ code {
 
 .note {
     box-sizing: border-box;
-    width: var(--content-width);
     margin: 0 auto;
     display: block;
 
@@ -230,6 +226,26 @@ code {
     box-shadow: 0 0 0 1px var(--note-link-color-sh);
 }
 
+/* These properties have been carefully set up to force a scrollbar in
+ * #breadcrumbs and position it in its parent #breadcrumbs-clip such that the
+ * scrollbar gets hidden outside of it. Sort of like a clipping boundary.
+ *
+ * This depends on conputing the exact width of the scrollbar. Those properties
+ * are set in JavaScript.
+ * :hidden_scrollbar
+ */
+#breadcrumbs-clip{
+    position: relative;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+#breadcrumbs{
+    display: flex;
+    position: relative;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
 .crumb-separator {
     margin: 0 2px;
     opacity: 0.4;
@@ -243,6 +259,7 @@ code {
     line-height: 1.2;
     color: var(--sidebar-color);
     opacity: 0.8;
+    white-space: nowrap;
 }
 
 .crumb:hover {
@@ -317,9 +334,10 @@ code {
 }
 
 .attributed-block {
+    box-sizing: border-box;
     position: relative;
     left: calc(0px - var(--bleed));
-    width: calc(var(--content-width) + 2*var(--bleed));
+    width: calc(100% + 2*var(--bleed));
 
     border-radius: 3px;
     border: 1px solid #0000001c;
@@ -353,11 +371,16 @@ code {
 }
 
 .backlinks {
-    padding: 0.5em 1em;
+    padding: 0.5em 0;
     position: relative;
     left: calc(0px - var(--bleed));
-    width: calc(var(--content-width) + 2*var(--bleed));
+    width: calc(100% + 2*var(--bleed));
     background-color: var(--secondary-bg-color);
+}
+
+.backlinks > p {
+    padding-left: 1em;
+    padding-right: 1em;
 }
 
 .translation table {

@@ -704,8 +704,8 @@ struct splx_node_t* splx_next_by_name(struct query_ctx_t *ctx, struct splx_data_
     return result;
 }
 
-// TODO: Actually search for a specific type
-struct splx_node_t* splx_get_node_by_default_constructor(struct splx_data_t *sd, char *type, char *name)
+// TODO: Handle multiple matches...
+struct splx_node_t* splx_get_node_by_name_optional_type(struct splx_data_t *sd, char *type, char *name)
 {
     struct splx_node_t *result = NULL;
 
@@ -716,9 +716,13 @@ struct splx_node_t* splx_get_node_by_default_constructor(struct splx_data_t *sd,
         LINKED_LIST_FOR (struct splx_node_list_t *, curr_name, names) {
             struct splx_node_t *node = curr_name->node;
 
-            if (strcmp(str_data(&node->str), name) == 0) {
+            if (strcmp(str_data(&node->str), name) == 0 &&
+                splx_node_attribute_contains(node, "a", type)) {
                 result = entity;
                 break;
+
+            } else if (strcmp(str_data(&node->str), name) == 0) {
+                result = entity;
             }
         }
 
@@ -2094,6 +2098,8 @@ string_t* splx_node_get_name (struct splx_node_t *node)
 
 bool splx_node_attribute_contains (struct splx_node_t *node, char *attr, char *value)
 {
+    if (node == NULL) return false;
+
     bool found = false;
 
     struct splx_node_list_t *attributes = splx_node_get_attributes (node, attr);

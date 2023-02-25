@@ -291,7 +291,8 @@ int main(int argc, char** argv)
                     LINKED_LIST_FOR (struct note_t*, curr_note, rt->notes) {
                         str_put_printf (&html_path, end, "%s", curr_note->id);
 
-                        if (!curr_note->error) {
+                        if (!curr_note->error && note_is_visible(curr_note))
+                        {
                             string_t html_str = {0};
                             str_cat_html (&html_str, curr_note->html, 2);
                             full_file_write (str_data(&html_str), str_len(&html_str), str_data(&html_path));
