@@ -98,6 +98,7 @@ function note_text_to_element (container, id, note_html)
 {
     set_innerhtml_and_run_scripts(container, note_html);
 
+    document.title = id_to_note_title[id];
     let new_note = document.getElementById(id);
     new_note.classList.add("note")
 

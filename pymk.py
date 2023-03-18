@@ -40,6 +40,9 @@ cache_dir = os.path.abspath(path_resolve('~/.cache/weaver/'))
 out_dir = path_cat(cache_dir, 'www')
 ensure_dir(out_dir)
 
+public_out_dir = path_cat(cache_dir, 'public')
+ensure_dir(public_out_dir)
+
 # These directories are part of the code checkout and are used to generate the
 # static website.
 static_dir = 'static'
@@ -184,10 +187,7 @@ def search_notes ():
 
             note_f.close()
 
-def generate ():
-    fu.copy_changed(static_dir, out_dir)
-    fu.copy_changed(source_files_dir, path_cat(out_dir, files_dirname))
-
+def generate_common ():
     success = True
     if c_needs_rebuild ('weaver.c', './bin/weaver') or ex (f'./bin/weaver --has-js', echo=False) == 0:
         print ('Building weaver...')
@@ -196,23 +196,23 @@ def generate ():
         else:
             print()
 
-    if success:
+    fu.copy_changed(static_dir, out_dir)
+    fu.copy_changed(source_files_dir, path_cat(out_dir, files_dirname))
+
+    return success
+
+def generate ():
+    if generate_common():
         ex (f'./bin/weaver generate --static --verbose')
 
-def publish ():
-    fu.copy_changed(static_dir, out_dir)
-    fu.copy_changed(source_files_dir, path_cat(out_dir, files_dirname))
-
-    success = True
-    if c_needs_rebuild ('weaver.c', './bin/weaver') or ex (f'./bin/weaver --has-js', echo=False) == 0:
-        print ('Building weaver...')
-        if weaver_build (True) != 0:
-            success = False
-        else:
-            print()
-
-    if success:
+def generate_public ():
+    if generate_common():
         ex (f'./bin/weaver generate --static --public --verbose')
+
+def publish ():
+    if generate_common():
+        ex (f'./bin/weaver generate --static --public --verbose --output-dir {public_out_dir}')
+        ex ('rclone sync --fast-list --checksum ~/.cache/weaver/public/ aws-s3:weaver.thrachyon.net/santileortiz/');
 
 
 ensure_dir ("bin")
