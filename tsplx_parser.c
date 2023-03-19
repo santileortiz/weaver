@@ -1172,6 +1172,15 @@ void str_cat_splx_canonical_shallow_full (string_t *str, struct splx_node_t *roo
     if (splx_node_has_name (node)) {
         str_cat_indented_c (str, str_data(&node->str), curr_indent);
 
+        // TODO: Is this necessary?... test this:
+        //
+        // tag_links a note;
+        //   link inline_tags;
+        //   name "Tag links" ;
+        //
+        //str_cat_indented_c (str, "_", curr_indent);
+        //is_triple = true;
+
     } else if (root != node) {
         str_cat_indented_c (str, "_", curr_indent);
         is_triple = true;
@@ -2106,7 +2115,7 @@ bool splx_node_attribute_contains (struct splx_node_t *node, char *attr, char *v
     LINKED_LIST_FOR (struct splx_node_list_t *, curr_attr, attributes) {
         struct splx_node_t *node = curr_attr->node;
 
-        if (strcmp(str_data(&node->str), value) == 0) {
+        if (value == NULL || strcmp(str_data(&node->str), value) == 0) {
             found = true;
             break;
         }

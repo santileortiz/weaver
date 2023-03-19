@@ -3614,6 +3614,9 @@ void dir_iterator_next(struct dir_iterator_t *it, char *path) {
             it->basename = it->entry->d_name;
 
             if (it->entry->d_type == DT_DIR) {
+                // TODO: Add a mechanism to easily skip a subtree during
+                // iteration. I think just skipping the directory will still
+                // traverse all files under it.
                 strcpy(it->directories[it->dir_stack_top++], str_data(&it->path));
                 it->is_dir = true;
             }  else {

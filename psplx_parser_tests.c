@@ -38,6 +38,8 @@ struct note_t* push_test_note (struct note_runtime_t *rt, char *source, size_t s
 
     } else {
         title_to_note_insert (&rt->notes_by_title, &new_note->title, new_note);
+
+        psx_get_or_set_entity(&rt->sd, new_note->id, "note", str_data(&new_note->title));
     }
 
     str_pool (&rt->pool, &new_note->html);
@@ -48,12 +50,13 @@ struct note_t* push_test_note (struct note_runtime_t *rt, char *source, size_t s
 //////////////////////////////////////
 // Platform functions for testing
 #define PSPLX_EXTENSION "psplx"
+#define FULL_TEST_DIR "example"
 
 ITERATE_DIR_CB(test_dir_iter)
 {
     struct note_runtime_t *rt = (struct note_runtime_t*)data;
 
-    if (!is_dir) {
+    if (!is_dir && strstr(fname, "/"FULL_TEST_DIR"/") == 0) {
         char *extension = get_extension (fname);
         if (extension != NULL && strcmp (extension, PSPLX_EXTENSION) == 0) {
             size_t basename_len = 0;
@@ -193,7 +196,7 @@ ITERATE_DIR_CB(negative_test)
 {
     struct negative_test_clsr_t *clsr = (struct negative_test_clsr_t*)data;
 
-    if (!is_dir) {
+    if (!is_dir && strstr(fname, "/"FULL_TEST_DIR"/") == 0) {
         char *basename = path_basename(fname);
         if (strcmp(get_extension(basename), "psplx_error") == 0) {
             mem_pool_t pool = {0};
@@ -218,7 +221,7 @@ void cat_note_tsplx_full (string_t *str, struct splx_data_t *sd, struct psx_bloc
     if (block == NULL) block = root;
 
     if (block->data != NULL) {
-        str_cat_splx_canonical (str, sd, block->data);
+        str_cat_splx_canonical_shallow (str, block->data);
         str_cat_c (str, "\n");
     }
 

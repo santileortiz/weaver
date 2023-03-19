@@ -1247,6 +1247,12 @@ void html_append_link (struct psx_parser_state_t *ps,
 
 }
 
+void psx_name_clean (string_t *str)
+{
+    str_replace (str, "\n", " ", NULL);
+    // TODO: Reduce multiple space sequences to single space.
+}
+
 // This function parses the content of a block of text. The formatting is
 // limited to tags that affect the formating inline. This parsing function
 // will not add nested blocks like paragraphs, lists, code blocks etc.
@@ -1493,9 +1499,11 @@ void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html
 
                 if (tag->has_content) {
                     string_t type = {0};
-                    string_t name = {0};
 
+                    string_t name = {0};
                     str_set (&name, str_data(&tag->content));
+                    psx_name_clean (&name);
+
                     str_set_sstr (&type, &tag->token.value);
                     html_append_link (ps, html, psx_get_head_html_element(ps), &type, &name);
 
@@ -1712,41 +1720,69 @@ void psx_set_virtual_id (struct splx_node_t *node)
     str_free(&virtual_id);
 }
 
+struct splx_node_t* psx_get_or_set_entity(struct splx_data_t *sd,
+                                          char *id, char *type, char *name)
+{
+    struct splx_node_t *entity = NULL;
+
+    bool found = false;
+
+    string_t name_clean = {0};
+    str_set(&name_clean, name);
+    psx_name_clean (&name_clean);
+
+    if (id != NULL) {
+        entity = splx_get_node_by_id (sd, id);
+        if (entity == NULL) {
+            entity = splx_node (sd, id, SPLX_NODE_TYPE_OBJECT);
+        }
+
+        found = true;
+
+        splx_node_attribute_append_once_c_str(sd, entity, "a", type, SPLX_NODE_TYPE_OBJECT);
+
+        if (!splx_node_attribute_contains(entity, "name", NULL)) {
+            splx_node_attribute_append_once_c_str(sd, entity, "name", str_data(&name_clean), SPLX_NODE_TYPE_OBJECT);
+        } else {
+            // TODO: Log a real warning here...
+            printf (ECMA_YELLOW("warning:") " attempting to set multiple names to an entity.");
+        }
+    }
+
+    if (!found) {
+        struct query_ctx_t qctx = {0};
+
+        while ((entity = splx_next_by_name (&qctx, sd, str_data(&name_clean))) != NULL) {
+            if (!splx_node_is_referenceable(entity) && !splx_node_attribute_contains(entity, "a", type)) {
+                splx_node_attribute_append_c_str(sd, entity, "a", type, SPLX_NODE_TYPE_OBJECT);
+                break;
+            }
+
+            if (splx_node_attribute_contains(entity, "a", type)) {
+                found = true;
+                break;
+            }
+        }
+    }
+
+    if (!found && entity == NULL) {
+        entity = splx_node (sd, id, SPLX_NODE_TYPE_OBJECT);
+        psx_set_virtual_id(entity);
+        splx_node_attribute_append_c_str(sd, entity, "a", type, SPLX_NODE_TYPE_OBJECT);
+        splx_node_attribute_append_c_str(sd, entity, "name", str_data(&name_clean), SPLX_NODE_TYPE_OBJECT);
+    }
+
+    str_free (&name_clean);
+
+    return entity;
+}
+
 void psx_create_link(struct splx_data_t *sd,
                      struct splx_node_t *src_entity, char *src_id,
                      string_t *tgt_type, string_t *tgt_name)
 {
-    struct query_ctx_t qctx = {0};
-
-    bool found = false;
-    struct splx_node_t *tgt_entity = NULL;
-    while ((tgt_entity = splx_next_by_name (&qctx, sd, str_data(tgt_name))) != NULL) {
-        if (!splx_node_is_referenceable(tgt_entity) && !splx_node_attribute_contains(tgt_entity, "a", str_data(tgt_type))) {
-            splx_node_attribute_append_c_str(sd, tgt_entity, "a", str_data(tgt_type), SPLX_NODE_TYPE_OBJECT);
-            break;
-        }
-
-        if (splx_node_attribute_contains(tgt_entity, "a", str_data(tgt_type))) {
-            found = true;
-            break;
-        }
-    }
-
-    //if (tgt_entity == NULL) {
-    //    qctx = ZERO_INIT(struct query_ctx_t);
-    //    tgt_entity = splx_next_by_name (&qctx, sd, str_data(tgt_name));
-
-    //    if (tgt_entity != NULL) {
-    //        splx_node_attribute_append_c_str(sd, tgt_entity, "a", str_data(tgt_type), SPLX_NODE_TYPE_OBJECT);
-    //    }
-    //}
-
-    if (!found && tgt_entity == NULL) {
-        tgt_entity = splx_node (sd, NULL, SPLX_NODE_TYPE_OBJECT);
-        psx_set_virtual_id(tgt_entity);
-        splx_node_attribute_append_c_str(sd, tgt_entity, "a", str_data(tgt_type), SPLX_NODE_TYPE_OBJECT);
-        splx_node_attribute_append_c_str(sd, tgt_entity, "name", str_data(tgt_name), SPLX_NODE_TYPE_OBJECT);
-    }
+    struct splx_node_t *tgt_entity =
+        psx_get_or_set_entity(sd, NULL, str_data(tgt_type), str_data(tgt_name));
 
     if (tgt_entity != NULL) {
         if(splx_node_is_referenceable(tgt_entity)) {
@@ -1777,26 +1813,7 @@ void psx_create_links_full (struct psx_parser_ctx_t *ctx, struct psx_block_t **r
 
         while (!ps_inline->scr.is_eof && !ps_inline->error) {
             ps_inline_next (ps_inline);
-            if (ps_match(ps_inline, TOKEN_TYPE_TEXT_TAG, "note")) {
-                // TODO: Remove this if condition... should use the generic one
-                // below. I tried, but for some reason it caused an infinite
-                // loop.
-                string_t target_note_title = {0};
-
-                struct note_t *target_note = NULL;
-                psx_parse_tag_note (ps_inline, NULL, &target_note, &target_note_title);
-                struct note_t *current_note = rt_get_note_by_id (ctx->id);
-
-                // If the target note is not found, fail silently because we
-                // will show the warning message later, when building the html.
-                // :target_note_not_found_error
-                if (target_note != NULL) {
-                    rt_link_entities_by_id (current_note->id, target_note->id);
-                }
-
-                str_free (&target_note_title);
-
-            } else if (ps_match(ps_inline, TOKEN_TYPE_TEXT_TAG, "link") ||
+            if (ps_match(ps_inline, TOKEN_TYPE_TEXT_TAG, "link") ||
                 ps_match(ps_inline, TOKEN_TYPE_TEXT_TAG, "html") ||
                 ps_match(ps_inline, TOKEN_TYPE_TEXT_TAG, "image") ||
                 ps_match(ps_inline, TOKEN_TYPE_TEXT_TAG, "code") ||
@@ -2225,16 +2242,6 @@ void psx_parse_note_title (struct psx_parser_state_t *ps, sstring_t *title, bool
         // block.
         struct psx_block_t *root_block = ps->block_stack[0];
         psx_parse_block_attributes(ps, root_block, ps->ctx.id);
-
-        if (ps->ctx.sd != NULL && root_block->data != NULL) {
-            string_t s = {0};
-            str_set_sstr(&s, title);
-            splx_node_attribute_add (
-                ps->ctx.sd,
-                root_block->data,
-                "name", str_data(&s), SPLX_NODE_TYPE_STRING);
-            str_free (&s);
-        }
     }
 
     // TODO: Validate that the title has no inline tags.
@@ -2692,7 +2699,15 @@ void render_backlinks(struct note_runtime_t *rt, struct note_t *note)
                     html_element_append_child(html, backlinks_element, wrapper);
 
                     string_t *name = splx_node_get_name (node);
-                    html_append_note_link (NULL, html, wrapper, str_data(&node->str), str_data(name), str_len(name));
+                    if (name != NULL) {
+                        html_append_note_link (NULL, html, wrapper, str_data(&node->str), str_data(name), str_len(name));
+
+                    } else {
+                        // TODO: When does this happen?, is it for all linked
+                        // virtual entities?.
+                        //printf (ECMA_RED("error:") "failed to add backlink to node:\n");
+                        //print_splx_node (node);
+                    }
                 }
             }
         }
@@ -2906,7 +2921,11 @@ PSX_LATE_USER_TAG_CB(entity_list_tag_handler)
                 html_append_link (NULL, note->html, paragraph, &tag->content, name);
 
                 if (name != NULL) {
-                    psx_create_link(&rt->sd, note->tree->data, note->id, &tag->content, name);
+                    // TODO: This isn't working right now. It causes a weird
+                    // infinite loop in my own notes. I need to reproduce this
+                    // in a smaller environment to be able to debug it. It
+                    // breaks backlinks to database pages.
+                    //psx_create_link(&rt->sd, note->tree->data, note->id, &tag->content, name);
                 }
             }
         }

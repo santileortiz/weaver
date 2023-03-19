@@ -1,0 +1,6 @@
+# Tag links
+
+A paragraph with a tag link \note{Inline Tags}.
+
+Test breaking the line inside tag's body \note{Inline
+Tags}.
