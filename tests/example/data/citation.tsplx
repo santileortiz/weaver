@@ -1,0 +1,6 @@
+9385G63979 = citation{
+  name "As We May Think";
+  author q"Vannevar Bush";
+  url "http://worrydream.com/refs/Bush%20-%20As%20We%20May%20Think%20(Life%20Magazine%209-10-1945).pdf";
+  publisher q"Atlantic Monthly";
+};

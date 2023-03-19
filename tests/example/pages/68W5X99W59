@@ -1,0 +1,8 @@
+# Sample PKB
+
+This is a small personal knowledge base that tests features beyond TSPLX/PSPLX
+syntax parsing and HTML generation.
+
+In this environment we can test for example the difference between local and
+public site generations, linking between pages, data
+(consolidation/navigation/visualization), file references etc.

@@ -1,0 +1,19 @@
+// Weaver Configuration
+
+// The directory where the HTML static site will be generated into.
+//target-dir "~/.cache/weaver/www/" .
+
+title-notes [
+  "68W5X99W59"
+  ] .
+
+
+// Publishing
+
+public-title-notes [
+  "68W5X99W59"
+  ] .
+
+private-types [
+  "personal"
+  ] .
