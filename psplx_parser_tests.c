@@ -50,7 +50,6 @@ struct note_t* push_test_note (struct note_runtime_t *rt, char *source, size_t s
 //////////////////////////////////////
 // Platform functions for testing
 #define PSPLX_EXTENSION "psplx"
-#define FULL_TEST_DIR "example"
 
 ITERATE_DIR_CB(test_dir_iter)
 {

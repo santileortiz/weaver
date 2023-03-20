@@ -3,6 +3,7 @@
  */
 
 #define TESTS_DIR "tests"
+#define FULL_TEST_DIR "example"
 
 char* get_test_file (mem_pool_t *pool, char *name, char *extension, size_t *fsize)
 {

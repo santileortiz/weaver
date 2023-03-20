@@ -1,3 +1,4 @@
-typed_no_attributes a my-type ;
+typed_no_attributes a note ;
+    my-type ;
   name "Typed But Without Attributes" ;
 

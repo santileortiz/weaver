@@ -1,3 +1,4 @@
-"item1"; "item2"; 42; john;
-
-author john ;
+_ author john ;
+  {
+    "item1"; "item2"; 42; john;
+  }

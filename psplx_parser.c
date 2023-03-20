@@ -1742,7 +1742,7 @@ struct splx_node_t* psx_get_or_set_entity(struct splx_data_t *sd,
         splx_node_attribute_append_once_c_str(sd, entity, "a", type, SPLX_NODE_TYPE_OBJECT);
 
         if (!splx_node_attribute_contains(entity, "name", NULL)) {
-            splx_node_attribute_append_once_c_str(sd, entity, "name", str_data(&name_clean), SPLX_NODE_TYPE_OBJECT);
+            splx_node_attribute_append_once_c_str(sd, entity, "name", str_data(&name_clean), SPLX_NODE_TYPE_STRING);
         } else {
             // TODO: Log a real warning here...
             printf (ECMA_YELLOW("warning:") " attempting to set multiple names to an entity.");
@@ -1769,7 +1769,11 @@ struct splx_node_t* psx_get_or_set_entity(struct splx_data_t *sd,
         entity = splx_node (sd, id, SPLX_NODE_TYPE_OBJECT);
         psx_set_virtual_id(entity);
         splx_node_attribute_append_c_str(sd, entity, "a", type, SPLX_NODE_TYPE_OBJECT);
-        splx_node_attribute_append_c_str(sd, entity, "name", str_data(&name_clean), SPLX_NODE_TYPE_OBJECT);
+        splx_node_attribute_append_c_str(sd, entity, "name", str_data(&name_clean), SPLX_NODE_TYPE_STRING);
+
+        if (strcmp(type, "note") == 0) {
+            printf (ECMA_YELLOW("warning:") " virtual note \"%s\"\n", str_data(&name_clean));
+        }
     }
 
     str_free (&name_clean);
@@ -1889,10 +1893,13 @@ void attributes_html_append (struct html_t *html, struct psx_block_t *block, str
         html_element_class_add (html, types, "type-list");
 
         LINKED_LIST_FOR (struct splx_node_list_t *, curr_list_node, type_list) {
-            struct html_element_t *value = html_new_element (html, "div");
-            html_element_class_add (html, value, "type");
-            html_element_append_cstr (html, value, str_data(&curr_list_node->node->str));
-            html_element_append_child (html, types, value);
+            char *type_str = str_data(&curr_list_node->node->str);
+            if (strcmp(type_str, "note") != 0) {
+                struct html_element_t *value = html_new_element (html, "div");
+                html_element_class_add (html, value, "type");
+                html_element_append_cstr (html, value, type_str);
+                html_element_append_child (html, types, value);
+            }
         }
 
         html_element_append_child (html, parent, types);
@@ -2154,10 +2161,6 @@ void psx_parse_block_attributes (struct psx_parser_state_t *ps, struct psx_block
         // :block_data_node_instantiation
         if (block->data == NULL) {
             block->data = splx_node_get_or_create(ps->ctx.sd, node_id, SPLX_NODE_TYPE_OBJECT);
-
-            if (node_id == NULL) {
-                psx_set_virtual_id(block->data);
-            }
         }
 
         if (tok.value.len > 0) {
@@ -2188,6 +2191,10 @@ void psx_parse_block_attributes (struct psx_parser_state_t *ps, struct psx_block
         psx_cat_tag_content (ps, &tsplx_data, true);
         tsplx_parse_str_name_full(ps->ctx.sd, str_data(&tsplx_data), block->data, ps->ctx.error_msg);
         str_free (&tsplx_data);
+
+        if (!splx_node_has_name(block->data)) {
+            psx_set_virtual_id(block->data);
+        }
 
         // At this point, we parsed some attributes, and we're setting the new
         // pos pointer in the state. If we had used peek before, the next call

@@ -44,6 +44,8 @@ void rt_init_push_file (struct note_runtime_t *rt, char *fname)
 
     } else {
         title_to_note_insert (&rt->notes_by_title, &new_note->title, new_note);
+
+        psx_get_or_set_entity(&rt->sd, new_note->id, "note", str_data(&new_note->title));
     }
 }
 
@@ -367,6 +369,7 @@ int main(int argc, char** argv)
                             }
                         }
                         str_cat_c (&psplx, name_str);
+                        str_replace (&psplx, "'", "\\'", NULL);
                         str_replace (&psplx, "\n", " ", NULL);
                         str_cat_c (&psplx, "\n");
 
@@ -378,7 +381,6 @@ int main(int argc, char** argv)
                             str_cat_c (&psplx, str_data(&node->str));
                         }
 
-                        str_replace (&psplx, "'", "\\'", NULL);
                         str_replace (&psplx, "\n", "\\n", NULL);
 
 
@@ -416,7 +418,7 @@ int main(int argc, char** argv)
                         // Generate TSPLX
                         string_t tsplx = {0};
                         str_cat_splx_canonical_shallow (&tsplx, entity);
-                        str_replace (&psplx, "'", "\\'", NULL);
+                        str_replace (&tsplx, "'", "\\'", NULL);
                         str_replace (&tsplx, "\n", "\\n", NULL);
 
 
