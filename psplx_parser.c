@@ -1178,11 +1178,39 @@ void html_append_link (struct psx_parser_state_t *ps,
                        struct html_element_t *parent,
                        string_t *type, string_t *name)
 {
+    if (type == NULL || name == NULL) return;
+
+    struct note_runtime_t *rt = rt_get();
+    struct splx_node_t *target = splx_get_node_by_name_optional_type(&rt->sd, str_data(type), str_data(name));
+
+    if (entity_is_visible(target)) {
+        if (splx_node_is_referenceable(target)) {
+            html_append_note_link (ps, html,
+                                   parent,
+                                   str_data(splx_node_get_id(target)),
+                                   str_data(name),
+                                   str_len(name));
+
+        } else {
+            struct splx_node_t *virtual_id = splx_node_get_attribute (target, "t:virtual_id");
+            html_append_entity_link (ps, html,
+                                     parent,
+                                     str_data(splx_node_get_id (virtual_id)),
+                                     str_data(name),
+                                     str_len(name));
+        }
+    }
+}
+
+void html_redact_or_append_link (struct psx_parser_state_t *ps,
+                                 struct html_t *html,
+                                 struct html_element_t *parent,
+                                 string_t *type, string_t *name)
+{
     // TODO: Some types pass null here, see references.
     if (type == NULL || name == NULL) return;
 
     struct note_runtime_t *rt = rt_get();
-
     struct splx_node_t *target = splx_get_node_by_name_optional_type(&rt->sd, str_data(type), str_data(name));
 
     // TODO: Should really be doing...
@@ -1195,12 +1223,12 @@ void html_append_link (struct psx_parser_state_t *ps,
         // Maybe redact instead of creating a link
         bool redacted = false;
         if (rt!=NULL && rt->is_public && !entity_is_visible(target)) {
-            struct html_element_t *parent = psx_get_head_html_element(ps);
+            struct html_element_t *html_parent = psx_get_head_html_element(ps);
 
             bool found = false;
             struct html_element_t *prev_element = NULL;
             struct html_element_t *new_end = NULL;
-            LINKED_LIST_FOR (struct html_element_t *, element, parent->children) {
+            LINKED_LIST_FOR (struct html_element_t *, element, html_parent->children) {
                 char *text = str_data(&element->text);
                 if (text[0] == '(') {
                     found = true;
@@ -1215,7 +1243,7 @@ void html_append_link (struct psx_parser_state_t *ps,
             if (found && new_end) {
                 // TODO: This leaks the nodes that were redacted.
                 new_end->next = NULL;
-                parent->children_end = new_end;
+                html_parent->children_end = new_end;
 
                 psx_advance_until (ps, ')');
 
@@ -1224,21 +1252,7 @@ void html_append_link (struct psx_parser_state_t *ps,
         }
 
         if (!redacted) {
-            if (splx_node_is_referenceable(target)) {
-                html_append_note_link (ps, html,
-                                       parent,
-                                       str_data(splx_node_get_id(target)),
-                                       str_data(name),
-                                       str_len(name));
-
-            } else {
-                struct splx_node_t *virtual_id = splx_node_get_attribute (target, "t:virtual_id");
-                html_append_entity_link (ps, html,
-                                         parent,
-                                         str_data(splx_node_get_id (virtual_id)),
-                                         str_data(name),
-                                         str_len(name));
-            }
+            html_append_link (ps, html, parent, type, name);
         }
 
     } else {
@@ -1505,7 +1519,7 @@ void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html
                     psx_name_clean (&name);
 
                     str_set_sstr (&type, &tag->token.value);
-                    html_append_link (ps, html, psx_get_head_html_element(ps), &type, &name);
+                    html_redact_or_append_link (ps, html, psx_get_head_html_element(ps), &type, &name);
 
                     str_free (&type);
                     str_free (&name);
@@ -1525,7 +1539,7 @@ void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html
 
                 str_set_sstr (&name, &tag->parameters.positional->v);
                 str_set_sstr (&type, &tag->token.value);
-                html_append_link (ps, html, psx_get_head_html_element(ps), &type, &name);
+                html_redact_or_append_link (ps, html, psx_get_head_html_element(ps), &type, &name);
 
                 str_free (&type);
                 str_free (&name);
@@ -2044,6 +2058,13 @@ void block_tree_to_html (struct psx_parser_ctx_t *ctx, struct html_t *html, stru
     } else if (block->type == BLOCK_TYPE_HEADING) {
         str_set_printf (&buff, "h%i", block->heading_number);
         struct html_element_t *new_dom_element = html_new_element (html, str_data(&buff));
+
+        str_set_printf (&buff, "user-content-%s", str_data(&block->inline_content));
+        str_replace(&buff, " ", "-", NULL);
+        str_replace(&buff, "'", "", NULL);
+        char *lowercase = cstr_to_lower(str_data(&buff));
+        html_element_attribute_set (html, new_dom_element, "id", lowercase);
+        free (lowercase);
 
         html_element_append_child (html, parent, new_dom_element);
         block_content_parse_text (ctx, html, new_dom_element, str_data(&block->inline_content));

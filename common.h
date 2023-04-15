@@ -22,6 +22,8 @@
 #include <locale.h>
 #include <float.h>
 #include <ftw.h>
+#include <wchar.h>
+#include <wctype.h>
 
 #ifdef __cplusplus
 #define ZERO_INIT(type) (type){}
@@ -169,6 +171,37 @@ size_t size;                                              \
 //        ESC_S_COLOR(style,ESC_COLOR_RED,str)
 //
 // Need to make double-level macros for for this.
+
+char* begin_c_locale ()
+{
+    char *old_locale = NULL;
+    old_locale = strdup (setlocale (LC_ALL, NULL));
+    assert (old_locale != NULL);
+    setlocale (LC_ALL, "");
+
+    return old_locale;
+}
+
+// Set POSIX locale while storing the previous one. Useful while calling strtod
+// and you know the decimal separator will always be '.', and you don't want it
+// to break if the user changes locale.
+// NOTE: Must be followed by a call to restore_locale() to avoid memory leaks
+char* begin_posix_locale ()
+{
+    char *old_locale = NULL;
+    old_locale = strdup (setlocale (LC_ALL, NULL));
+    assert (old_locale != NULL);
+    setlocale (LC_ALL, "POSIX");
+
+    return old_locale;
+}
+
+// Restore the previous locale returned by begin_posix_locale
+void restore_locale (char *old_locale)
+{
+    setlocale (LC_ALL, old_locale);
+    free (old_locale);
+}
 
 ////////////
 // STRINGS
@@ -809,6 +842,34 @@ int cstr_replace_char_buff (char *src, char target, char replacement, char *dst)
     return replacement_cnt;
 }
 
+char* cstr_to_lower (char *str)
+{
+    char *old_locale = begin_c_locale();
+
+    // Convert the input string to a wide character string
+    size_t len = strlen(str);
+    size_t wlen = mbstowcs(NULL, str, 0);
+    wchar_t* wstr = (wchar_t*)malloc(sizeof(wchar_t) * (wlen + 1));
+    mbstowcs(wstr, str, len + 1);
+
+    wchar_t* tmp_wstr = (wchar_t*)malloc(sizeof(wchar_t) * (wlen + 1));
+    for (size_t i = 0; i < wlen; i++) {
+        tmp_wstr[i] = towlower(wstr[i]);
+    }
+    tmp_wstr[wlen] = L'\0';
+
+    // Convert the wide character string back
+    size_t mblen = wcstombs(NULL, tmp_wstr, 0);
+    char* lower_str = (char*)malloc(sizeof(char) * (mblen + 1));
+    wcstombs(lower_str, tmp_wstr, wlen + 1);
+
+    free(wstr);
+    free(tmp_wstr);
+    restore_locale(old_locale);
+
+    return lower_str;
+}
+
 void str_cat_debugstr (string_t *str, int curr_indent, int esc_color, char *c_str)
 {
     if (c_str == NULL) return;
@@ -1162,28 +1223,6 @@ void prnt_debug_sstring (sstring_t *str)
 char* sstr_find_char (sstring_t *str, char c)
 {
     return memchr(str->s, c, str->len);
-}
-
-
-// Set POSIX locale while storing the previous one. Useful while calling strtod
-// and you know the decimal separator will always be '.', and you don't want it
-// to break if the user changes locale.
-// NOTE: Must be followed by a call to restore_locale() to avoid memory leaks
-char* begin_posix_locale ()
-{
-    char *old_locale = NULL;
-    old_locale = strdup (setlocale (LC_ALL, NULL));
-    assert (old_locale != NULL);
-    setlocale (LC_ALL, "POSIX");
-
-    return old_locale;
-}
-
-// Restore the previous locale returned by begin_posix_locale
-void restore_locale (char *old_locale)
-{
-    setlocale (LC_ALL, old_locale);
-    free (old_locale);
 }
 
 #define VECT_X 0

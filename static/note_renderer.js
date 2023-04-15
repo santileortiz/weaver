@@ -213,7 +213,8 @@ function push_state ()
 
         state += id;
     }
-    history.pushState(null, "", state)
+    history.pushState(null, "", state);
+    hashchange();
 }
 
 // NOTE: This pushes a new state. Intended for use in places where we handle
@@ -343,3 +344,31 @@ for (let i=0; i<title_notes.length; i++) {
 }
 
 navigate_to_current_url()
+
+// Implement hash navigation that avoids ID clashes between the user's headings
+// and internal IDs the rest of the website may be using.
+function hashchange() {
+    // Only modify the hash target if it doesn't exist.
+    if (document.querySelector(':target') != null) {
+        return;
+    }
+
+    const hash = decodeURIComponent(location.hash.slice(1)).toLowerCase();
+    const target_id = `user-content-${hash}`;
+    const target = document.getElementById(target_id) || document.getElementsByName(target_id)[0];
+    if (target) {
+        const document = target.ownerDocument
+        setTimeout(() => {
+            if (document && document.defaultView) {
+                target.scrollIntoView()
+            }
+        }, 0)
+    }
+}
+
+window.addEventListener('hashchange', hashchange);
+
+document.addEventListener('DOMContentLoaded', async function() {
+  await new Promise(resolve => window.setTimeout(resolve, 0))
+  hashchange()
+})
