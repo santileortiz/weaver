@@ -1471,13 +1471,17 @@ def automatic_test_function(*args, **kwargs):
 class Test():
     def __init__(self, name):
         self.children_status = None
+        self.children = []
         self.name = name
         self.output = ''
+
+    def __repr__(self):
+        return f"(name='{self.name}' children_status={self.children_status})"
 
 class TestContext():
     def __init__(self):
         self.width = 40
-        self.indent = 4
+        self.indent = 2
 
         self.tests = []
         self.force_output = False
@@ -1508,7 +1512,10 @@ def test_push(name, test_context=None):
     if test_context == None:
         test_context = __g_test_context
 
-    test_context.tests.append(Test(name))
+    new_test = Test(name)
+    if len(test_context.tests) > 0:
+        test_context.tests[-1].children.append(new_test)
+    test_context.tests.append(new_test)
 
 def test_result_string(s, result, test_context=None):
     global __g_test_context
@@ -1529,6 +1536,20 @@ def test_result_string_default(name, result, test_context=None):
     else:
         return test_result_string (f'{name}', ecma_red("FAIL"), test_context=test_context)
 
+def test_print(test, indent=0, test_context=None):
+    global __g_test_context
+    if test_context == None:
+        test_context = __g_test_context
+
+    print(textwrap.indent (test_result_string_default (test.name, test.children_status), ' '*(test_context.indent)*indent))
+
+    if test.children_status == False or test_context.force_output:
+        indented = textwrap.indent (test.output, ' '*(test_context.indent)*(indent+1))
+        print (indented, end='')
+
+        for child in test.children:
+            test_print(child, indent=indent+1)
+
 def test_pop(result=None, test_context=None):
     global __g_test_context
     if test_context == None:
@@ -1538,19 +1559,19 @@ def test_pop(result=None, test_context=None):
 
     if result == None:
         result = t.children_status
+    else:
+        t.children_status = result
+    test_context.set_status(result)
 
-    print (test_result_string_default (t.name, result))
+    if len(test_context.tests) == 0:
+        test_print (t)
 
-    if result == False or t.children_status == False or test_context.force_output:
-        indented = textwrap.indent (t.output, ' '*(test_context.indent)*(len(test_context.tests)+1))
-        print (indented, end='')
-
-def test_error(message, test_context=None):
+def test_error(message, test_context=None, indent=1):
     global __g_test_context
     if test_context == None:
         test_context = __g_test_context
 
-    indented = textwrap.indent (message, ' '*(test_context.indent)*(len(test_context.tests)))
+    indented = textwrap.indent (message, ' '*test_context.indent*indent)
     test_context.out(indented)
 
 def test(result, expected_result=None, name=None, test_context=None):

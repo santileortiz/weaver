@@ -5,6 +5,27 @@ import random
 import errno
 import glob
 
+# This directory contains user data/configuration. It's essentially what needs
+# to be backed up if you want to restore functionality after a OS reinstall.
+base_dir = os.path.abspath(path_resolve('~/.weaver'))
+
+notes_dirname = 'notes'
+source_notes_dir = path_cat(base_dir, notes_dirname)
+
+files_dirname = 'files'
+source_files_dir = path_cat(base_dir, files_dirname)
+
+data_dirname = 'data'
+data_dir = path_cat(base_dir, data_dirname)
+
+
+def weaver_files_init():
+    ensure_dir(base_dir)
+    ensure_dir(source_notes_dir)
+    ensure_dir(source_files_dir)
+    ensure_dir(data_dir)
+
+
 def replace_subpath(path, old_path, new_path):
     return path.replace(old_path.rstrip(os.sep), new_path.rstrip(os.sep), 1)
 
@@ -481,6 +502,103 @@ def new_identifier(length = 10):
         new_id += random.choice(characters)
 
     return new_id
+
+@automatic_test_function
+def get_target(target_type, target_file_dir, target_data_file, silent=False):
+    """
+    This function handles the computation of the target file directory and the
+    TSPLX data file out of user defined parameters. The result is automatically
+    set to defaults if a type is passed, or it's overridden if the other
+    parameters are passed explicitly.
+
+    The output paths guarantee the following:
+     - Are resolved absolute paths or None.
+     - If a file directory is returned, then it's guaranteed to either not exist or already exist as a directory.
+     - If a data file is returned, then it's guaranteed to either not exist or already exist as a file.
+     - Input can be relative
+     - Input can use ~ for user's home.
+     - Relative input paths are resolved with respect to Weaver's file structucture.
+        - For file directory, source_files_dir is the base.
+        - For the data file, target_data_file is the base.
+     - Absolute input paths (starting with ~, /, ./, ../, ../../, etc.) are resolved. They remain
+       pointing to the same absolute location.
+    """
+
+    # NOTE: Even though I had envisioned this to be very simple behavior,
+    # implementation of this took surprisingly longer than expected. There's
+    # lots of subtelties here and edge cases. I feel like I'm reaching CSS
+    # levels of default-resolution complexity here...
+
+    # TODO: Maybe the target_data_file should also be possible to be set to a
+    # directory, in which case we just compute the default file name based on
+    # the type, then place it in there. Call the variable target_data_path
+    # then?. This isn't supported right now. It will probably cause even more
+    # edge cases, how do we distinguish the parameter is intended as a
+    # directory as opposed to a file without extension? probably user needs to
+    # pass a trailing slash... even if the user passes a trailing slash, what
+    # if the path already exists, but as a file?.
+
+    original_target_file_dir = target_file_dir
+
+    if target_file_dir != None and \
+        (target_file_dir.startswith('~') or target_file_dir.startswith('.'+os.sep) or target_file_dir.startswith('..')):
+        target_file_dir = os.path.abspath(path_resolve(target_file_dir))
+
+    if target_data_file != None and \
+        (target_data_file.startswith('~') or target_data_file.startswith('.'+os.sep) or target_data_file.startswith('..')):
+        target_data_file = os.path.abspath(path_resolve(target_data_file))
+
+    if target_data_file == None and target_type != None:
+        target_data_file = target_type + ".tsplx"
+
+    if target_file_dir == None and target_type != None:
+        target_file_dir = target_type
+
+    if target_file_dir != None and not target_file_dir.startswith(os.sep):
+        target_file_dir = path_cat(source_files_dir, target_file_dir)
+
+    if target_data_file != None and not target_data_file.startswith(os.sep):
+        target_data_file = path_cat(data_dir, target_data_file)
+
+    if target_file_dir == None:
+        target_file_dir = data_dir
+
+    if target_file_dir.endswith('/'):
+        target_file_dir = target_file_dir[:-1]
+
+    success = True
+    if target_file_dir != None and path_exists(target_file_dir) and path_isfile(target_file_dir):
+        if not silent:
+            print (ecma_red("error:") + f" Target file directory '{target_file_dir}' exists but as a file.")
+        success = False
+    if target_data_file != None and path_exists(target_data_file) and path_isdir(target_data_file):
+        if not silent:
+            print (ecma_red("error:") + f" Target data file '{target_data_file}' exists but as a directory.")
+        success = False
+    if not success:
+        return None, None
+
+    if target_type == None:
+        if target_file_dir == None or original_target_file_dir == None:
+            if not silent:
+                print (ecma_red("error:") + " No type specified and no explicit targets set.")
+
+            # TODO: There is a case for passing None type and a directory, then
+            # wanting the directory to be left alone and not return the error
+            # condition of setting both to None. The case is for scanning when
+            # we just want to scan into a directory, without generating data
+            # stubs. Is there a case for the opposite?, meaning, wanting to
+            # pass None type and a data file path, then wanting the file path
+            # to be left alone?. I have a feeling right now that this should
+            # always be an error condition.
+
+            if original_target_file_dir == None:
+                return None, None
+
+            if target_data_file == None:
+                return target_file_dir, None
+
+    return target_file_dir, target_data_file
 
 
 #########################

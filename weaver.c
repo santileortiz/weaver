@@ -83,6 +83,8 @@ void rt_init (struct note_runtime_t *rt, struct splx_data_t *config)
 //////////////////////////////////////
 
 struct config_t {
+    string_t home;
+
     string_t config_path;
 
     string_t source_notes_path;
@@ -94,6 +96,7 @@ struct config_t {
 
 void cfg_destroy (struct config_t *cfg)
 {
+    str_free (&cfg->home);
     str_free (&cfg->config_path);
     str_free (&cfg->source_notes_path);
     str_free (&cfg->source_files_path);
@@ -101,7 +104,7 @@ void cfg_destroy (struct config_t *cfg)
     str_free (&cfg->target_notes_path);
 }
 
-#define APP_HOME_DIR "~/.weaver"
+#define DEFAULT_HOME_DIR "~/.weaver"
 #define DEFAULT_TARGET_DIR "~/.cache/weaver/www/"
 
 enum cli_command_t {
@@ -132,7 +135,11 @@ int main(int argc, char** argv)
     has_js = 0;
 #endif
 
-    srandom(time(NULL));
+    if (!get_cli_bool_opt_ctx (cli_ctx, "--deterministic", argv, argc)) {
+        srandom(time(NULL));
+    } else {
+        srandom(0);
+    }
 
     if (get_cli_bool_opt_ctx (cli_ctx, "--has-js", argv, argc)) return has_js;
 
@@ -141,9 +148,21 @@ int main(int argc, char** argv)
 
     STACK_ALLOCATE (struct config_t, cfg);
 
-    str_set_path (&cfg->source_notes_path, APP_HOME_DIR "/notes/");
-    str_set_path (&cfg->source_files_path, APP_HOME_DIR "/files/");
-    str_set_path (&cfg->config_path, APP_HOME_DIR "/config.tsplx");
+    char *cli_home = get_cli_arg_opt_ctx (cli_ctx, "--home", argv, argc);
+    if (cli_home != NULL) {
+        str_set_path (&cfg->home, cli_home);
+    } else {
+        str_set_path (&cfg->home, DEFAULT_HOME_DIR);
+    }
+
+    str_set_path (&cfg->config_path, str_data(&cfg->home));
+    str_cat_path (&cfg->config_path, "config.tsplx");
+
+    str_set_path (&cfg->source_notes_path, str_data(&cfg->home));
+    str_cat_path (&cfg->source_notes_path, "notes/");
+
+    str_set_path (&cfg->source_files_path, str_data(&cfg->home));
+    str_cat_path (&cfg->source_files_path, "files/");
 
     struct splx_data_t config = {0};
     tsplx_parse_name (&config, str_data(&cfg->config_path));
@@ -189,6 +208,11 @@ int main(int argc, char** argv)
         }
     }
 
+    if (!ensure_path_exists (str_data(&cfg->home))) {
+        success = false;
+        printf (ECMA_RED("error: ") "app home directory could not be created\n");
+    }
+
     if (!ensure_path_exists (str_data(&cfg->target_path))) {
         success = false;
         printf (ECMA_RED("error: ") "target directory could not be created\n");
@@ -210,6 +234,10 @@ int main(int argc, char** argv)
 
     str_set_path (&cfg->target_notes_path, str_data(&cfg->target_path));
     path_cat (&cfg->target_notes_path, "notes");
+    if (!ensure_path_exists (str_data(&cfg->target_notes_path))) {
+        success = false;
+        printf (ECMA_RED("error: ") "target notes directory could not be created\n");
+    }
 
     char *no_opt = get_cli_no_opt_arg_full (cli_ctx, argv, argc, command == CLI_COMMAND_NONE ? 1 : 2);
 

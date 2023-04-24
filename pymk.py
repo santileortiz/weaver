@@ -1,8 +1,9 @@
 #!/usr/bin/python3
 from mkpy.utility import *
 import file_utility as fu
-import file_utility_tests
+import tests_python
 
+import traceback
 import tempfile
 from datetime import datetime
 import curses, time
@@ -13,26 +14,11 @@ import json
 from zipfile import ZipFile
 from urllib.parse import urlparse, urlunparse, ParseResult
 
-# This directory contains user data/configuration. It's essentially what needs
-# to be backed up if you want to restore functionality after a OS reinstall.
-base_dir = os.path.abspath(path_resolve('~/.weaver'))
-ensure_dir(base_dir)
+fu.weaver_files_init()
 
-notes_dirname = 'notes'
-source_notes_dir = path_cat(base_dir, notes_dirname)
-ensure_dir (source_notes_dir)
-
-files_dirname = 'files'
-source_files_dir = path_cat(base_dir, files_dirname)
-ensure_dir (source_files_dir)
-
-data_dirname = 'data'
-data_dir = path_cat(base_dir, data_dirname)
-ensure_dir (data_dir)
-
-file_original_name_path = path_cat(data_dir, 'original-name.tsplx')
+file_original_name_path = path_cat(fu.data_dir, 'original-name.tsplx')
 # TODO: Store file hashes so we can avoid storing duplicates
-#file_hash_path = path_cat(data_dir, 'hash.tsplx')
+#file_hash_path = path_cat(fu.data_dir, 'hash.tsplx')
 
 # This directory contains data that is automatically generated from user's data
 # in the base directory.
@@ -135,9 +121,9 @@ def view():
 
 def new_note ():
     is_vim_mode = get_cli_bool_opt('--vim')
-    ensure_dir(source_notes_dir)
+    ensure_dir(fu.source_notes_dir)
 
-    new_note_path = fu.new_unique_canonical_path(source_notes_dir)
+    new_note_path = fu.new_unique_canonical_path(fu.source_notes_dir)
 
     if not is_vim_mode:
         ex ('touch ' + new_note_path)
@@ -147,11 +133,11 @@ def new_note ():
         print (new_note_path)
 
 def list_notes ():
-    folder = os.fsencode(source_notes_dir)
+    folder = os.fsencode(fu.source_notes_dir)
     for fname_os in os.listdir(folder):
         fname = os.fsdecode(fname_os)
 
-        note_f = open(path_cat(source_notes_dir, fname), 'r')
+        note_f = open(path_cat(fu.source_notes_dir, fname), 'r')
         note_display = fname + ' - ' + note_f.readline()[2:-1] # Remove starting "# " and ending \n
         print (note_display)
         note_f.close()
@@ -164,11 +150,11 @@ def search_notes ():
         # args[0] is the snip's name. Also make lowercase to make search case insensitive.
         arg = args[0].lower()
 
-        folder = os.fsencode(source_notes_dir)
+        folder = os.fsencode(fu.source_notes_dir)
         for fname_os in os.listdir(folder):
             fname = os.fsdecode(fname_os)
 
-            note_path = path_cat(source_notes_dir, fname)
+            note_path = path_cat(fu.source_notes_dir, fname)
             note_f = open(note_path, 'r')
             note_title = note_f.readline()[2:-1] # Remove starting "# " and ending \n
 
@@ -197,7 +183,7 @@ def generate_common ():
             print()
 
     fu.copy_changed(static_dir, out_dir)
-    fu.copy_changed(source_files_dir, path_cat(out_dir, files_dirname))
+    fu.copy_changed(fu.source_files_dir, path_cat(out_dir, files_dirname))
 
     return success
 
@@ -372,7 +358,7 @@ def file_store():
         if is_group and len(files) > 1:
             location = [i]
 
-        error, new_path = fu.file_canonical_rename(path, source_files_dir,
+        error, new_path = fu.file_canonical_rename(path, fu.source_files_dir,
             None, None, identifier, location, None,
             False, False, keep_name=True, original_names=file_original_name_path)
 
@@ -417,7 +403,7 @@ def create_test_dir():
         'IMG00073.JPG': None,
         'IMG00103.JPG': None
     }
-    file_utility_tests.create_files_from_map('bin/test', file_map)
+    tests_python.create_files_from_map('bin/test', file_map)
 
 
 def input_str(win):
@@ -552,113 +538,6 @@ def get_type_config(target_type):
             """)
 
     return target_file_dir, target_data_file, tsplx_stub
-
-@automatic_test_function
-def get_target(target_type, target_file_dir, target_data_file, silent=False):
-    """
-    This function handles the computation of the target file directory and the
-    TSPLX data file. These can be automatically set to defaults if a type is
-    passed but are overridden if the other parameters are passed explicitly.
-
-    The output paths guarantee the following:
-     - Are resolved absolute paths or None.
-     - If a file directory is returned, then it's guaranteed to either not exist or already exist as a directory.
-     - If a data file is returned, then it's guaranteed to either not exist or already exist as a file.
-     - Input can be relative
-     - Input can use ~ for user's home.
-     - Relative input paths are resolved with respect to Weaver's file structucture.
-        - For file directory, source_files_dir is the base.
-        - For the data file, target_data_file is the base.
-     - Absolute input paths (starting with ~, /, ./, ../, ../../, etc.) are resolved. They remain
-       pointing to the same absolute location.
-    """
-
-    # NOTE: Even though I had envisioned this to be very simple behavior,
-    # implementation of this took surprisingly longer than expected. There's
-    # lots of subtelties here and edge cases. I feel like I'm reaching CSS
-    # levels of default-resolution complexity here...
-
-    # TODO: Maybe the target_data_file should also be possible to be set to a
-    # directory, in which case we just compute the default file name based on
-    # the type, then place it in there. Call the variable target_data_path
-    # then?. This isn't supported right now. It will probably cause even more
-    # edge cases, how do we distinguish the parameter is intended as a
-    # directory as opposed to a file without extension? probably user needs to
-    # pass a trailing slash... even if the user passes a trailing slash, what
-    # if the path already exists, but as a file?.
-
-    original_target_file_dir = target_file_dir
-
-    if target_file_dir != None and \
-        (target_file_dir.startswith('~') or target_file_dir.startswith('.'+os.sep) or target_file_dir.startswith('..')):
-        target_file_dir = os.path.abspath(path_resolve(target_file_dir))
-
-    if target_data_file != None and \
-        (target_data_file.startswith('~') or target_data_file.startswith('.'+os.sep) or target_data_file.startswith('..')):
-        target_data_file = os.path.abspath(path_resolve(target_data_file))
-
-    if target_data_file == None and target_type != None:
-        target_data_file = target_type + ".tsplx"
-
-    if target_file_dir == None and target_type != None:
-        target_file_dir = target_type
-
-    if target_file_dir != None and not target_file_dir.startswith(os.sep):
-        target_file_dir = path_cat(source_files_dir, target_file_dir)
-
-    if target_data_file != None and not target_data_file.startswith(os.sep):
-        target_data_file = path_cat(data_dir, target_data_file)
-
-    if target_file_dir == None:
-        target_file_dir = data_dir
-
-    if target_file_dir.endswith('/'):
-        target_file_dir = target_file_dir[:-1]
-
-    success = True
-    if target_file_dir != None and path_exists(target_file_dir) and path_isfile(target_file_dir):
-        if not silent:
-            print (ecma_red("error:") + f" Target file directory '{target_file_dir}' exists but as a file.")
-        success = False
-    if target_data_file != None and path_exists(target_data_file) and path_isdir(target_data_file):
-        if not silent:
-            print (ecma_red("error:") + f" Target data file '{target_data_file}' exists but as a directory.")
-        success = False
-    if not success:
-        return None, None
-
-    if target_type == None:
-        if target_file_dir == None or original_target_file_dir == None:
-            if not silent:
-                print (ecma_red("error:") + " No type specified and no explicit targets set.")
-
-            # TODO: There is a case for passing None type and a directory, then
-            # wanting the directory to be left alone and not return the error
-            # condition of setting both to None. The case is for scanning when
-            # we just want to scan into a directory, without generating data
-            # stubs. Is there a case for the opposite?, meaning, wanting to
-            # pass None type and a data file path, then wanting the file path
-            # to be left alone?. I have a feeling right now that this should
-            # always be an error condition.
-
-            if original_target_file_dir == None:
-                return None, None
-
-            if target_data_file == None:
-                return target_file_dir, None
-
-    return target_file_dir, target_data_file
-
-def get_target_test_w(*args):
-    expected = tuple(None if p==None else os.path.abspath(path_resolve(p)) for p in args[-1])
-
-    new_args = list(args[:-1])
-    new_args.append(expected)
-
-    #print(new_args[:-1])
-    #print (expected)
-    get_target_test(*new_args, silent=True)
-    #print()
 
 def resolve_stub(target_type, tsplx_stub=None, identifier=None, files=None):
     # TODO: Don't pass the stubs as a string template. Should better pass them
@@ -1297,7 +1176,7 @@ def dir_flatten():
 
     if not dry_run:
         for key,content in property_file_content.items():
-            property_file_path = path_cat(data_dir, key + '.tsplx')
+            property_file_path = path_cat(fu.data_dir, key + '.tsplx')
 
             file_existed = True if path_exists(property_file_path) else False
             with open(property_file_path, "+a") as data_file:
@@ -1307,80 +1186,22 @@ def dir_flatten():
                 data_file.write('\n')
 
 def tests():
-    # TODO: I'm pretty sure all these tests can be compressed into much more
-    # smaller code, but at least for now this is exhaustive and easy to debug
-    # when one of them fails.
-    get_target_test_w(None, None, None, (None, None))
-    get_target_test_w(None, None, "anything", (None, None))
+    weaver()
+    tsplx_parser_tests()
+    psplx_parser_tests()
 
-    get_target_test_w(None, ".hidden-folder",        None, ('~/.weaver/files/.hidden-folder',        None))
-    get_target_test_w(None, "subdir/my-data-folder", None, ('~/.weaver/files/subdir/my-data-folder', None))
-    get_target_test_w(None, "~/.app/files/",         None, ('~/.app/files',                          None))
-    get_target_test_w(None, "/opt/app/files/",       None, ('/opt/app/files',                        None))
-    get_target_test_w(None, "./subdir/files/",       None, ('./subdir/files',                        None))
-    get_target_test_w(None, "../../subdir/files/",   None, ('../../subdir/files',                    None))
+    pid = ex_bg (f'python3 ./server/weaver/main.py', echo=False)
+    print (f'Started API server, PID: {pid}')
 
-    get_target_test_w("my-data-type", None, None, ('~/.weaver/files/my-data-type', '~/.weaver/data/my-data-type.tsplx'))
+    try:
+        time.sleep(0.3)
+        tests_python.tests()
 
-    get_target_test_w("my-data-type", None, ".hidden_file.tsplx",                     ('~/.weaver/files/my-data-type', '~/.weaver/data/.hidden_file.tsplx'))
-    get_target_test_w("my-data-type", None, "subdir/my_custom_data_file.tsplx",       ('~/.weaver/files/my-data-type', '~/.weaver/data/subdir/my_custom_data_file.tsplx'))
-    get_target_test_w("my-data-type", None, "/opt/my-app/app-type/somename.tsplx",    ('~/.weaver/files/my-data-type', '/opt/my-app/app-type/somename.tsplx'))
-    get_target_test_w("my-data-type", None, "~/.app-dir/app-type/somename.tsplx",     ('~/.weaver/files/my-data-type', '~/.app-dir/app-type/somename.tsplx'))
-    get_target_test_w("my-data-type", None, "./.app-dir/app-type/somename.tsplx",     ('~/.weaver/files/my-data-type', './.app-dir/app-type/somename.tsplx'))
-    get_target_test_w("my-data-type", None, "../../.app-dir/app-type/somename.tsplx", ('~/.weaver/files/my-data-type', '../../.app-dir/app-type/somename.tsplx'))
-
-    get_target_test_w("my-data-type", ".hidden-folder",        None, ('~/.weaver/files/.hidden-folder',        '~/.weaver/data/my-data-type.tsplx'))
-    get_target_test_w("my-data-type", "subdir/my-data-folder", None, ('~/.weaver/files/subdir/my-data-folder', '~/.weaver/data/my-data-type.tsplx'))
-    get_target_test_w("my-data-type", "~/.app/files/",         None, ('~/.app/files',                          '~/.weaver/data/my-data-type.tsplx'))
-    get_target_test_w("my-data-type", "/opt/app/files/",       None, ('/opt/app/files',                        '~/.weaver/data/my-data-type.tsplx'))
-    get_target_test_w("my-data-type", "./subdir/files/",       None, ('./subdir/files',                        '~/.weaver/data/my-data-type.tsplx'))
-    get_target_test_w("my-data-type", "../../subdir/files/",   None, ('../../subdir/files',                    '~/.weaver/data/my-data-type.tsplx'))
-
-    get_target_test_w("my-data-type", ".hidden-folder", ".hidden_file.tsplx",                     ('~/.weaver/files/.hidden-folder', '~/.weaver/data/.hidden_file.tsplx'))
-    get_target_test_w("my-data-type", ".hidden-folder", "subdir/my_custom_data_file.tsplx",       ('~/.weaver/files/.hidden-folder', '~/.weaver/data/subdir/my_custom_data_file.tsplx'))
-    get_target_test_w("my-data-type", ".hidden-folder", "/opt/my-app/app-type/somename.tsplx",    ('~/.weaver/files/.hidden-folder', '/opt/my-app/app-type/somename.tsplx'))
-    get_target_test_w("my-data-type", ".hidden-folder", "~/.app-dir/app-type/somename.tsplx",     ('~/.weaver/files/.hidden-folder', '~/.app-dir/app-type/somename.tsplx'))
-    get_target_test_w("my-data-type", ".hidden-folder", "./.app-dir/app-type/somename.tsplx",     ('~/.weaver/files/.hidden-folder', './.app-dir/app-type/somename.tsplx'))
-    get_target_test_w("my-data-type", ".hidden-folder", "../../.app-dir/app-type/somename.tsplx", ('~/.weaver/files/.hidden-folder', '../../.app-dir/app-type/somename.tsplx'))
-
-    get_target_test_w("my-data-type", "subdir/my-data-folder", ".hidden_file.tsplx",                     ('~/.weaver/files/subdir/my-data-folder', '~/.weaver/data/.hidden_file.tsplx'))
-    get_target_test_w("my-data-type", "subdir/my-data-folder", "subdir/my_custom_data_file.tsplx",       ('~/.weaver/files/subdir/my-data-folder', '~/.weaver/data/subdir/my_custom_data_file.tsplx'))
-    get_target_test_w("my-data-type", "subdir/my-data-folder", "/opt/my-app/app-type/somename.tsplx",    ('~/.weaver/files/subdir/my-data-folder', '/opt/my-app/app-type/somename.tsplx'))
-    get_target_test_w("my-data-type", "subdir/my-data-folder", "~/.app-dir/app-type/somename.tsplx",     ('~/.weaver/files/subdir/my-data-folder', '~/.app-dir/app-type/somename.tsplx'))
-    get_target_test_w("my-data-type", "subdir/my-data-folder", "./.app-dir/app-type/somename.tsplx",     ('~/.weaver/files/subdir/my-data-folder', './.app-dir/app-type/somename.tsplx'))
-    get_target_test_w("my-data-type", "subdir/my-data-folder", "../../.app-dir/app-type/somename.tsplx", ('~/.weaver/files/subdir/my-data-folder', '../../.app-dir/app-type/somename.tsplx'))
-
-    get_target_test_w("my-data-type", "~/.app/files/", ".hidden_file.tsplx",                     ('~/.app/files', '~/.weaver/data/.hidden_file.tsplx'))
-    get_target_test_w("my-data-type", "~/.app/files/", "subdir/my_custom_data_file.tsplx",       ('~/.app/files', '~/.weaver/data/subdir/my_custom_data_file.tsplx'))
-    get_target_test_w("my-data-type", "~/.app/files/", "/opt/my-app/app-type/somename.tsplx",    ('~/.app/files', '/opt/my-app/app-type/somename.tsplx'))
-    get_target_test_w("my-data-type", "~/.app/files/", "~/.app-dir/app-type/somename.tsplx",     ('~/.app/files', '~/.app-dir/app-type/somename.tsplx'))
-    get_target_test_w("my-data-type", "~/.app/files/", "./.app-dir/app-type/somename.tsplx",     ('~/.app/files', './.app-dir/app-type/somename.tsplx'))
-    get_target_test_w("my-data-type", "~/.app/files/", "../../.app-dir/app-type/somename.tsplx", ('~/.app/files', '../../.app-dir/app-type/somename.tsplx'))
-
-    get_target_test_w("my-data-type", "/opt/app/files/", ".hidden_file.tsplx",                     ('/opt/app/files', '~/.weaver/data/.hidden_file.tsplx'))
-    get_target_test_w("my-data-type", "/opt/app/files/", "subdir/my_custom_data_file.tsplx",       ('/opt/app/files', '~/.weaver/data/subdir/my_custom_data_file.tsplx'))
-    get_target_test_w("my-data-type", "/opt/app/files/", "/opt/my-app/app-type/somename.tsplx",    ('/opt/app/files', '/opt/my-app/app-type/somename.tsplx'))
-    get_target_test_w("my-data-type", "/opt/app/files/", "~/.app-dir/app-type/somename.tsplx",     ('/opt/app/files', '~/.app-dir/app-type/somename.tsplx'))
-    get_target_test_w("my-data-type", "/opt/app/files/", "./.app-dir/app-type/somename.tsplx",     ('/opt/app/files', './.app-dir/app-type/somename.tsplx'))
-    get_target_test_w("my-data-type", "/opt/app/files/", "../../.app-dir/app-type/somename.tsplx", ('/opt/app/files', '../../.app-dir/app-type/somename.tsplx'))
-
-    get_target_test_w("my-data-type", "./subdir/files/", ".hidden_file.tsplx",                     ('./subdir/files', '~/.weaver/data/.hidden_file.tsplx'))
-    get_target_test_w("my-data-type", "./subdir/files/", "subdir/my_custom_data_file.tsplx",       ('./subdir/files', '~/.weaver/data/subdir/my_custom_data_file.tsplx'))
-    get_target_test_w("my-data-type", "./subdir/files/", "/opt/my-app/app-type/somename.tsplx",    ('./subdir/files', '/opt/my-app/app-type/somename.tsplx'))
-    get_target_test_w("my-data-type", "./subdir/files/", "~/.app-dir/app-type/somename.tsplx",     ('./subdir/files', '~/.app-dir/app-type/somename.tsplx'))
-    get_target_test_w("my-data-type", "./subdir/files/", "./.app-dir/app-type/somename.tsplx",     ('./subdir/files', './.app-dir/app-type/somename.tsplx'))
-    get_target_test_w("my-data-type", "./subdir/files/", "../../.app-dir/app-type/somename.tsplx", ('./subdir/files', '../../.app-dir/app-type/somename.tsplx'))
-
-    get_target_test_w("my-data-type", "../../subdir/files/", ".hidden_file.tsplx",                     ('../../subdir/files', '~/.weaver/data/.hidden_file.tsplx'))
-    get_target_test_w("my-data-type", "../../subdir/files/", "subdir/my_custom_data_file.tsplx",       ('../../subdir/files', '~/.weaver/data/subdir/my_custom_data_file.tsplx'))
-    get_target_test_w("my-data-type", "../../subdir/files/", "/opt/my-app/app-type/somename.tsplx",    ('../../subdir/files', '/opt/my-app/app-type/somename.tsplx'))
-    get_target_test_w("my-data-type", "../../subdir/files/", "~/.app-dir/app-type/somename.tsplx",     ('../../subdir/files', '~/.app-dir/app-type/somename.tsplx'))
-    get_target_test_w("my-data-type", "../../subdir/files/", "./.app-dir/app-type/somename.tsplx",     ('../../subdir/files', './.app-dir/app-type/somename.tsplx'))
-    get_target_test_w("my-data-type", "../../subdir/files/", "../../.app-dir/app-type/somename.tsplx", ('../../subdir/files', '../../.app-dir/app-type/somename.tsplx'))
-
-
-def test_file_utility():
-    file_utility_tests.tests()
+    except:
+        print(traceback.format_exc())
+    finally:
+        print (f'Stopping API server, PID: {pid}')
+        ex (f'kill {pid}', echo=False)
 
 
 def id():
@@ -1474,13 +1295,13 @@ def telegram_download_photos():
             target_file_dir = target_type
 
         if not target_file_dir.startswith(os.sep):
-            target_file_dir = path_cat(source_files_dir, target_file_dir)
+            target_file_dir = path_cat(fu.source_files_dir, target_file_dir)
 
         if not target_data_path.startswith(os.sep):
-            target_data_path = path_cat(data_dir, target_data_path)
+            target_data_path = path_cat(fu.data_dir, target_data_path)
 
     if target_file_dir == None:
-        target_file_dir = data_dir
+        target_file_dir = fu.data_dir
 
     print (f'Storing photos in: {target_file_dir}')
     if target_data_path != None:
@@ -1794,7 +1615,7 @@ def process_json_data_dump_2():
             if len(vcard_properties) > 1:
                 res += node_to_object_string([], vcard_properties)
 
-    with open(path_cat(data_dir, 'person.tsplx'), 'w+') as target:
+    with open(path_cat(fu.data_dir, 'person.tsplx'), 'w+') as target:
         target.write(res)
 
 def process_json_data_dump_1():
@@ -1864,7 +1685,7 @@ def process_json_data_dump_1():
 
                 res += node_to_object_string([], item_properties)
 
-    with open(path_cat(data_dir, 'secure.tsplx'), 'w+') as target:
+    with open(path_cat(fu.data_dir, 'secure.tsplx'), 'w+') as target:
         target.write(res)
 
 def process_json_data_dump():
@@ -1915,7 +1736,7 @@ def process_json_data_dump():
 
                 res += node_to_object_string(playlist_floating, playlist_properties, constructors)
 
-    with open(path_cat(data_dir, 'my-playlists.tsplx'), 'w+') as target:
+    with open(path_cat(fu.data_dir, 'my-playlists.tsplx'), 'w+') as target:
         target.write(res)
 
 def process_csv_data_dump():
@@ -2028,7 +1849,7 @@ def process_csv_data_dump():
 
                     res += node_to_object_string([], target_properties, constructors)
 
-    with open(path_cat(data_dir, 'santileortiz-fibery.tsplx'), 'w+') as target:
+    with open(path_cat(fu.data_dir, 'santileortiz-fibery.tsplx'), 'w+') as target:
         target.write(res)
 
 builtin_completions = ['--get_build_deps']

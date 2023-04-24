@@ -2059,7 +2059,48 @@ void block_tree_to_html (struct psx_parser_ctx_t *ctx, struct html_t *html, stru
         str_set_printf (&buff, "h%i", block->heading_number);
         struct html_element_t *new_dom_element = html_new_element (html, str_data(&buff));
 
-        str_set_printf (&buff, "user-content-%s", str_data(&block->inline_content));
+        string_t clean = {0};
+        str_set (&clean, str_data(&block->inline_content));
+
+        // Remove characters: #!"#$%&'()*+,./:;<=>?@[]^`{|}~
+        // TODO: Do this with a loop...
+        str_replace(&clean, "!", "", NULL);
+        str_replace(&clean, "\"", "", NULL);
+        str_replace(&clean, "#", "", NULL);
+        str_replace(&clean, "$", "", NULL);
+        str_replace(&clean, "%", "", NULL);
+        str_replace(&clean, "&", "", NULL);
+        str_replace(&clean, "'", "", NULL);
+        str_replace(&clean, "(", "", NULL);
+        str_replace(&clean, ")", "", NULL);
+        str_replace(&clean, "*", "", NULL);
+        str_replace(&clean, "+", "", NULL);
+        str_replace(&clean, ",", "", NULL);
+        str_replace(&clean, ".", "", NULL);
+        str_replace(&clean, "/", "", NULL);
+        str_replace(&clean, ":", "", NULL);
+        str_replace(&clean, ";", "", NULL);
+        str_replace(&clean, "<", "", NULL);
+        str_replace(&clean, "=", "", NULL);
+        str_replace(&clean, ">", "", NULL);
+        str_replace(&clean, "?", "", NULL);
+        str_replace(&clean, "@", "", NULL);
+        str_replace(&clean, "[", "", NULL);
+        str_replace(&clean, "\\", "", NULL);
+        str_replace(&clean, "]", "", NULL);
+        str_replace(&clean, "^", "", NULL);
+        str_replace(&clean, "`", "", NULL);
+        str_replace(&clean, "{", "", NULL);
+        str_replace(&clean, "|", "", NULL);
+        str_replace(&clean, "}", "", NULL);
+        str_replace(&clean, "~", "", NULL);
+
+        str_replace(&clean, "\t", "", NULL);
+        str_replace(&clean, "\n", "", NULL);
+
+        str_set_printf (&buff, "user-content-%s", str_data(&clean));
+        str_free(&clean);
+
         str_replace(&buff, " ", "-", NULL);
         str_replace(&buff, "'", "", NULL);
         char *lowercase = cstr_to_lower(str_data(&buff));

@@ -29,7 +29,7 @@ ITERATE_DIR_CB(get_test_names)
     string_t buff = {0};
     struct get_test_names_clsr_t *clsr = (struct get_test_names_clsr_t*)data;
 
-    if (!is_dir && strstr(fname, "/"FULL_TEST_DIR"/") == 0) {
+    if (!is_dir && strstr(fname, "/"FULL_TEST_DIR) == 0) {
         char *extension = get_extension (fname);
         if (extension != NULL && strcmp (extension, TSPLX_EXTENSION) == 0) {
             size_t basename_len = 0;

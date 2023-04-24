@@ -195,7 +195,7 @@ ITERATE_DIR_CB(negative_test)
 {
     struct negative_test_clsr_t *clsr = (struct negative_test_clsr_t*)data;
 
-    if (!is_dir && strstr(fname, "/"FULL_TEST_DIR"/") == 0) {
+    if (!is_dir && strstr(fname, "/"FULL_TEST_DIR) == 0) {
         char *basename = path_basename(fname);
         if (strcmp(get_extension(basename), "psplx_error") == 0) {
             mem_pool_t pool = {0};

@@ -3,6 +3,9 @@ from file_utility import *
 
 from natsort import natsorted
 import random
+import filecmp
+
+import requests
 
 test_base = 'bin/test_tree/'
 
@@ -335,7 +338,7 @@ def canonical_file_name_tests():
     test_pop()
 
 def canonical_rename_tests():
-    #test_push ('canonical_rename()')
+    test_push ('canonical_rename()')
 
     rename_test = {
         'dir/DSC00004.JPG': 'dir/JM3CRQJFQH.jpg',
@@ -379,7 +382,7 @@ def canonical_rename_tests():
     }
     canonical_rename_test (rename_test, 'ordered', ordered=True)
 
-    #test_pop()
+    test_pop()
 
 def canonical_move_tests():
     test_push('canonical_move()')
@@ -543,8 +546,10 @@ def canonical_move_tests():
     #  - Test dry_run mode when moving and renumbering, check that the verbose
     #    output is correct.
 
+    test_pop()
+
 def canonical_renumber_tests():
-    #test_push ('canonical_renumber()')
+    test_push ('canonical_renumber()')
 
     renumber_test = {
         'directory/V24J2XQG9G.jpg':  'directory/1_V24J2XQG9G.jpg',
@@ -600,12 +605,98 @@ def canonical_renumber_tests():
     }
     canonical_renumber_test(renumber_test, ["X6F54GQV5H", "MGX8VQPRC3", "W8R6F65XCV", "JM3CRQJFQH"])
 
-    #test_pop()
+    test_pop()
+
+def get_target_test_w(*args):
+    expected = tuple(None if p==None else os.path.abspath(path_resolve(p)) for p in args[-1])
+
+    new_args = list(args[:-1])
+    new_args.append(expected)
+
+    #print(new_args[:-1])
+    #print (expected)
+    get_target_test(*new_args, silent=True)
+    #print()
+
+def get_target_tests():
+    test_push ("get_target()")
+
+    # TODO: I'm pretty sure all these tests can be compressed into much more
+    # smaller code, but at least for now this is exhaustive and easy to debug
+    # when one of them fails.
+    get_target_test_w(None, None, None, (None, None))
+    get_target_test_w(None, None, "anything", (None, None))
+
+    get_target_test_w(None, ".hidden-folder",        None, ('~/.weaver/files/.hidden-folder',        None))
+    get_target_test_w(None, "subdir/my-data-folder", None, ('~/.weaver/files/subdir/my-data-folder', None))
+    get_target_test_w(None, "~/.app/files/",         None, ('~/.app/files',                          None))
+    get_target_test_w(None, "/opt/app/files/",       None, ('/opt/app/files',                        None))
+    get_target_test_w(None, "./subdir/files/",       None, ('./subdir/files',                        None))
+    get_target_test_w(None, "../../subdir/files/",   None, ('../../subdir/files',                    None))
+
+    get_target_test_w("my-data-type", None, None, ('~/.weaver/files/my-data-type', '~/.weaver/data/my-data-type.tsplx'))
+
+    get_target_test_w("my-data-type", None, ".hidden_file.tsplx",                     ('~/.weaver/files/my-data-type', '~/.weaver/data/.hidden_file.tsplx'))
+    get_target_test_w("my-data-type", None, "subdir/my_custom_data_file.tsplx",       ('~/.weaver/files/my-data-type', '~/.weaver/data/subdir/my_custom_data_file.tsplx'))
+    get_target_test_w("my-data-type", None, "/opt/my-app/app-type/somename.tsplx",    ('~/.weaver/files/my-data-type', '/opt/my-app/app-type/somename.tsplx'))
+    get_target_test_w("my-data-type", None, "~/.app-dir/app-type/somename.tsplx",     ('~/.weaver/files/my-data-type', '~/.app-dir/app-type/somename.tsplx'))
+    get_target_test_w("my-data-type", None, "./.app-dir/app-type/somename.tsplx",     ('~/.weaver/files/my-data-type', './.app-dir/app-type/somename.tsplx'))
+    get_target_test_w("my-data-type", None, "../../.app-dir/app-type/somename.tsplx", ('~/.weaver/files/my-data-type', '../../.app-dir/app-type/somename.tsplx'))
+
+    get_target_test_w("my-data-type", ".hidden-folder",        None, ('~/.weaver/files/.hidden-folder',        '~/.weaver/data/my-data-type.tsplx'))
+    get_target_test_w("my-data-type", "subdir/my-data-folder", None, ('~/.weaver/files/subdir/my-data-folder', '~/.weaver/data/my-data-type.tsplx'))
+    get_target_test_w("my-data-type", "~/.app/files/",         None, ('~/.app/files',                          '~/.weaver/data/my-data-type.tsplx'))
+    get_target_test_w("my-data-type", "/opt/app/files/",       None, ('/opt/app/files',                        '~/.weaver/data/my-data-type.tsplx'))
+    get_target_test_w("my-data-type", "./subdir/files/",       None, ('./subdir/files',                        '~/.weaver/data/my-data-type.tsplx'))
+    get_target_test_w("my-data-type", "../../subdir/files/",   None, ('../../subdir/files',                    '~/.weaver/data/my-data-type.tsplx'))
+
+    get_target_test_w("my-data-type", ".hidden-folder", ".hidden_file.tsplx",                     ('~/.weaver/files/.hidden-folder', '~/.weaver/data/.hidden_file.tsplx'))
+    get_target_test_w("my-data-type", ".hidden-folder", "subdir/my_custom_data_file.tsplx",       ('~/.weaver/files/.hidden-folder', '~/.weaver/data/subdir/my_custom_data_file.tsplx'))
+    get_target_test_w("my-data-type", ".hidden-folder", "/opt/my-app/app-type/somename.tsplx",    ('~/.weaver/files/.hidden-folder', '/opt/my-app/app-type/somename.tsplx'))
+    get_target_test_w("my-data-type", ".hidden-folder", "~/.app-dir/app-type/somename.tsplx",     ('~/.weaver/files/.hidden-folder', '~/.app-dir/app-type/somename.tsplx'))
+    get_target_test_w("my-data-type", ".hidden-folder", "./.app-dir/app-type/somename.tsplx",     ('~/.weaver/files/.hidden-folder', './.app-dir/app-type/somename.tsplx'))
+    get_target_test_w("my-data-type", ".hidden-folder", "../../.app-dir/app-type/somename.tsplx", ('~/.weaver/files/.hidden-folder', '../../.app-dir/app-type/somename.tsplx'))
+
+    get_target_test_w("my-data-type", "subdir/my-data-folder", ".hidden_file.tsplx",                     ('~/.weaver/files/subdir/my-data-folder', '~/.weaver/data/.hidden_file.tsplx'))
+    get_target_test_w("my-data-type", "subdir/my-data-folder", "subdir/my_custom_data_file.tsplx",       ('~/.weaver/files/subdir/my-data-folder', '~/.weaver/data/subdir/my_custom_data_file.tsplx'))
+    get_target_test_w("my-data-type", "subdir/my-data-folder", "/opt/my-app/app-type/somename.tsplx",    ('~/.weaver/files/subdir/my-data-folder', '/opt/my-app/app-type/somename.tsplx'))
+    get_target_test_w("my-data-type", "subdir/my-data-folder", "~/.app-dir/app-type/somename.tsplx",     ('~/.weaver/files/subdir/my-data-folder', '~/.app-dir/app-type/somename.tsplx'))
+    get_target_test_w("my-data-type", "subdir/my-data-folder", "./.app-dir/app-type/somename.tsplx",     ('~/.weaver/files/subdir/my-data-folder', './.app-dir/app-type/somename.tsplx'))
+    get_target_test_w("my-data-type", "subdir/my-data-folder", "../../.app-dir/app-type/somename.tsplx", ('~/.weaver/files/subdir/my-data-folder', '../../.app-dir/app-type/somename.tsplx'))
+
+    get_target_test_w("my-data-type", "~/.app/files/", ".hidden_file.tsplx",                     ('~/.app/files', '~/.weaver/data/.hidden_file.tsplx'))
+    get_target_test_w("my-data-type", "~/.app/files/", "subdir/my_custom_data_file.tsplx",       ('~/.app/files', '~/.weaver/data/subdir/my_custom_data_file.tsplx'))
+    get_target_test_w("my-data-type", "~/.app/files/", "/opt/my-app/app-type/somename.tsplx",    ('~/.app/files', '/opt/my-app/app-type/somename.tsplx'))
+    get_target_test_w("my-data-type", "~/.app/files/", "~/.app-dir/app-type/somename.tsplx",     ('~/.app/files', '~/.app-dir/app-type/somename.tsplx'))
+    get_target_test_w("my-data-type", "~/.app/files/", "./.app-dir/app-type/somename.tsplx",     ('~/.app/files', './.app-dir/app-type/somename.tsplx'))
+    get_target_test_w("my-data-type", "~/.app/files/", "../../.app-dir/app-type/somename.tsplx", ('~/.app/files', '../../.app-dir/app-type/somename.tsplx'))
+
+    get_target_test_w("my-data-type", "/opt/app/files/", ".hidden_file.tsplx",                     ('/opt/app/files', '~/.weaver/data/.hidden_file.tsplx'))
+    get_target_test_w("my-data-type", "/opt/app/files/", "subdir/my_custom_data_file.tsplx",       ('/opt/app/files', '~/.weaver/data/subdir/my_custom_data_file.tsplx'))
+    get_target_test_w("my-data-type", "/opt/app/files/", "/opt/my-app/app-type/somename.tsplx",    ('/opt/app/files', '/opt/my-app/app-type/somename.tsplx'))
+    get_target_test_w("my-data-type", "/opt/app/files/", "~/.app-dir/app-type/somename.tsplx",     ('/opt/app/files', '~/.app-dir/app-type/somename.tsplx'))
+    get_target_test_w("my-data-type", "/opt/app/files/", "./.app-dir/app-type/somename.tsplx",     ('/opt/app/files', './.app-dir/app-type/somename.tsplx'))
+    get_target_test_w("my-data-type", "/opt/app/files/", "../../.app-dir/app-type/somename.tsplx", ('/opt/app/files', '../../.app-dir/app-type/somename.tsplx'))
+
+    get_target_test_w("my-data-type", "./subdir/files/", ".hidden_file.tsplx",                     ('./subdir/files', '~/.weaver/data/.hidden_file.tsplx'))
+    get_target_test_w("my-data-type", "./subdir/files/", "subdir/my_custom_data_file.tsplx",       ('./subdir/files', '~/.weaver/data/subdir/my_custom_data_file.tsplx'))
+    get_target_test_w("my-data-type", "./subdir/files/", "/opt/my-app/app-type/somename.tsplx",    ('./subdir/files', '/opt/my-app/app-type/somename.tsplx'))
+    get_target_test_w("my-data-type", "./subdir/files/", "~/.app-dir/app-type/somename.tsplx",     ('./subdir/files', '~/.app-dir/app-type/somename.tsplx'))
+    get_target_test_w("my-data-type", "./subdir/files/", "./.app-dir/app-type/somename.tsplx",     ('./subdir/files', './.app-dir/app-type/somename.tsplx'))
+    get_target_test_w("my-data-type", "./subdir/files/", "../../.app-dir/app-type/somename.tsplx", ('./subdir/files', '../../.app-dir/app-type/somename.tsplx'))
+
+    get_target_test_w("my-data-type", "../../subdir/files/", ".hidden_file.tsplx",                     ('../../subdir/files', '~/.weaver/data/.hidden_file.tsplx'))
+    get_target_test_w("my-data-type", "../../subdir/files/", "subdir/my_custom_data_file.tsplx",       ('../../subdir/files', '~/.weaver/data/subdir/my_custom_data_file.tsplx'))
+    get_target_test_w("my-data-type", "../../subdir/files/", "/opt/my-app/app-type/somename.tsplx",    ('../../subdir/files', '/opt/my-app/app-type/somename.tsplx'))
+    get_target_test_w("my-data-type", "../../subdir/files/", "~/.app-dir/app-type/somename.tsplx",     ('../../subdir/files', '~/.app-dir/app-type/somename.tsplx'))
+    get_target_test_w("my-data-type", "../../subdir/files/", "./.app-dir/app-type/somename.tsplx",     ('../../subdir/files', './.app-dir/app-type/somename.tsplx'))
+    get_target_test_w("my-data-type", "../../subdir/files/", "../../.app-dir/app-type/somename.tsplx", ('../../subdir/files', '../../.app-dir/app-type/somename.tsplx'))
+
+    test_pop()
 
 def mfd_multiple_new_test():
     reset_id_generator()
 
-    #test_force_output()
     test_push(f'{get_function_name()}')
     ensure_dir(test_base)
 
@@ -833,17 +924,127 @@ def mfd_test2():
     shutil.rmtree (test_base)
 
 def mfd_tests():
+    test_push("Multi File Document")
+
     mfd_multiple_new_test()
     mfd_test1()
     mfd_test2()
 
-def tests():
-    #test_force_output()
+    test_pop()
+
+
+def file_utility():
+    test_push("file_utility.py")
 
     canonical_file_name_tests()
     canonical_rename_tests()
     canonical_move_tests()
-
+    get_target_tests()
     mfd_tests()
-
     canonical_renumber_tests()
+
+    test_pop()
+
+#########
+#  API
+
+def autolink_test(device_id, q, expected_target):
+    test_push(f'q={q}')
+    url = f"http://localhost:9000/autolink?q={q}&d={device_id}"
+
+    response = requests.get(url, allow_redirects=False)
+    success = test (response.status_code, 302, 'Is redirect')
+
+    success = test (response.headers.get('Location'), expected_target, 'Expected redirect location')
+    if not success:
+        test_error(response.headers.get('Location') + ' != ' + expected_target)
+
+    test_pop()
+
+def api():
+    test_push(f'API')
+
+    test_push(f'autolink')
+    device_id = "FRR94HG5FP"
+    autolink_test (device_id, "NotInWeaver", "https://google.com/search?q=NotInWeaver");
+    autolink_test (device_id, "Sample PKB", "http://localhost:8000?n=68W5X99W59");
+    test_pop()
+
+    test_pop()
+
+###############
+#  Static Site
+
+def test_dir(dir1, dir2):
+    """
+    Recursively tests that two directories are equal.
+    """
+
+    dirs_cmp = filecmp.dircmp(dir1, dir2)
+    equal = True
+
+    for file in dirs_cmp.left_only:
+        test_error(f"File {os.path.join(dir1, file)} exists only in {dir1}")
+        equal = False
+
+    for file in dirs_cmp.right_only:
+        test_error(f"File {os.path.join(dir2, file)} exists only in {dir2}")
+        equal = False
+
+    for file in dirs_cmp.diff_files:
+        test_error(f"{os.path.join(dir1, file)} != {os.path.join(dir2, file)}")
+        equal = False
+
+    for common_dir in dirs_cmp.common_dirs:
+        dir1_path = os.path.join(dir1, common_dir)
+        dir2_path = os.path.join(dir2, common_dir)
+        if not test_dir(dir1_path, dir2_path):
+            equal = False
+
+    return equal
+
+def static_site_test(source, target, expected, public=False):
+    reset_id_generator()
+    public_str = ''
+    if public:
+        public_str = '--public'
+    ex (f'./bin/weaver generate --home {source} --output-dir {target} --static {public_str} --deterministic', echo=False)
+    success = test_dir(target, expected)
+    shutil.rmtree (target)
+    return success
+
+###############
+#  Entrypoint
+
+def tests():
+    #test_force_output()
+
+    test_push(f'TSPLX')
+    output = ex('bin/tsplx_parser_tests', ret_stdout=True, echo=False)
+    test_error(output, indent=0)
+    test_pop(False)
+
+    test_push(f'PSPLX')
+    output = ex('bin/psplx_parser_tests', ret_stdout=True, echo=False)
+    test_error(output, indent=0)
+    test_pop(False)
+
+    test_push(f'Public static example')
+    success = static_site_test ('./tests/example', './bin/public_static', './tests/example.public', public=True)
+    test_pop(success)
+
+    test_push(f'Full static example')
+    # To avoid having to add all public pages both in the public and full
+    # expected outputs, we always use the public one as a base, then the full
+    # expected only contains files that will change its rendering from full to
+    # public.
+    expected_full = './bin/full_static_expected'
+    ex (f'cp -r ./tests/example.public/ {expected_full}', echo=False)
+    ex (f'cp -r ./tests/example.full/* {expected_full}', echo=False)
+    success = static_site_test ('./tests/example', './bin/full_static', expected_full)
+    shutil.rmtree (expected_full)
+    test_pop(success)
+
+    file_utility()
+
+    api()

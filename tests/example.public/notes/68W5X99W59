@@ -1,0 +1,12 @@
+<div id="68W5X99W59">
+  <h1 id="user-content-sample-pkb">Sample PKB</h1>
+  <div class="type-list"></div>
+  <p>This is a small personal knowledge base that tests features beyond TSPLX/PSPLX syntax parsing and HTML generation.</p>
+  <p>In this environment we can test for example the difference between local and public site generations, linking between pages, data (consolidation/navigation/visualization), file references etc.</p>
+  <p>Tested features</p>
+  <ul>
+    <li>
+      <p><a class="note-link" href="?n=MJRX49RR78" onclick="return open_note('MJRX49RR78');">Redacting</a></p>
+    </li>
+  </ul>
+</div>

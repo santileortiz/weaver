@@ -1,0 +1,19 @@
+<div id="MJRX49RR78">
+  <h1 id="user-content-redacting">Redacting</h1>
+  <div class="type-list"></div>
+  <p>Redacting is the mechanism used to separate personal from public knowledge.</p>
+  <div style="padding: 0.5em 0;">
+    <div class="attributed-block">
+      <p>This is an example of a block that only shows in the personal rendering.</p>
+      <div style="padding: var(--bleed); background-color: var(--secondary-bg-color);border-top: 1px solid #0000001c;">
+        <div class="type-list">
+          <div class="type">personal</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <h4>Backlinks</h4>
+  <div class="backlinks">
+    <p><a class="note-link" href="?n=68W5X99W59" onclick="return open_note('68W5X99W59');">Sample PKB</a></p>
+  </div>
+</div>

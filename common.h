@@ -4331,7 +4331,7 @@ for (; varname != NULL; varname = varname->next)
 #define _linked_list_sort_implementation(FUNCNAME,TYPE,NEXT_FIELD)  \
 TYPE* FUNCNAME ## _user_data (TYPE **head, int n, void *user_data)  \
 {                                                                   \
-    if (head == NULL || n == 0) {                                   \
+    if (head == NULL) {                                             \
         return NULL;                                                \
     }                                                               \
                                                                     \
@@ -4342,6 +4342,10 @@ TYPE* FUNCNAME ## _user_data (TYPE **head, int n, void *user_data)  \
             n++;                                                    \
             node = node->NEXT_FIELD;                                \
         }                                                           \
+    }                                                               \
+                                                                    \
+    if (n == 0) {                                                   \
+        return NULL;                                                \
     }                                                               \
                                                                     \
     TYPE *node = *head;                                             \

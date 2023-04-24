@@ -1,0 +1,6 @@
+# Redacting
+
+Redacting is the mechanism used to separate personal from public knowledge.
+
+This is an example of a block that only shows in the personal rendering.
+^personal
