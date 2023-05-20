@@ -415,7 +415,21 @@ def set_echo_mode():
 def ex_escape (s):
     return s.replace ('\n', '').replace ('{', '{{').replace ('}','}}')
 
-def ex_bg (cmd, echo=True, cwd=None, log=None):
+class LogAndConsoleRedirect:
+    def __init__(self, logfile):
+        self.log = open(logfile, 'wb')
+
+    def write(self, message):
+        self.log.write(message)
+        sys.stdout.write(message)
+
+    def flush(self):
+        pass
+
+    def close(self):
+        self.log.close()
+
+def ex_bg (cmd, echo=True, cwd=None, log=None, quiet=True, env={}):
     """
     This does not invoke a full wrapping shell, this means shell syntax doesn't
     work here. IO redirection using >, >>, <, << or | will not work. Chaining
@@ -453,26 +467,31 @@ def ex_bg (cmd, echo=True, cwd=None, log=None):
     if g_echo_mode:
         return
 
-    if log == None:
-        redirect = open(os.devnull, 'wb')
-    else:
+    if log != None and not quiet:
+        redirect = LogAndConsoleRedirect(log)
+    elif log != None and quiet:
         redirect = open(log, 'wb')
+    elif log == None and not quiet:
+        redirect = None
+    elif log == None and quiet:
+        redirect = open(os.devnull, 'wb')
 
     # NOTE: Passing cmd as a string does not work when shell=False, and we want
     # shell=False to disable the wrapping shell. We use shlex's split to
     # correctly compute the parameters, even when there are spaces inside
     # quoted strings or escaped space characters.
-    process = subprocess.Popen(shlex.split(cmd), shell=False, stdout=redirect, stderr=redirect, cwd=cwd)
+    process = subprocess.Popen(shlex.split(cmd), shell=False, stdout=redirect, stderr=redirect, cwd=cwd, env=dict(os.environ, **env))
 
-    redirect.close()
+    if redirect != None:
+        redirect.close()
     return process.pid
 
 # TODO: Is there a way to do this in python without calling a shell?
-def ex_bg_kill (pid):
+def ex_bg_kill (pid, **kargs):
     if is_windows():
-        ex(f'taskkill /F /PID {pid}')
+        ex(f'taskkill /F /PID {pid}', **kargs)
     else:
-        ex(f'kill {pid}')
+        ex(f'kill {pid}', **kargs)
 
 def ex (cmd, no_stdout=False, no_stderr=False, quiet=False, ret_stdout=False, echo=True, cwd=None):
     global g_dry_run
