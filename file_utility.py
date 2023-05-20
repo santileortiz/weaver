@@ -45,7 +45,7 @@ def copy_changed(src, dst):
 
     install_files(file_dict, '/')
 
-canonical_fname_r = '^(?:(?P<idx>[0-9]*)_)?(?:(?P<prefix>.*?)_)?(?P<id>[23456789CFGHJMPQRVWX]{8,})(?P<location>(?:\.[0-9]+)+)?(?: (?P<name>.+))?\.(?P<extension>.*)$'
+canonical_fname_r = '^(?:(?P<idx>[0-9]*)_)?(?:(?P<prefix>.*?)_)?(?P<id>[23456789CFGHJMPQRVWX]{8,})(?P<location>(?:\.[0-9]+)+)?(?: (?P<name>.+?))?(?:\.(?P<extension>.+))?$'
 
 
 # TODO: Implement something like an improved C struct but in Python.
@@ -114,8 +114,46 @@ def canonical_parse (path):
 
     return CanonicalName(is_canonical, idx, prefix, identifier, location, name, extension)
 
-def is_canonical (path):
-    return canonical_parse.is_canonical
+def file_has_attachment(path, canonical_name=None):
+    """
+    A a file in canonical form has an attachment if there's any other file
+    using the same ID. For instance, all files of a multi file document are
+    attached to each other.
+
+    canonical_name is only provided to avoid repeated parsing of path if it has
+    already been parsed. Behavior is undefined if the passed canonical_name
+    doesn't match the path.
+    """
+
+    if canonical_name == None:
+        canonical_name = canonical_parse(path)
+
+    out = ex (f'./bin/weaver lookup {canonical_name.identifier}', echo=False, ret_stdout=True)
+
+    # TODO: Need to cleanup Weaver's output so we don't get any warnings for
+    # the lookup command.
+    for l in iter(out.splitlines()):
+        if "warning:" not in l and l.strip("'") != os.path.abspath(path_resolve(path)):
+            return True
+
+    return False
+
+def entity_has_attachment(identifier):
+    """
+    An entity has an attachment if there's at least one file in canonical form with
+    the entity's ID in its name. For instance, all pages have their PSPLX text
+    file as attachment.
+    """
+
+    out = ex (f'./bin/weaver lookup {identifier}', echo=False, ret_stdout=True)
+
+    # TODO: Need to cleanup Weaver's output so we don't get any warnings for
+    # the lookup command.
+    for l in iter(out.splitlines()):
+        if "warning:" not in l:
+            return True
+
+    return False
 
 def collect_canonical_fnames (path):
     has_non_canonical = False
