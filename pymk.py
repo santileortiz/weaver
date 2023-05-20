@@ -174,16 +174,9 @@ def search_notes ():
             note_f.close()
 
 def generate_common ():
-    success = True
-    if c_needs_rebuild ('weaver.c', './bin/weaver') or ex (f'./bin/weaver --has-js', echo=False) == 0:
-        print ('Building weaver...')
-        if weaver_build (True) != 0:
-            success = False
-        else:
-            print()
-
+    success = weaver_maybe()
     fu.copy_changed(static_dir, out_dir)
-    fu.copy_changed(fu.source_files_dir, path_cat(out_dir, files_dirname))
+    fu.copy_changed(fu.source_files_dir, path_cat(out_dir, fu.files_dirname))
 
     return success
 
@@ -234,6 +227,18 @@ def common_build(c_sources, out_fname, use_js, subprocess_test=True):
 
 def weaver_build (use_js):
     return common_build ("weaver.c", 'bin/weaver', use_js)
+
+# TODO: Can this be the default weaver snip?, or there are cases where our
+# rebuild detection doesn't correctly work and we want to force it to rebuild?
+def weaver_maybe():
+    success = True
+    if c_needs_rebuild ('weaver.c', './bin/weaver') or ex (f'./bin/weaver --has-js', echo=False) == 0:
+        print ('Building weaver...')
+        if weaver_build (True) != 0:
+            success = False
+        else:
+            print()
+    return success
 
 def weaver():
     weaver_build (check_js_toggle ())
@@ -333,9 +338,30 @@ def file_move ():
         print ('Dry run by default, to perform changes use --execute')
 
 def file_store():
-    is_group = get_cli_bool_opt('--group')
+    is_sequence = get_cli_bool_opt('--sequence')
+    attach_target = get_cli_arg_opt('--attach')
     is_vim_mode = get_cli_bool_opt('--vim')
     args = get_cli_no_opt()
+
+    if is_sequence and attach_target:
+        print ("Only one allowed between: --sequence, --attach")
+        return
+
+    identifier = None
+    if attach_target:
+        cf = fu.canonical_parse(attach_target)
+        if not cf.is_canonical:
+            print ('Target is not a canonical file name.')
+            return
+
+        if fu.file_has_attachment(attach_target):
+            print ('Target already has an attachment.')
+            return
+
+        identifier = cf.identifier
+
+    if is_sequence:
+        identifier = fu.new_identifier()
 
     files = []
     if args == None:
@@ -346,16 +372,11 @@ def file_store():
     else:
         files = args
 
-
-    identifier = None
-    if is_group:
-        identifier = fu.new_identifier()
-
     location = []
     original_paths = []
     new_basenames = []
     for i,path in enumerate(files,1):
-        if is_group and len(files) > 1:
+        if is_sequence and len(files) > 1:
             location = [i]
 
         error, new_path = fu.file_canonical_rename(path, fu.source_files_dir,
@@ -1185,24 +1206,52 @@ def dir_flatten():
                 data_file.write('\n'.join(content))
                 data_file.write('\n')
 
-def tests():
-    weaver()
-    tsplx_parser_tests()
-    psplx_parser_tests()
-
-    pid = ex_bg (f'python3 ./server/weaver/main.py', echo=False)
-    print (f'Started API server, PID: {pid}')
+# TODO: How can we do this only using Python's standard library?, so we can
+# include it in mkpy/utility.py
+def pid_is_running(pid):        
+    """
+    Check if process is running.
+    """
 
     try:
-        time.sleep(0.3)
-        tests_python.tests()
+        process = psutil.Process(pid)
+        return process.status() != psutil.STATUS_ZOMBIE
+    except psutil.NoSuchProcess:
+        return False
 
-    except:
-        print(traceback.format_exc())
-    finally:
+def tests():
+    # TODO: Only build if necessary
+    #tsplx_parser_tests()
+    #psplx_parser_tests()
+
+
+    weaver_maybe()
+
+
+    server_home = 'bin/server_home'
+    log = f'{server_home}/server.log'
+    ensure_dir (server_home)
+    ex(f'cp tests/example/config.json {server_home}')
+    pid = ex_bg (f'python3 ../../server/main.py', log=log, quiet=True, cwd=server_home, env={"PYTHONPATH": "../../", "WEAVERHOME": '.'})
+    time.sleep(0.5)
+
+    if pid_is_running(pid):
+        print (f'Started API server, PID: {pid}')
+    else:
+        ex (f'cat {log}')
+        print (ecma_red('error:'), 'server failed to start')
+        return
+
+
+    tests_python.tests()
+
+
+    if pid_is_running(pid):
         print (f'Stopping API server, PID: {pid}')
-        ex (f'kill {pid}', echo=False)
+        ex_bg_kill (pid, echo=False)
 
+    #ex (f'cat {log}')
+    shutil.rmtree (server_home)
 
 def id():
     args = get_cli_no_opt()

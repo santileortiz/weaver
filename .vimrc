@@ -23,7 +23,13 @@ set cole=1
 " Only one identifier is created and inserted to the editor. If multiple files
 " were selected, they will be added to the same file sequence corresponding to
 " the new identifier.
-:command! FilesGroup :exe ':normal a' . system('./pymk.py file_store --vim --group') . ''
+:command! FileSequence :exe ':normal a' . system('./pymk.py file_store --vim --sequence') . ''
+
+" No identifier is created, will use the one in the filename of the active
+" buffer. This doesn't add anything into the page because files are implicitly
+" linked by having the same ID. Execution fails if there's already a file with
+" that ID.
+:command! FileAttach :exe ':echo "' . system('./pymk.py file_store --vim --attach "' . expand("%:p") . '"') . '"'
 
 " Receives as parameter a type, the correct file for the type's data is opened
 " and a new instance is appended to it (presumably using the default
