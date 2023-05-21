@@ -364,15 +364,19 @@ int main(int argc, char** argv)
                 }
                 str_cat_c(&generated_data, "];\n\n");
 
+                string_t escaped_title = {0};
                 is_first = true;
                 str_cat_c(&generated_data, "id_to_note_title = {");
                 LINKED_LIST_FOR (struct note_t*, curr_note, rt->notes) {
                     if (!is_first) str_cat_c(&generated_data, ", ");
                     is_first = false;
 
-                    str_cat_printf(&generated_data, "\"%s\":\"%s\"", curr_note->id, str_data(&curr_note->title));
+                    str_set (&escaped_title, str_data(&curr_note->title));
+                    str_replace (&escaped_title, "\"", "\\\"", NULL);
+                    str_cat_printf(&generated_data, "\"%s\":\"%s\"", curr_note->id, str_data(&escaped_title));
                 }
                 str_cat_c(&generated_data, "};\n\n");
+                str_free(&escaped_title);
 
 
                 str_cat_c(&generated_data, "virtual_entities = {\n");
