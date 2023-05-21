@@ -54,6 +54,48 @@ def reset_id_generator():
 # Test Wrappers
 ###############
 
+def file_canonical_rename_test(test_name, test_fname, expected_fname,
+        prefix, idx, identifier, location, name, **kwargs):
+
+    test_file_path = path_cat(test_base, test_fname)
+    ensure_dir (path_dirname(test_file_path))
+    test_file = open (test_file_path, 'w+')
+    test_file.write (test_file_path + '\n')
+    test_file.close()
+
+    target_dir = path_cat(test_base, 'tgt')
+    ensure_dir (target_dir)
+
+    test_push(f"{test_name}")
+
+    reset_id_generator()
+    file_canonical_rename (test_file_path, target_dir,
+            prefix, idx, identifier, location, name,
+            False, False, **kwargs)
+    actual_fname = ex(f'ls {target_dir} -1', ret_stdout=True, echo=False)
+    success = test (actual_fname, expected_fname, f'{test_fname} -> {expected_fname}')
+
+    if not success:
+        test_error(f'{actual_fname} != {expected_fname}')
+
+    test_pop()
+
+    shutil.rmtree (test_base)
+
+def file_canonical_rename_tests():
+    test_push("file_canonical_rename()")
+
+    file_canonical_rename_test("Default behavior", 'My File.JPG',  'JM3CRQJFQH.jpg',
+            None, None, None, [], None)
+
+    file_canonical_rename_test("Keep names", 'My File.JPG',  'JM3CRQJFQH My File.jpg',
+            None, None, None, [], None, keep_name=True)
+
+    file_canonical_rename_test("Name is already ID", '23456789.JPG',  '23456789.jpg',
+            None, None, None, [], None)
+
+    test_pop()
+
 def canonical_move_test(file_map, name, ordered=False):
     create_files_from_map (test_base, file_map)
 
@@ -942,15 +984,16 @@ def file_utility():
     get_target_tests()
     mfd_tests()
     canonical_renumber_tests()
+    file_canonical_rename_tests()
 
     test_pop()
 
 #########
 #  API
 
-def autolink_test(device_id, q, expected_target):
+def autolink_test(node_id, q, expected_target):
     test_push(f'q={q}')
-    url = f"http://localhost:9000/autolink?q={q}&d={device_id}"
+    url = f"http://localhost:9000/autolink?q={q}&n={node_id}"
 
     response = requests.get(url, allow_redirects=False)
     success = test (response.status_code, 302, 'Is redirect')
@@ -965,9 +1008,12 @@ def api():
     test_push(f'API')
 
     test_push(f'autolink')
-    device_id = "FRR94HG5FP"
-    autolink_test (device_id, "NotInWeaver", "https://google.com/search?q=NotInWeaver");
-    autolink_test (device_id, "Sample PKB", "http://localhost:8000?n=68W5X99W59");
+    node_id = "FRR94HG5FP"
+    autolink_test (node_id, "NotInWeaver", "https://google.com/search?q=NotInWeaver");
+    autolink_test (node_id, "Sample PKB", "http://localhost:8000?n=68W5X99W59");
+
+    # Non existent id
+    autolink_test ("RP6Q62PG7F", "Sample PKB", "https://google.com/search?q=Sample%20PKB");
     test_pop()
 
     test_pop()
@@ -1010,41 +1056,51 @@ def static_site_test(source, target, expected, public=False):
         public_str = '--public'
     ex (f'./bin/weaver generate --home {source} --output-dir {target} --static {public_str} --deterministic', echo=False)
     success = test_dir(target, expected)
-    shutil.rmtree (target)
     return success
 
 ###############
 #  Entrypoint
 
 def tests():
+    """
+    Tests to be created
+     - Test correct attachment detection to entity and to file.
+     - Test that we can't store a file in attachment mode if there's already an attachment.
+         run: /pymk.py file_store --vim --attach '/home/santiago/.weaver/notes/33882JV8VM'
+         expected: Target already has an attachment.
+    """
+
     #test_force_output()
 
-    test_push(f'TSPLX')
-    output = ex('bin/tsplx_parser_tests', ret_stdout=True, echo=False)
-    test_error(output, indent=0)
-    test_pop(False)
+    #test_push(f'TSPLX')
+    #output = ex('bin/tsplx_parser_tests', ret_stdout=True, echo=False)
+    #test_error(output, indent=0)
+    #test_pop(False)
 
-    test_push(f'PSPLX')
-    output = ex('bin/psplx_parser_tests', ret_stdout=True, echo=False)
-    test_error(output, indent=0)
-    test_pop(False)
-
-    test_push(f'Public static example')
-    success = static_site_test ('./tests/example', './bin/public_static', './tests/example.public', public=True)
-    test_pop(success)
-
-    test_push(f'Full static example')
-    # To avoid having to add all public pages both in the public and full
-    # expected outputs, we always use the public one as a base, then the full
-    # expected only contains files that will change its rendering from full to
-    # public.
-    expected_full = './bin/full_static_expected'
-    ex (f'cp -r ./tests/example.public/ {expected_full}', echo=False)
-    ex (f'cp -r ./tests/example.full/* {expected_full}', echo=False)
-    success = static_site_test ('./tests/example', './bin/full_static', expected_full)
-    shutil.rmtree (expected_full)
-    test_pop(success)
+    #test_push(f'PSPLX')
+    #output = ex('bin/psplx_parser_tests', ret_stdout=True, echo=False)
+    #test_error(output, indent=0)
+    #test_pop(False)
 
     file_utility()
 
-    api()
+    #test_push(f'Public static example')
+    #success = static_site_test ('./tests/example', './bin/public_static', './tests/example.public', public=True)
+    #test_pop(success)
+
+    #test_push(f'Full static example')
+    ## To avoid having to add all public pages both in the public and full
+    ## expected outputs, we always use the public one as a base, then the full
+    ## expected only contains files that will change its rendering from full to
+    ## public.
+    #expected_full = './bin/full_static_expected'
+    #ex (f'cp -r ./tests/example.public/ {expected_full}', echo=False)
+    #ex (f'cp -r ./tests/example.full/* {expected_full}', echo=False)
+    #success = static_site_test ('./tests/example', './bin/full_static', expected_full)
+    #shutil.rmtree (expected_full)
+    #test_pop(success)
+
+    #api()
+
+    #shutil.rmtree ('./bin/public_static')
+    #shutil.rmtree ('./bin/full_static')

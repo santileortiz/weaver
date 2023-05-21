@@ -301,6 +301,9 @@ def file_canonical_rename (path, target,
     if target == None:
         target = path_dirname(path)
 
+    if identifier == None and canonical_name.is_canonical:
+        identifier = canonical_name.identifier
+
     new_fname_error, new_fname = new_canonical_name(prefix=prefix,
             idx=idx,
             identifier=identifier,
