@@ -120,6 +120,154 @@ enum cli_output_type_t {
     CLI_OUTPUT_TYPE_DEFAULT
 };
 
+void generate_data_json (struct note_runtime_t *rt, char *out_fname)
+{
+    // TODO: This should create an identity map serialization of all entities.
+    // It should call into a generic JSON serializer for TSPLX data.
+
+    string_t generated_data = {0};
+
+    bool is_first = true;
+
+    string_t escaped_title = {0};
+    is_first = true;
+    str_cat_c(&generated_data, "{");
+    LINKED_LIST_FOR (struct note_t*, curr_note, rt->notes) {
+        if (!is_first) str_cat_c(&generated_data, ",\n");
+        is_first = false;
+
+        str_set (&escaped_title, str_data(&curr_note->title));
+        str_replace (&escaped_title, "\"", "\\\"", NULL);
+        str_cat_printf(&generated_data, "\"%s\":", curr_note->id);
+
+        str_cat_c(&generated_data, "{");
+        str_cat_printf(&generated_data, "\"name\":\"%s\",", str_data(&escaped_title));
+        str_cat_printf(&generated_data, "\"@type\":\"page\"");
+        str_cat_c(&generated_data, "}");
+    }
+    str_cat_c(&generated_data, "}\n");
+    str_free(&escaped_title);
+
+    full_file_write (str_data(&generated_data), str_len(&generated_data), out_fname);
+    str_free (&generated_data);
+}
+
+void generate_data_javascript (struct note_runtime_t *rt, char *out_fname)
+{
+    string_t generated_data = {0};
+
+    bool is_first = true;
+    str_cat_c(&generated_data, "title_notes = [");
+    for (int i=0; i<rt->title_note_ids_len; i++) {
+        if (!is_first) str_cat_c(&generated_data, ",");
+        is_first = false;
+
+        str_cat_printf(&generated_data, "\"%s\"", rt->title_note_ids[i]);
+    }
+    str_cat_c(&generated_data, "];\n\n");
+
+
+    str_cat_c(&generated_data, "virtual_entities = {\n");
+
+    LINKED_LIST_FOR (struct splx_node_list_t *, curr_list_node, rt->sd.entities->floating_values) {
+        struct splx_node_t *entity = curr_list_node->node;
+
+        if (!splx_node_is_referenceable (entity)) {
+            struct splx_node_t *virtual_id = splx_node_get_attribute (entity, "t:virtual_id");
+
+            // Generate PSPLX
+            string_t psplx = {0};
+            str_cat_c (&psplx, "# ");
+
+            char *name_str = NULL;
+            {
+                string_t *name = splx_node_get_name (entity);
+                if (name != NULL) {
+                    name_str = str_data(name);
+                } else {
+                    name_str = "<++>";
+                }
+            }
+            str_cat_c (&psplx, name_str);
+            str_replace (&psplx, "'", "\\'", NULL);
+            str_replace (&psplx, "\n", " ", NULL);
+            str_cat_c (&psplx, "\n");
+
+            struct splx_node_list_t *types = splx_node_get_attributes (entity, "a");
+            LINKED_LIST_FOR (struct splx_node_list_t *, curr_attr, types) {
+                struct splx_node_t *node = curr_attr->node;
+
+                str_cat_c (&psplx, "^");
+                str_cat_c (&psplx, str_data(&node->str));
+            }
+
+            str_replace (&psplx, "\n", "\\n", NULL);
+
+
+            // Generate HTML
+            string_t html = {0};
+
+            STACK_ALLOCATE (struct note_t, dummy_note);
+            note_init (dummy_note);
+            str_set (&dummy_note->title, name_str);
+
+            STACK_ALLOCATE (struct psx_parser_state_t, ps);
+            STACK_ALLOCATE (struct psx_parser_ctx_t, ctx);
+            ps->block_allocation.pool = &ps->pool;
+
+            dummy_note->tree = psx_container_block_new(ps, BLOCK_TYPE_ROOT, 0);
+            dummy_note->tree->data = entity;
+            struct psx_block_t *heading = psx_container_block_new(ps, BLOCK_TYPE_HEADING, 0);
+            str_set (&heading->inline_content, name_str);
+            heading->heading_number = 1;
+            LINKED_LIST_APPEND (dummy_note->tree->block_content, heading);
+
+            dummy_note->html = html_new (&dummy_note->pool, "div");
+            if (virtual_id != NULL) {
+                html_element_attribute_set (dummy_note->html, dummy_note->html->root, "id", str_data(splx_node_get_id (virtual_id)));
+            }
+            block_tree_to_html (ctx, dummy_note->html, dummy_note->tree, dummy_note->html->root);
+            render_backlinks (rt, dummy_note);
+            str_cat_html (&html, dummy_note->html, 2);
+            str_replace (&html, "'", "\\'", NULL);
+            str_replace (&html, "\n", "\\n", NULL);
+            note_destroy (dummy_note);
+            ps_destroy (ps);
+
+
+            // Generate TSPLX
+            string_t tsplx = {0};
+            str_cat_splx_canonical_shallow (&tsplx, entity);
+            str_replace (&tsplx, "'", "\\'", NULL);
+            str_replace (&tsplx, "\n", "\\n", NULL);
+
+
+            string_t name_escaped = {0};
+            str_set (&name_escaped, name_str);
+            str_replace (&name_escaped, "\n", " ", NULL);
+            str_replace (&name_escaped, "'", "\\'", NULL);
+
+            if (virtual_id != NULL) {
+                str_cat_printf(&generated_data,
+                               "  '%s': {psplx: '%s', html: '%s', tsplx: '%s', title: '%s'},\n",
+                               str_data(splx_node_get_id (virtual_id)),
+                               str_data(&psplx),
+                               str_data(&html),
+                               str_data(&tsplx),
+                               str_data(&name_escaped));
+            }
+
+            str_free (&tsplx);
+            str_free (&html);
+            str_free (&psplx);
+        }
+    }
+
+    str_cat_c(&generated_data, "};\n");
+    full_file_write (str_data(&generated_data), str_len(&generated_data), out_fname);
+    str_free (&generated_data);
+}
+
 int main(int argc, char** argv)
 {
     int retval = 0;
@@ -231,6 +379,10 @@ int main(int argc, char** argv)
     string_t output_data_file = {0};
     str_set_path (&output_data_file, str_data(&cfg->target_path));
     path_cat (&output_data_file, "data.js");
+
+    string_t output_json_file = {0};
+    str_set_path (&output_json_file, str_data(&cfg->target_path));
+    path_cat (&output_json_file, "data.json");
 
     str_set_path (&cfg->target_notes_path, str_data(&cfg->target_path));
     path_cat (&cfg->target_notes_path, "notes");
@@ -351,133 +503,8 @@ int main(int argc, char** argv)
                     printf (ECMA_RED("error: ") "refusing to generate static site. Using command line input but output directory is missing as parameter, use --output-dir\n");
                 }
 
-
-                string_t generated_data = {0};
-
-                bool is_first = true;
-                str_cat_c(&generated_data, "title_notes = [");
-                for (int i=0; i<rt->title_note_ids_len; i++) {
-                    if (!is_first) str_cat_c(&generated_data, ",");
-                    is_first = false;
-
-                    str_cat_printf(&generated_data, "\"%s\"", rt->title_note_ids[i]);
-                }
-                str_cat_c(&generated_data, "];\n\n");
-
-                string_t escaped_title = {0};
-                is_first = true;
-                str_cat_c(&generated_data, "id_to_note_title = {");
-                LINKED_LIST_FOR (struct note_t*, curr_note, rt->notes) {
-                    if (!is_first) str_cat_c(&generated_data, ", ");
-                    is_first = false;
-
-                    str_set (&escaped_title, str_data(&curr_note->title));
-                    str_replace (&escaped_title, "\"", "\\\"", NULL);
-                    str_cat_printf(&generated_data, "\"%s\":\"%s\"", curr_note->id, str_data(&escaped_title));
-                }
-                str_cat_c(&generated_data, "};\n\n");
-                str_free(&escaped_title);
-
-
-                str_cat_c(&generated_data, "virtual_entities = {\n");
-
-                LINKED_LIST_FOR (struct splx_node_list_t *, curr_list_node, rt->sd.entities->floating_values) {
-                    struct splx_node_t *entity = curr_list_node->node;
-
-                    if (!splx_node_is_referenceable (entity)) {
-                        struct splx_node_t *virtual_id = splx_node_get_attribute (entity, "t:virtual_id");
-
-                        // Generate PSPLX
-                        string_t psplx = {0};
-                        str_cat_c (&psplx, "# ");
-
-                        char *name_str = NULL;
-                        {
-                            string_t *name = splx_node_get_name (entity);
-                            if (name != NULL) {
-                                name_str = str_data(name);
-                            } else {
-                                name_str = "<++>";
-                            }
-                        }
-                        str_cat_c (&psplx, name_str);
-                        str_replace (&psplx, "'", "\\'", NULL);
-                        str_replace (&psplx, "\n", " ", NULL);
-                        str_cat_c (&psplx, "\n");
-
-                        struct splx_node_list_t *types = splx_node_get_attributes (entity, "a");
-                        LINKED_LIST_FOR (struct splx_node_list_t *, curr_attr, types) {
-                            struct splx_node_t *node = curr_attr->node;
-
-                            str_cat_c (&psplx, "^");
-                            str_cat_c (&psplx, str_data(&node->str));
-                        }
-
-                        str_replace (&psplx, "\n", "\\n", NULL);
-
-
-                        // Generate HTML
-                        string_t html = {0};
-
-                        STACK_ALLOCATE (struct note_t, dummy_note);
-                        note_init (dummy_note);
-                        str_set (&dummy_note->title, name_str);
-
-                        STACK_ALLOCATE (struct psx_parser_state_t, ps);
-                        STACK_ALLOCATE (struct psx_parser_ctx_t, ctx);
-                        ps->block_allocation.pool = &ps->pool;
-
-                        dummy_note->tree = psx_container_block_new(ps, BLOCK_TYPE_ROOT, 0);
-                        dummy_note->tree->data = entity;
-                        struct psx_block_t *heading = psx_container_block_new(ps, BLOCK_TYPE_HEADING, 0);
-                        str_set (&heading->inline_content, name_str);
-                        heading->heading_number = 1;
-                        LINKED_LIST_APPEND (dummy_note->tree->block_content, heading);
-
-                        dummy_note->html = html_new (&dummy_note->pool, "div");
-                        if (virtual_id != NULL) {
-                            html_element_attribute_set (dummy_note->html, dummy_note->html->root, "id", str_data(splx_node_get_id (virtual_id)));
-                        }
-                        block_tree_to_html (ctx, dummy_note->html, dummy_note->tree, dummy_note->html->root);
-                        render_backlinks (rt, dummy_note);
-                        str_cat_html (&html, dummy_note->html, 2);
-                        str_replace (&html, "'", "\\'", NULL);
-                        str_replace (&html, "\n", "\\n", NULL);
-                        note_destroy (dummy_note);
-                        ps_destroy (ps);
-
-
-                        // Generate TSPLX
-                        string_t tsplx = {0};
-                        str_cat_splx_canonical_shallow (&tsplx, entity);
-                        str_replace (&tsplx, "'", "\\'", NULL);
-                        str_replace (&tsplx, "\n", "\\n", NULL);
-
-
-                        string_t name_escaped = {0};
-                        str_set (&name_escaped, name_str);
-                        str_replace (&name_escaped, "\n", " ", NULL);
-                        str_replace (&name_escaped, "'", "\\'", NULL);
-
-                        if (virtual_id != NULL) {
-                            str_cat_printf(&generated_data,
-                                "  '%s': {psplx: '%s', html: '%s', tsplx: '%s', 'title': '%s'},\n",
-                                str_data(splx_node_get_id (virtual_id)),
-                                str_data(&psplx),
-                                str_data(&html),
-                                str_data(&tsplx),
-                                str_data(&name_escaped));
-                        }
-
-                        str_free (&tsplx);
-                        str_free (&html);
-                        str_free (&psplx);
-                    }
-                }
-
-                str_cat_c(&generated_data, "};\n");
-                full_file_write (str_data(&generated_data), str_len(&generated_data), str_data(&output_data_file));
-                str_free (&generated_data);
+                generate_data_javascript(rt, str_data(&output_data_file));
+                generate_data_json(rt, str_data(&output_json_file));
 
                 if (is_verbose) {
                     printf ("target: %s\n", str_data(&cfg->target_path));

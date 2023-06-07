@@ -94,11 +94,20 @@ function set_innerhtml_and_run_scripts(element, html) {
     }
 }
 
+function get_title(id)
+{
+    if (data[id] !== undefined && data[id]["@type"] === "page") {
+        return data[id]["name"];
+    }
+
+    return undefined;
+}
+
 function note_text_to_element (container, id, note_html)
 {
     set_innerhtml_and_run_scripts(container, note_html);
 
-    document.title = id_to_note_title[id];
+    document.title = get_title(id);
     let new_note = document.getElementById(id);
     new_note.classList.add("note")
 
@@ -174,7 +183,7 @@ function set_breadcrumbs()
         crumb.classList.add("crumb")
 
         if (note_type === "normal") {
-            crumb.innerHTML = id_to_note_title[note_id];
+            crumb.innerHTML = get_title(note_id);
             crumb.setAttribute("onclick", "open_note('" + note_id + "');")
             breadcrumbs.appendChild(crumb);
 
@@ -333,17 +342,43 @@ window.addEventListener('popstate', (event) => {
     navigate_to_current_url()
 });
 
-let sidebar = document.getElementById("sidebar");
-for (let i=0; i<title_notes.length; i++) {
-    let note_id = title_notes[i];
-    let title_link = document.createElement("a");
-    title_link.setAttribute("onclick", "return reset_and_open_note('" + note_id + "');");
-    title_link.setAttribute("href", "?n=" + note_id );
-    title_link.innerHTML = id_to_note_title[note_id];
-    sidebar.appendChild(title_link);
+function fetch_data() {
+  return new Promise((resolve, reject) => {
+    fetch('data.json')
+      .then(response => response.json())
+      .then(data => {
+        resolve(data);
+      })
+      .catch(error => {
+        reject(error);
+      });
+  });
 }
 
-navigate_to_current_url()
+async function initialize() {
+  try {
+    const data = await fetch_data();
+    window.data = data;
+
+    let sidebar = document.getElementById("sidebar");
+    for (let i=0; i<title_notes.length; i++) {
+        let note_id = title_notes[i];
+        let title_link = document.createElement("a");
+        title_link.setAttribute("onclick", "return reset_and_open_note('" + note_id + "');");
+        title_link.setAttribute("href", "?n=" + note_id );
+        title_link.innerHTML = get_title(note_id);
+        sidebar.appendChild(title_link);
+    }
+
+    navigate_to_current_url()
+
+  } catch (error) {
+    console.error('Error:', error);
+  }
+}
+
+initialize();
+
 
 // Implement hash navigation that avoids ID clashes between the user's headings
 // and internal IDs the rest of the website may be using.

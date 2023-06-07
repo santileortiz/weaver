@@ -1,0 +1,17 @@
+[
+  {
+    "@id" : "Q976XFMWMW",
+    "a" : "link-node",
+    "name" : "weaver",
+    "url" : "http://localhost:8000?n="
+  },
+  {
+    "@id" : "FRR94HG5FP",
+    "a" : "link-node",
+    "name" : "external-client",
+    "priority" : [
+      "Q976XFMWMW",
+      "XF7VQ38G37"
+    ]
+  }
+]

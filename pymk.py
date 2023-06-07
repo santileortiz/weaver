@@ -38,7 +38,7 @@ def default ():
     call_user_function(target)
 
 server_pid_pname = 'server_pid'
-def server_start ():
+def start_static ():
     last_pid = store_get (server_pid_pname, default=None)
     if last_pid != None and psutil.pid_exists(last_pid):
         print (f'Server is already running, PID: {last_pid}')
@@ -48,12 +48,76 @@ def server_start ():
         print ('Open at: http://localhost:8000/')
         store (server_pid_pname, pid)
 
-def server_stop ():
+def stop_static ():
     pid = store_get (server_pid_pname, default=None)
     if pid != None and psutil.pid_exists(int(pid)):
         ex (f'kill {pid}')
     else:
         print ('Server is not running.')
+
+def server_deploy ():
+    server_home = './bin/.weaver_deploy'
+
+    # TODO: This should be read from config.tsplx. Right now we're storing a
+    # Python version of the expected result of parsing in Pymk's store.
+    ssh_deployment = store_get("default_deployment")
+
+    node_id = ssh_deployment["@id"]
+    hostname = ssh_deployment["hostname"]
+    username = ssh_deployment["username"]
+    pem_file = ssh_deployment["authentication"]["path"]
+
+    
+    # TODO: This should be taken directly from ~/.weaver/config.tsplx, right
+    # now we duplicate it here as JSON because there's no Python TSPLX parser
+    # yet. Just uploading config.tsplx should work.
+    config_json = [
+        {
+            "@id" : node_id,
+            "a" : "link-node",
+            "url" : store_get("public_url")
+        },
+        {
+            "@id" : store_get("link_node_id"),
+            "a" : "link-node",
+            "priority" : [
+                node_id
+            ]
+        }
+    ]
+
+    ex ('rm -r ./bin/dist')
+    ex (f'rm -r {server_home}')
+    ex ('bash ./package_venv.sh')
+    ensure_dir (server_home)
+    with open(f'{server_home}/config.json', 'w') as target_file:
+        json.dump(config_json, target_file)
+
+    # :autolink_map_location
+    tests_python.data_to_autolink_map(f'{out_dir}/data.json', f'{server_home}/files/map/{node_id}.json')
+
+    ex(f'scp -r -i {pem_file} ./bin/dist/app_dist*.whl {username}@{hostname}:~/')
+
+    ex(f"ssh -i {pem_file} {username}@{hostname} 'rm -r ~/.weaver'")
+    ex(f"ssh -i {pem_file} {username}@{hostname} 'mkdir ~/.weaver'")
+    ex(f'scp -r -i {pem_file} {server_home}/* {username}@{hostname}:~/.weaver/')
+
+    ex(f"ssh -i {pem_file} {username}@{hostname} 'pip3 install --upgrade --force-reinstall app_dist*.whl'")
+    ex(f"ssh -i {pem_file} {username}@{hostname} 'kill -HUP `ps -C gunicorn fch -o pid | head -n 1`'")
+
+    # To provision the target machine
+    #
+    # Port 80 redirect (https://serverfault.com/questions/112795/how-to-run-a-server-on-port-80-as-a-normal-user-on-linux)
+    # (add) iptables -t nat -A PREROUTING -p tcp --dport 80 -j REDIRECT --to-port 8080
+    # (remove) 
+    #   iptables -t nat --line-numbers -n -L
+    #   Look for rule number
+    #   iptables -t nat -D PREROUTING <number>
+    #
+    # Wheel management
+    # (install) pip3 install --upgrade --force-reinstall app_dist*.whl
+    # (start) gunicorn server.main:app --bind 0.0.0.0:8080 --daemon
+    # (restart) kill -HUP `ps -C gunicorn fch -o pid | head -n 1`
 
 viewer_pid_pname = 'viewer_pid'
 def view():
@@ -174,7 +238,7 @@ def search_notes ():
             note_f.close()
 
 def generate_common ():
-    success = weaver_maybe()
+    success = weaver_maybe_build()
     fu.copy_changed(static_dir, out_dir)
     fu.copy_changed(fu.source_files_dir, path_cat(out_dir, fu.files_dirname))
 
@@ -230,7 +294,7 @@ def weaver_build (use_js):
 
 # TODO: Can this be the default weaver snip?, or there are cases where our
 # rebuild detection doesn't correctly work and we want to force it to rebuild?
-def weaver_maybe():
+def weaver_maybe_build():
     success = True
     if c_needs_rebuild ('weaver.c', './bin/weaver') or ex (f'./bin/weaver --has-js', echo=False) == 0:
         print ('Building weaver...')
@@ -1206,52 +1270,16 @@ def dir_flatten():
                 data_file.write('\n'.join(content))
                 data_file.write('\n')
 
-# TODO: How can we do this only using Python's standard library?, so we can
-# include it in mkpy/utility.py
-def pid_is_running(pid):        
-    """
-    Check if process is running.
-    """
-
-    try:
-        process = psutil.Process(pid)
-        return process.status() != psutil.STATUS_ZOMBIE
-    except psutil.NoSuchProcess:
-        return False
-
 def tests():
     # TODO: Only build if necessary
     #tsplx_parser_tests()
     #psplx_parser_tests()
 
-
-    weaver_maybe()
-
-
-    server_home = 'bin/server_home'
-    log = f'{server_home}/server.log'
-    ensure_dir (server_home)
-    ex(f'cp tests/example/config.json {server_home}')
-    pid = ex_bg (f'python3 ../../server/main.py', log=log, quiet=True, cwd=server_home, env={"PYTHONPATH": "../../", "WEAVERHOME": '.'})
-    time.sleep(0.5)
-
-    if pid_is_running(pid):
-        print (f'Started API server, PID: {pid}')
-    else:
-        ex (f'cat {log}')
-        print (ecma_red('error:'), 'server failed to start')
-        return
-
+    weaver_maybe_build()
 
     tests_python.tests()
 
-
-    if pid_is_running(pid):
-        print (f'Stopping API server, PID: {pid}')
-        ex_bg_kill (pid, echo=False)
-
     #ex (f'cat {log}')
-    shutil.rmtree (server_home)
 
 def id():
     args = get_cli_no_opt()

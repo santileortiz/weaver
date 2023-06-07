@@ -4,6 +4,8 @@ from file_utility import *
 from natsort import natsorted
 import random
 import filecmp
+import time
+import psutil
 
 import requests
 
@@ -1000,21 +1002,90 @@ def autolink_test(node_id, q, expected_target):
 
     success = test (response.headers.get('Location'), expected_target, 'Expected redirect location')
     if not success:
-        test_error(response.headers.get('Location') + ' != ' + expected_target)
+        actual = response.headers.get('Location')
+        if actual == None:
+            actual = '{None}'
+
+        test_error(actual + ' != ' + expected_target)
 
     test_pop()
 
-def api():
-    test_push(f'API')
+# TODO: How can we do this only using Python's standard library?, so we can
+# include it in mkpy/utility.py
+def pid_is_running(pid):        
+    """
+    Check if process is running.
+    """
 
-    test_push(f'autolink')
-    node_id = "FRR94HG5FP"
-    autolink_test (node_id, "NotInWeaver", "https://google.com/search?q=NotInWeaver");
-    autolink_test (node_id, "Sample PKB", "http://localhost:8000?n=68W5X99W59");
+    try:
+        process = psutil.Process(pid)
+        return process.status() != psutil.STATUS_ZOMBIE
+    except psutil.NoSuchProcess:
+        return False
 
-    # Non existent id
-    autolink_test ("RP6Q62PG7F", "Sample PKB", "https://google.com/search?q=Sample%20PKB");
+def server_start(weaver_server_home):
+    log = f'{weaver_server_home}/server.log'
+    ensure_dir (weaver_server_home)
+    ex(f'cp tests/example/config.json {weaver_server_home}')
+    pid = ex_bg (f'python3 ../../server/main.py', log=log, quiet=True, cwd=weaver_server_home, env={"PYTHONPATH": "../../", "WEAVERHOME": '.'})
+    time.sleep(0.5)
+
+    if pid_is_running(pid):
+        print (f'Started API server, PID: {pid}')
+        return pid
+    else:
+        ex (f'cat {log}')
+        print (ecma_red('error:'), 'server failed to start')
+        return 0
+
+def server_stop(pid):
+    if pid_is_running(pid):
+        print (f'Stopping API server, PID: {pid}')
+        ex_bg_kill (pid, echo=False)
+
+def api_public_data(weaver_server_home):
+    test_push(f'API (public data)')
+
+    pid = server_start(weaver_server_home)
+    success = test (pid > 0, True, 'Server Start')
+    if not success:
+        test_error('Could not start weaver server.')
+
+    if success:
+        test_push(f'autolink')
+        node_id = "FRR94HG5FP"
+        autolink_test (node_id, "NotInWeaver", "https://google.com/search?q=NotInWeaver");
+        autolink_test (node_id, "Sample PKB", "http://localhost:8000?n=68W5X99W59");
+        
+        # TODO: Test a private page and check that it doesn't resolve in the weaver map.
+
+        # Non existent id
+        autolink_test ("RP6Q62PG7F", "Sample PKB", "https://google.com/search?q=Sample%20PKB");
+        test_pop()
+
+        server_stop (pid)
+
     test_pop()
+
+def api_full_data(weaver_server_home):
+    test_push(f'API (full data)')
+
+    pid = server_start(weaver_server_home)
+    success = test (pid > 0, True, 'Server Start')
+    if not success:
+        test_error('Could not start weaver server.')
+
+    if success:
+        test_push(f'autolink')
+        node_id = "FRR94HG5FP"
+        autolink_test (node_id, "NotInWeaver", "https://google.com/search?q=NotInWeaver");
+        autolink_test (node_id, "Sample PKB", "http://localhost:8000?n=68W5X99W59");
+
+        # Non existent id
+        autolink_test ("RP6Q62PG7F", "Sample PKB", "https://google.com/search?q=Sample%20PKB");
+        test_pop()
+
+        server_stop (pid)
 
     test_pop()
 
@@ -1058,6 +1129,22 @@ def static_site_test(source, target, expected, public=False):
     success = test_dir(target, expected)
     return success
 
+def data_to_autolink_map(data, target):
+    with open(data) as data_json:
+        data = json.load(data_json)
+
+    autolink_map = {}
+    for key, value in data.items():
+        lowercase_name = value['name'].lower()
+        autolink_map[lowercase_name] = key
+
+    ensure_dir (path_dirname(target))
+    with open(target, 'w') as target_file:
+        json.dump(autolink_map, target_file)
+
+    return data
+    
+
 ###############
 #  Entrypoint
 
@@ -1084,23 +1171,36 @@ def tests():
 
     file_utility()
 
-    #test_push(f'Public static example')
-    #success = static_site_test ('./tests/example', './bin/public_static', './tests/example.public', public=True)
-    #test_pop(success)
 
-    #test_push(f'Full static example')
-    ## To avoid having to add all public pages both in the public and full
-    ## expected outputs, we always use the public one as a base, then the full
-    ## expected only contains files that will change its rendering from full to
-    ## public.
-    #expected_full = './bin/full_static_expected'
-    #ex (f'cp -r ./tests/example.public/ {expected_full}', echo=False)
-    #ex (f'cp -r ./tests/example.full/* {expected_full}', echo=False)
-    #success = static_site_test ('./tests/example', './bin/full_static', expected_full)
-    #shutil.rmtree (expected_full)
-    #test_pop(success)
+    static_target_public = './bin/public_static'
+    test_push(f'Public static example')
+    success = static_site_test ('./tests/example', static_target_public, './tests/example.public', public=True)
+    test_pop(success)
 
-    #api()
+    server_home_public = './bin/.weaver_public'
+    data_to_autolink_map(f'{static_target_public}/data.json', f'{server_home_public}/files/map/Q976XFMWMW.json')
+    api_public_data(server_home_public)
+    shutil.rmtree (server_home_public)
 
-    #shutil.rmtree ('./bin/public_static')
-    #shutil.rmtree ('./bin/full_static')
+
+    static_target_full = './bin/full_static'
+    test_push(f'Full static example')
+    # To avoid having to add all public pages both in the public and full
+    # expected outputs, we always use the public one as a base, then the full
+    # expected only contains files that will change its rendering from full to
+    # public.
+    expected_full = './bin/full_static_expected'
+    ex (f'cp -r ./tests/example.public/ {expected_full}', echo=False)
+    ex (f'cp -r ./tests/example.full/* {expected_full}', echo=False)
+    success = static_site_test ('./tests/example', static_target_full, expected_full)
+    shutil.rmtree (expected_full)
+    test_pop(success)
+
+    server_home_full = './bin/.weaver_full'
+    data_to_autolink_map(f'{static_target_full}/data.json', f'{server_home_full}/files/map/Q976XFMWMW.json')
+    api_full_data(server_home_full)
+    shutil.rmtree (server_home_full)
+
+
+    shutil.rmtree (static_target_public)
+    shutil.rmtree (static_target_full)

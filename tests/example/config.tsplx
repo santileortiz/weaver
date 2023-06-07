@@ -5,15 +5,34 @@
 
 title-notes [
   "68W5X99W59"
-  ] .
+] .
 
 
 // Publishing
 
 public-title-notes [
   "68W5X99W59"
-  ] .
+] .
 
 private-types [
   "personal"
+] .
+
+
+// Autolink
+// TODO: Currently there's no TSPLX data loading from
+// Python so the server is loading an equivalent
+// config.json, keep this in sync with that.
+
+Q976XFMWMW = link-node {
+  name "weaver";
+  url "http://localhost:8000?n=${map[name]}";
+} .
+
+FRR94HG5FP = link-node {
+  name "external-client";
+  priority [
+    Q976XFMWMW,
+    XF7VQ38G37 // Test non existent node
   ] .
+} .
