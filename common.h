@@ -870,6 +870,11 @@ char* cstr_to_lower (char *str)
     return lower_str;
 }
 
+bool cstr_starts_with(char *str, char *prefix)
+{
+    return strncmp(str, prefix, strlen(prefix)) == 0;
+}
+
 void str_cat_debugstr (string_t *str, int curr_indent, int esc_color, char *c_str)
 {
     if (c_str == NULL) return;
