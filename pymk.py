@@ -237,10 +237,10 @@ def search_notes ():
 
             note_f.close()
 
-def generate_common ():
+def generate_common (target=out_dir):
     success = weaver_maybe_build()
-    fu.copy_changed(static_dir, out_dir)
-    fu.copy_changed(fu.source_files_dir, path_cat(out_dir, fu.files_dirname))
+    fu.copy_changed(static_dir, target)
+    fu.copy_changed(fu.source_files_dir, path_cat(target, fu.files_dirname))
 
     return success
 
@@ -253,7 +253,7 @@ def generate_public ():
         ex (f'./bin/weaver generate --static --public --verbose')
 
 def publish ():
-    if generate_common():
+    if generate_common(public_out_dir):
         ex (f'./bin/weaver generate --static --public --verbose --output-dir {public_out_dir}')
         ex ('rclone sync --fast-list --checksum ~/.cache/weaver/public/ aws-s3:weaver.thrachyon.net/santileortiz/');
 
