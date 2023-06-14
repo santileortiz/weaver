@@ -1446,6 +1446,10 @@ void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html
 
                     str_set_printf (&buff, "files/%s", str_data(&file->path));
 
+                } else if (cstr_starts_with(str_data(&tag->content), "http://") ||
+                           cstr_starts_with(str_data(&tag->content), "https://")) {
+                    str_set_printf (&buff, "%s", str_data(&tag->content));
+
                 } else {
                     str_set_printf (&buff, "files/%s", str_data(&tag->content));
                 }
