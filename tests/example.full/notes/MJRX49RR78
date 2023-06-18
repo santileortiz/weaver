@@ -1,10 +1,10 @@
 <div id="MJRX49RR78">
   <h1 id="user-content-redacting">Redacting</h1>
   <div class="type-list"></div>
-  <p>Redacting is the mechanism used to separate personal from public knowledge.</p>
+  <p>Redacting is the mechanism used to separate personal from public content. It hides personal content in public publishing, but preserves useful relationships for personal use.</p>
   <div style="padding: 0.5em 0;">
     <div class="attributed-block">
-      <p>This is an example of a block that only shows in the personal rendering.</p>
+      <p>This is an example of a block that only shows when publishing privately.</p>
       <div style="padding: var(--bleed); background-color: var(--secondary-bg-color);border-top: 1px solid #0000001c;">
         <div class="type-list">
           <div class="type">personal</div>
@@ -12,6 +12,30 @@
       </div>
     </div>
   </div>
+  <p>This paragraph contains a parenthesized reference (like this <a class="note-link" href="?n=W8FFHR5FP4" onclick="return open_note('W8FFHR5FP4');">Non-public</a>) to a private page. The redacting feature will remove the parenthesis and its enclosing content when publishing publicly.</p>
+  <p>To make redacting undetectable when publishing publicly, we do some space stripping. Spaces <i>after</i>(the redacted parenthesis <a class="note-link" href="?n=W8FFHR5FP4" onclick="return open_note('W8FFHR5FP4');">Non-public</a>) are preserved, but we remove spaces <i>before</i> (the redacted parenthesis <a class="note-link" href="?n=W8FFHR5FP4" onclick="return open_note('W8FFHR5FP4');">Non-public</a>). As in most places, multiple spaces will be collapsed to a single one.</p>
+  <p>Redacting also works with virtual entities (like <a class="note-link" href="?v=VQW85F744F" onclick="return open_virtual_entity('VQW85F744F');">Non-public Virtual</a>).</p>
+  <h2 id="user-content-edge-cases">Edge Cases</h2>
+  <p>Redacted parenthesis ending sentence (redacted <a class="note-link" href="?n=W8FFHR5FP4" onclick="return open_note('W8FFHR5FP4');">Non-public</a>).</p>
+  <p>Space before and (some <a class="note-link" href="?n=W8FFHR5FP4" onclick="return open_note('W8FFHR5FP4');">Non-public</a> redacted) after parenthesis.</p>
+  <p>Parenthesis at the start of line (private <a class="note-link" href="?n=W8FFHR5FP4" onclick="return open_note('W8FFHR5FP4');">Non-public</a>)</p>
+  <p>No spaces around parenthesis(<a class="note-link" href="?n=W8FFHR5FP4" onclick="return open_note('W8FFHR5FP4');">Non-public</a>).</p>
+  <p>Space after parenthesis(<a class="note-link" href="?n=W8FFHR5FP4" onclick="return open_note('W8FFHR5FP4');">Non-public</a> redacted) .</p>
+  <p>Nested parenthesis ((nested before) one <a class="note-link" href="?n=W8FFHR5FP4" onclick="return open_note('W8FFHR5FP4');">Non-public</a>(nested after))</p>
+  <p>(non redacted parenthesis before) (and a redacted one <a class="note-link" href="?n=W8FFHR5FP4" onclick="return open_note('W8FFHR5FP4');">Non-public</a>)</p>
+  <p>(starting redacted parenthesis <a class="note-link" href="?n=W8FFHR5FP4" onclick="return open_note('W8FFHR5FP4');">Non-public</a>) (with non redacted parenthesis after)</p>
+  <p>Tag <i>before</i> (redacted parenthesis <a class="note-link" href="?n=W8FFHR5FP4" onclick="return open_note('W8FFHR5FP4');">Non-public</a>)</p>
+  <p>Tag <i>before</i>(redacted parenthesis <a class="note-link" href="?n=W8FFHR5FP4" onclick="return open_note('W8FFHR5FP4');">Non-public</a>)</p>
+  <p>Redacted parenthesis (<a class="note-link" href="?n=W8FFHR5FP4" onclick="return open_note('W8FFHR5FP4');">Non-public</a>) <i>with tag after</i></p>
+  <p>Redacted parenthesis (<a class="note-link" href="?n=W8FFHR5FP4" onclick="return open_note('W8FFHR5FP4');">Non-public</a>)<i>with tag after</i></p>
+  <p>Link inside (redacted <a href="http://example.com" target="_blank">parenthesis</a> <a class="note-link" href="?n=W8FFHR5FP4" onclick="return open_note('W8FFHR5FP4');">Non-public</a>) and text after.</p>
+  <p>Missing close parenthesis (redacted <a class="note-link" href="?n=W8FFHR5FP4" onclick="return open_note('W8FFHR5FP4');">Non-public</a> ...</p>
+  <p>Stress ((d((d(d))s)(a))(d)) (((d((d(d))s)(a))(d)) <a class="note-link" href="?n=W8FFHR5FP4" onclick="return open_note('W8FFHR5FP4');">Non-public</a> ((d((d(d))s)(a))(d))) ((d((d(d))s)(a))(d))</p>
+  <ul>
+    <li>
+      <p>List test <a href="http://example.com" target="_blank">link</a> (<a class="note-link" href="?n=W8FFHR5FP4" onclick="return open_note('W8FFHR5FP4');">Non-public</a>).</p>
+    </li>
+  </ul>
   <h4>Backlinks</h4>
   <div class="backlinks">
     <p><a class="note-link" href="?n=68W5X99W59" onclick="return open_note('68W5X99W59');">Sample PKB</a></p>

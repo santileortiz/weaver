@@ -1,6 +1,54 @@
 # Redacting
 
-Redacting is the mechanism used to separate personal from public knowledge.
+Redacting is the mechanism used to separate personal from public content. It
+hides personal content in public publishing, but preserves useful relationships
+for personal use.
 
-This is an example of a block that only shows in the personal rendering.
+This is an example of a block that only shows when publishing privately.
 ^personal
+
+This paragraph contains a parenthesized reference (like this \note{Non-public})
+to a private page. The redacting feature will remove the parenthesis and its
+enclosing content when publishing publicly.
+
+To make redacting undetectable when publishing publicly, we do some space
+stripping. Spaces \i{after}(the redacted parenthesis \note{Non-public})          are
+preserved, but we remove spaces \i{before}     (the redacted parenthesis \note{Non-public}).
+As in most places, multiple spaces will be collapsed to a single one.
+
+Redacting also works with virtual entities (like \personal{Non-public Virtual}).
+
+## Edge Cases
+
+Redacted parenthesis ending sentence (redacted \note{Non-public}).
+
+Space before and (some \note{Non-public} redacted) after parenthesis.
+
+Parenthesis at the start of line
+(private \note{Non-public})
+
+No spaces around parenthesis(\note{Non-public}).
+
+Space after parenthesis(\note{Non-public} redacted) .
+
+Nested parenthesis ((nested before) one \note{Non-public}(nested after))
+
+(non redacted parenthesis before) (and a redacted one \note{Non-public})
+
+(starting redacted parenthesis \note{Non-public}) (with non redacted parenthesis after)
+
+Tag \i{before} (redacted parenthesis \note{Non-public})
+
+Tag \i{before}(redacted parenthesis \note{Non-public})
+
+Redacted parenthesis (\note{Non-public}) \i{with tag after}
+
+Redacted parenthesis (\note{Non-public})\i{with tag after}
+
+Link inside (redacted \link{parenthesis -> http://example.com} \note{Non-public}) and text after.
+
+Missing close parenthesis (redacted \note{Non-public} ...
+
+Stress ((d((d(d))s)(a))(d)) (((d((d(d))s)(a))(d)) \note{Non-public} ((d((d(d))s)(a))(d))) ((d((d(d))s)(a))(d))
+
+- List test \link{link -> http://example.com} (\note{Non-public}).

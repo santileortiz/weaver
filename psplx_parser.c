@@ -1153,24 +1153,11 @@ struct html_element_t* html_append_entity_link(struct psx_parser_state_t *ps, st
     return link_element;
 }
 
-void psx_advance_until (struct psx_parser_state_t *ps, char delimiter)
+void psx_advance_tag (struct psx_parser_state_t *ps)
 {
-    while (!ps->scr.is_eof && !ps->error) {
-        ps_inline_next (ps);
-        if (ps_match(ps, TOKEN_TYPE_TEXT, NULL)) {
-            char *s = sstr_find_char(&ps->token.value, delimiter);
-            if (s != NULL) {
-                ps->scr.pos = s+1;
-                return;
-            }
-
-        } else if (ps_match(ps, TOKEN_TYPE_TEXT_TAG, NULL) ||
-                   ps_match(ps, TOKEN_TYPE_DATA_TAG, NULL))
-        {
-            // Skip tag's content.
-            psx_match_tag_data (&ps->scr, true, NULL, NULL, NULL, NULL);
-        }
-    }
+    ps_inline_next (ps);
+    assert(ps_match(ps, TOKEN_TYPE_TEXT_TAG, NULL) || ps_match(ps, TOKEN_TYPE_DATA_TAG, NULL));
+    psx_match_tag_data (&ps->scr, true, NULL, NULL, NULL, NULL);
 }
 
 void html_append_link (struct psx_parser_state_t *ps,
@@ -1225,30 +1212,80 @@ void html_redact_or_append_link (struct psx_parser_state_t *ps,
         if (rt!=NULL && rt->is_public && !entity_is_visible(target)) {
             struct html_element_t *html_parent = psx_get_head_html_element(ps);
 
-            bool found = false;
-            struct html_element_t *prev_element = NULL;
-            struct html_element_t *new_end = NULL;
-            LINKED_LIST_FOR (struct html_element_t *, element, html_parent->children) {
-                char *text = str_data(&element->text);
-                if (text[0] == '(') {
-                    found = true;
-                    new_end = prev_element;
-                }
-
-                if (text != NULL && !is_empty_str (text)) {
-                    prev_element = element;
-                }
+            string_t text = {0};
+            LINKED_LIST_FOR (struct html_element_t *, e1, html_parent->children) {
+                str_cat(&text, &e1->text);
             }
 
-            if (found && new_end) {
-                // TODO: This leaks the nodes that were redacted.
-                new_end->next = NULL;
-                html_parent->children_end = new_end;
+            // TODO: A tag with a body containing unbalanced braces can cause an
+            // early exit of a redacted parenthesis. Consider the following:
+            //
+            //   Public (\note{Right Parenthesis ')'} \note{Non-public) secret stuff)
 
-                psx_advance_until (ps, ')');
+            size_t pos;
+            int count;
+            char *text_cstr = str_data(&text);
+            bool has_open_parenthesis = cstr_find_open_parenthesis(text_cstr, &pos, &count);
+
+            if (has_open_parenthesis) {
+                int curr_pos = 0;
+                struct html_element_t *pprev = NULL;
+                struct html_element_t *prev = NULL;
+                LINKED_LIST_FOR (struct html_element_t *, curr, html_parent->children) {
+                    if (curr_pos >= pos) {
+                        break;
+                    }
+
+                    pprev = prev;
+                    prev = curr;
+                    curr_pos += str_len(&curr->text);
+                }
+
+                // TODO: This leaks the nodes that were redacted.
+                if (prev != NULL) {
+                    if (prev->next != NULL && prev->next->children != NULL) {
+                        // If we landed at a non leaf (text) HTML node, skip
+                        // until we find one. Because has_open_parenthesis == true
+                        // we expect this will end and prev will never be NULL.
+                        while (prev->next->children != NULL) {
+                            prev = prev->next;
+                        }
+                        assert (prev != NULL);
+
+                    } else if (is_empty_str(str_data(&prev->text))) {
+                        // If we landed at a text node with empty text, move
+                        // back to strip the space before the redaacting
+                        // parenthesis.
+                        prev = pprev;
+                    }
+
+                    // Strip all HTML nodes after prev.
+                    prev->next = NULL;
+
+                } else {
+                    // If there's no prev, then update the parent's head, child
+                    // list should be empty now.
+                    html_parent->children = NULL;
+                }
+                html_parent->children_end = prev;
+
+                // Handle opening parenthesis not at the start of element's
+                // text.
+                if (curr_pos > pos) {
+                    str_shrink(&prev->text, pos - (curr_pos - str_len(&prev->text)));
+                    str_rstrip (&prev->text);
+                }
+
+                cstr_find_close_parenthesis (ps->scr.pos, count, &pos);
+                if (ps->scr.pos[pos] == ')') {
+                    pos++;
+                }
+                ps_restore_pos (ps, ps->scr.pos + pos);
 
                 redacted = true;
             }
+
+            str_free (&text);
         }
 
         if (!redacted) {
@@ -1440,7 +1477,9 @@ void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html
                            strncmp(str_data(&file->extension), "jpeg", 4) != 0 &&
                            strncmp(str_data(&file->extension), "JPEG", 4) != 0 &&
                            strncmp(str_data(&file->extension), "svg", 3) != 0 &&
-                           strncmp(str_data(&file->extension), "SVG", 3) != 0) {
+                           strncmp(str_data(&file->extension), "SVG", 3) != 0 &&
+                           strncmp(str_data(&file->extension), "gif", 3) != 0 &&
+                           strncmp(str_data(&file->extension), "GIF", 3) != 0) {
                         file = file->next;
                     }
 

@@ -29,6 +29,9 @@ ensure_dir(out_dir)
 public_out_dir = path_cat(cache_dir, 'public')
 ensure_dir(public_out_dir)
 
+example_output = os.path.abspath(path_resolve('./bin/example_static/'))
+example_public_output = os.path.abspath(path_resolve('./bin/example_public_static/'))
+
 # These directories are part of the code checkout and are used to generate the
 # static website.
 static_dir = 'static'
@@ -196,6 +199,17 @@ def new_note ():
     else:
         print (new_note_path)
 
+def new_note_example ():
+    # TODO: There's no vim mode for this so :Nn won't work to create notes in
+    # the example. This should be implemented by completely removing vim mode
+    # in new_note() and instead calling a genering id generator from the vim
+    # macro definition then creating a new file in the place where the current
+    # open file is.
+
+    new_note_path = fu.new_unique_canonical_path(os.path.abspath(path_resolve('./tests/example/notes')))
+    ex ('touch ' + new_note_path)
+    ex ('xdg-open ' + new_note_path)
+
 def list_notes ():
     folder = os.fsencode(fu.source_notes_dir)
     for fname_os in os.listdir(folder):
@@ -237,10 +251,10 @@ def search_notes ():
 
             note_f.close()
 
-def generate_common (target=out_dir):
+def generate_common (source=fu.source_files_dir, target=out_dir):
     success = weaver_maybe_build()
     fu.copy_changed(static_dir, target)
-    fu.copy_changed(fu.source_files_dir, path_cat(target, fu.files_dirname))
+    fu.copy_changed(source, path_cat(target, fu.files_dirname))
 
     return success
 
@@ -256,6 +270,41 @@ def publish ():
     if generate_common(public_out_dir):
         ex (f'./bin/weaver generate --static --public --verbose --output-dir {public_out_dir}')
         ex ('rclone sync --fast-list --checksum ~/.cache/weaver/public/ aws-s3:weaver.thrachyon.net/santileortiz/');
+
+
+def generate_example ():
+    example_source = os.path.abspath(path_resolve('./tests/example/'))
+    ensure_dir(example_output)
+
+    if generate_common(source=example_source, target=example_output):
+        ex (f'./bin/weaver generate --static --verbose --home {example_source} --output-dir {example_output}')
+
+def generate_example_public ():
+    example_source = os.path.abspath(path_resolve('./tests/example/'))
+    ensure_dir(example_public_output)
+
+    if generate_common(source=example_source, target=example_public_output):
+        ex (f'./bin/weaver generate --static --public --verbose --home {example_source} --output-dir {example_public_output}')
+
+def start_static_example ():
+    last_pid = store_get (server_pid_pname, default=None)
+    if last_pid != None and psutil.pid_exists(last_pid):
+        print (f'Server is already running, PID: {last_pid}')
+    else:
+        pid = ex_bg (f'./nocache_server.py', cwd=example_output)
+        print (f'Started server, PID: {pid}')
+        print ('Open at: http://localhost:8000/')
+        store (server_pid_pname, pid)
+
+def start_static_example_public ():
+    last_pid = store_get (server_pid_pname, default=None)
+    if last_pid != None and psutil.pid_exists(last_pid):
+        print (f'Server is already running, PID: {last_pid}')
+    else:
+        pid = ex_bg (f'./nocache_server.py', cwd=example_public_output)
+        print (f'Started server, PID: {pid}')
+        print ('Open at: http://localhost:8000/')
+        store (server_pid_pname, pid)
 
 
 ensure_dir ("bin")

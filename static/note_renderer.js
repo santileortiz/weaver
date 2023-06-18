@@ -142,7 +142,7 @@ function copy_note_cmd ()
         psplx = ` -c ':r! printf "${unescaped}"'`;
     }
 
-    dummy_input.value = "gvim ~/.weaver/notes/" + open_note[1] + psplx
+    dummy_input.value = `gvim ${home_path}/notes/` + open_note[1] + psplx
     dummy_input.select();
     dummy_input.setSelectionRange(0, 99999);
 

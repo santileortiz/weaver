@@ -152,9 +152,11 @@ void generate_data_json (struct note_runtime_t *rt, char *out_fname)
     str_free (&generated_data);
 }
 
-void generate_data_javascript (struct note_runtime_t *rt, char *out_fname)
+void generate_data_javascript (struct note_runtime_t *rt, char *out_fname, char *home)
 {
     string_t generated_data = {0};
+
+    str_cat_printf(&generated_data, "home_path = '%s';\n\n", home);
 
     bool is_first = true;
     str_cat_c(&generated_data, "title_notes = [");
@@ -503,7 +505,7 @@ int main(int argc, char** argv)
                     printf (ECMA_RED("error: ") "refusing to generate static site. Using command line input but output directory is missing as parameter, use --output-dir\n");
                 }
 
-                generate_data_javascript(rt, str_data(&output_data_file));
+                generate_data_javascript(rt, str_data(&output_data_file), cli_home ? str_data(&cfg->home) : DEFAULT_HOME_DIR);
                 generate_data_json(rt, str_data(&output_json_file));
 
                 if (is_verbose) {

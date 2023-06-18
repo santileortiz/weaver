@@ -1,0 +1,6 @@
+# Non-public
+^personal
+
+This an example of a page that won't show when publishing the public version.
+This happens because it's of type `personal` and this type is configured as a
+private type in `config.tsplx`.

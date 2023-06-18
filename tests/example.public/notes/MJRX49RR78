@@ -1,7 +1,31 @@
 <div id="MJRX49RR78">
   <h1 id="user-content-redacting">Redacting</h1>
   <div class="type-list"></div>
-  <p>Redacting is the mechanism used to separate personal from public knowledge.</p>
+  <p>Redacting is the mechanism used to separate personal from public content. It hides personal content in public publishing, but preserves useful relationships for personal use.</p>
+  <p>This paragraph contains a parenthesized reference to a private page. The redacting feature will remove the parenthesis and its enclosing content when publishing publicly.</p>
+  <p>To make redacting undetectable when publishing publicly, we do some space stripping. Spaces <i>after</i> are preserved, but we remove spaces <i>before</i>. As in most places, multiple spaces will be collapsed to a single one.</p>
+  <p>Redacting also works with virtual entities.</p>
+  <h2 id="user-content-edge-cases">Edge Cases</h2>
+  <p>Redacted parenthesis ending sentence.</p>
+  <p>Space before and after parenthesis.</p>
+  <p>Parenthesis at the start of line</p>
+  <p>No spaces around parenthesis.</p>
+  <p>Space after parenthesis .</p>
+  <p>Nested parenthesis</p>
+  <p>(non redacted parenthesis before)</p>
+  <p>(with non redacted parenthesis after)</p>
+  <p>Tag <i>before</i></p>
+  <p>Tag <i>before</i></p>
+  <p>Redacted parenthesis <i>with tag after</i></p>
+  <p>Redacted parenthesis<i>with tag after</i></p>
+  <p>Link inside and text after.</p>
+  <p>Missing close parenthesis</p>
+  <p>Stress ((d((d(d))s)(a))(d)) ((d((d(d))s)(a))(d))</p>
+  <ul>
+    <li>
+      <p>List test <a href="http://example.com" target="_blank">link</a>.</p>
+    </li>
+  </ul>
   <h4>Backlinks</h4>
   <div class="backlinks">
     <p><a class="note-link" href="?n=68W5X99W59" onclick="return open_note('68W5X99W59');">Sample PKB</a></p>

@@ -1,0 +1,11 @@
+<div id="W8FFHR5FP4">
+  <h1 id="user-content-non-public">Non-public</h1>
+  <div class="type-list">
+    <div class="type">personal</div>
+  </div>
+  <p>This an example of a page that won't show when publishing the public version. This happens because it's of type <code class="code-inline">personal</code> and this type is configured as a private type in <code class="code-inline">config.tsplx</code>.</p>
+  <h4>Backlinks</h4>
+  <div class="backlinks">
+    <p><a class="note-link" href="?n=MJRX49RR78" onclick="return open_note('MJRX49RR78');">Redacting</a></p>
+  </div>
+</div>
