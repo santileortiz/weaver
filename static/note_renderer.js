@@ -21,7 +21,9 @@ css_property_set ("--code-block-padding", code_block_padding + "px");
 
 let opened_notes = [];
 
-let content_max_width = 600;
+// TODO: This is duplicated inside psplx_parser.c, this should be centralized.
+// :content_width
+let content_max_width = 728;
 css_property_set ("--content-width", content_max_width + "px");
 
 function is_desktop()

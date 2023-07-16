@@ -50,7 +50,8 @@ void note_destroy (struct note_t *note)
     mem_pool_destroy (&note->pool);
 }
 
-int psx_content_width = 588; // px
+// :content_width
+int psx_content_width = 728; // px
 
 struct psx_parser_ctx_t {
     struct note_runtime_t *rt;
@@ -1494,8 +1495,6 @@ void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html
                 }
                 html_element_attribute_set (html, img_element, "src", str_data(&buff));
 
-                str_set_printf (&buff, "%d", psx_content_width);
-                html_element_attribute_set (html, img_element, "width", str_data(&buff));
                 psx_append_html_element(ps, html, img_element);
 
             } else {
@@ -2171,13 +2170,13 @@ void block_tree_to_html (struct psx_parser_ctx_t *ctx, struct html_t *html, stru
         // they were smaller than psx_content_width and at the same time show
         // horizontal scrolling if they were wider. I'm now of the opinion that
         // although a centered code block looks nice in a read-only environment,
-        // it will be horrible if we eve implement inplace editing because the
+        // it will be horrible if we ever implement inplace editing because the
         // cursor of the user will be jumping so the block gets recentered (if
         // the block gets recentered at all, which wouldn't be the case if I
         // kept using this hack).
         //
         // For this reason we now just make all code blocks have the full width
-        // of the note. We could thing of using the hack back when enabling a
+        // of the note. We could think of using the hack back when enabling a
         // read-only mode or something like that. So, for reference I'll keep
         // the description of how the hack worked.
         //

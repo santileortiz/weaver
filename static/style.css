@@ -15,7 +15,7 @@
 :root {
     --ui-font: Content-font, Roboto, sans-serif;
     /*--ui-font: Inter, "Open Sans", "Noto Sans", "Roboto", "Droid Sans", sans-serif;*/
-    --text-font: "Noto Serif", "Droid Serif", serif;
+    --text-font: "Spectral", "Noto Serif", "Droid Serif", serif;
     --heading-font: Inter, Raleway, var(--ui-font)
 }
 
@@ -23,7 +23,7 @@ body, html {
     margin: 0;
     padding: 0;
     color: var(--fg-color);
-    font-size: 16px;
+    font-size: 19px;
     font-family: var(--ui-font);
     font-weight: 400;
 
@@ -41,11 +41,12 @@ h1, h2, h3, h4, h5, h6 {
 h2, h3, h4, h5, h6 {
     margin-top: 0.75em;
     padding-top: 0.5em;
+    font-weight: 600;
 }
 
 h1 {
     color: var(--title-color);
-    font-size: 40px;
+    font-size: 32px;
     font-weight: 700;
     line-height: 1.2;
 }
@@ -53,6 +54,7 @@ h1 {
 h2 {
     font-size: 1.25em;
     font-weight: 600;
+    border-bottom: solid 1px #a2a9b1;
 }
 
 p, ul, ol {
@@ -100,6 +102,12 @@ select {
     height: 28px;
     padding: 3px;
     outline: none;
+}
+
+.note img {
+  max-width: 100%;
+  display: block;
+  margin: 0 auto;
 }
 
 .hidden {
@@ -185,7 +193,7 @@ code {
     margin: 0 auto;
     display: block;
 
-    line-height: 1.50em;
+    line-height: 1.60em;
 
     background-color: var(--bg-color);
 }

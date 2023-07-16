@@ -267,7 +267,7 @@ def generate_public ():
         ex (f'./bin/weaver generate --static --public --verbose')
 
 def publish ():
-    if generate_common(public_out_dir):
+    if generate_common(target=public_out_dir):
         ex (f'./bin/weaver generate --static --public --verbose --output-dir {public_out_dir}')
         ex ('rclone sync --fast-list --checksum ~/.cache/weaver/public/ aws-s3:weaver.thrachyon.net/santileortiz/');
 
@@ -754,7 +754,7 @@ def scan():
 
     if target_type != None:
         target_file_dir, target_data_file, tsplx_stub = get_type_config(target_type)
-    target_file_dir, target_data_file = get_target(target_type, target_file_dir, target_data_file)
+    target_file_dir, target_data_file = fu.get_target(target_type, target_file_dir, target_data_file)
 
     help_str = textwrap.dedent("""\
         Commands:
@@ -1050,7 +1050,9 @@ def files_date_sort():
                     lines = [x for x in output.split('\n')]
                     fields = {x[1]:x[3:] for x in map(lambda x: x.split(), lines)}
 
-                    model = " ".join(fields['Model'])
+                    model = '-'
+                    if 'Model' in fields.keys():
+                        model = " ".join(fields['Model'])
 
                     timestamp = None
                     if 'OffsetTimeOriginal' in fields.keys() and 'DateTimeOriginal' in fields.keys():
@@ -1107,7 +1109,7 @@ def files_date_sort():
                 else:
                     unsortable.append(path)
 
-            elif path.lower().endswith(".mp4") and default_utc_offset != None:
+            elif path.lower().endswith(".mp4"):
                 output = ex(f"exiftool -s -H -u -CreateDate -api quicktimeutc '{path}'", ret_stdout=True, echo=False)
 
                 if len(output) > 0:
