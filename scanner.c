@@ -150,15 +150,13 @@ bool scr_match_double_quoted_string (struct scanner_t *scr)
         scr_advance_char (scr);
 
         found = scr_match_until_unescaped_operator (scr, '"', NULL, NULL);
-
-        scr_advance_char (scr);
     }
 
     return found;
 }
 
 // NOTE: The resulting sstring_t does include the first found \n character. This
-// has been relevan because this character may triggers different behaviors
+// has been relevant because this character may triggers different behaviors
 // sometimes they are ignored, sometimes they are replaced to space. If they are
 // not necessary, it's trivial to just subtract 1 from the returned length.
 sstring_t scr_advance_line(struct scanner_t *scr)
@@ -173,10 +171,27 @@ sstring_t scr_advance_line(struct scanner_t *scr)
     return SSTRING(start, scr->pos - start);
 }
 
-static inline
-void scr_consume_spaces (struct scanner_t *scr)
+char* scr_advance_until_str (struct scanner_t *scr, char *s)
 {
-    while (scr_is_space(scr)) {
-        scr_advance_char (scr);
+    char *result = strstr(scr->pos, s);
+    if (result != NULL) {
+        scr->pos = result;
     }
+
+    return result;
+}
+
+static inline
+bool scr_consume_spaces (struct scanner_t *scr)
+{
+    bool found = false;
+
+    if (scr_is_space (scr)) {
+        found = true;
+        while (scr_is_space(scr)) {
+            scr_advance_char (scr);
+        }
+    }
+
+    return found;
 }

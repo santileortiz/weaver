@@ -1,0 +1,41 @@
+# Page Syntax
+
+Titles use a sequence of up to 6 consecutive `#` characters at the start. The
+number of `#` characters denotes their heading level. After the `#` characters
+there's a mandatory space before the title.
+
+Only the page's title can have a single `#` character. Any page's section title
+must start with at least 2 `#` characters.
+
+
+## Paragraphs
+
+Paragraphs are separated by an empty line.
+Contiguous lines are not broken,
+instead they are joined into the same
+paragraph by a space. Sequences   of consecutive    
+   space characters are normalized to a single one.  
+
+\# A paragraph can start with `#` if its prefixed with \code{\}.
+
+\#### Only one \code{\} character is necessary to escape a sequence of `#`.
+
+Escaping of # characters ## is ### only #### necessary ##### at ###### the
+start of paragraphs. This escaping isn't necessary in titles either, the space
+character after the sequence of `#` characters separates the title marker from
+the title itself, see \note{# Page Title With #Hash Characters}.
+
+
+## Test 1 (H2)
+
+### Test 1.1 (H3)
+
+#### Test 1.1.1 (H4)
+
+##### Test 1.1.1.1 (H5)
+
+###### Test 1.1.1.1.1 (H6)
+
+This is the maximum level of nesting allowed.
+
+####### This is a paragraph

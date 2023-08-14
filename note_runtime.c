@@ -42,7 +42,7 @@ struct note_t* rt_get_note_by_id (char *id)
     return id_to_note_get (&rt->notes_by_id, id);
 }
 
-void rt_link_entities (struct splx_node_t *src, struct splx_node_t *tgt)
+void rt_link_entities (struct splx_node_t *src, struct splx_node_t *tgt, char *text, char *section)
 {
     assert (src != NULL && tgt != NULL);
 
@@ -52,15 +52,27 @@ void rt_link_entities (struct splx_node_t *src, struct splx_node_t *tgt)
     // more context about where the link is coming from in each repetition.
     splx_node_attribute_append_once (&rt->sd, src, "link", tgt);
     splx_node_attribute_append_once (&rt->sd, tgt, "backlink", src);
+
+    if (text != NULL || section != NULL) {
+        struct splx_node_t *link_stmt = splx_statement_node_get_or_create (&rt->sd, src, "link", tgt);
+
+        if (text != NULL) {
+            splx_node_attribute_append_once_c_str (&rt->sd, link_stmt, "text", text, SPLX_NODE_TYPE_STRING);
+        }
+
+        if (section != NULL) {
+            splx_node_attribute_append_once_c_str (&rt->sd, link_stmt, "section", section, SPLX_NODE_TYPE_STRING);
+        }
+    }
 }
 
-void rt_link_entities_by_id (char *src_id, char *tgt_id)
+void rt_link_entities_by_id (char *src_id, char *tgt_id, char *text, char *section)
 {
     struct note_runtime_t *rt = rt_get ();
 
     struct splx_node_t *src_node = splx_node_get_or_create(&rt->sd, src_id, SPLX_NODE_TYPE_OBJECT);
     struct splx_node_t *tgt_node = splx_node_get_or_create(&rt->sd, tgt_id, SPLX_NODE_TYPE_OBJECT);
-    rt_link_entities (src_node, tgt_node);
+    rt_link_entities (src_node, tgt_node, text, section);
 }
 
 void rt_process_note (mem_pool_t *pool_out, struct file_vault_t *vlt, struct splx_data_t *sd, struct note_t *note)

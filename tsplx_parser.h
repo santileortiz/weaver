@@ -8,6 +8,14 @@ BINARY_TREE_NEW (ptr_set, void*, void*, (a==b) ? 0 : (a<b ? -1 : 1))
 BINARY_TREE_NEW (cstr_to_splx_node_map, char*, struct splx_node_t*, strcmp(a, b))
 BINARY_TREE_NEW (cstr_to_splx_node_list_map, char*, struct splx_node_list_t*, strcmp(a, b))
 
+struct splx_statement_node_t {
+    struct splx_node_t *subject;
+    char *predicate;
+    struct splx_node_t *object;
+};
+int splx_statement_node_cmp (struct splx_statement_node_t *a,  struct splx_statement_node_t *b);
+BINARY_TREE_NEW (statement_nodes_map, struct splx_statement_node_t, struct splx_node_t *, splx_statement_node_cmp(&a, &b))
+
 #define SPLX_NODE_TYPES_TABLE                         \
     SPLX_NODE_TYPE_ROW(SPLX_NODE_TYPE_UNKNOWN)        \
     SPLX_NODE_TYPE_ROW(SPLX_NODE_TYPE_SOFT_REFERENCE) \
@@ -52,6 +60,8 @@ struct splx_data_t {
     struct cstr_to_splx_node_map_t nodes;
     struct splx_node_t *entities;
 
+    struct statement_nodes_map_t statement_nodes;
+
     // The root is different than "entities" in that it has the actual nesting
     // structure of the whole object parsed, entities instead is just a flat
     // node containing all entities as floating objects. Some entities without
@@ -70,6 +80,10 @@ struct splx_node_t* splx_node_get_attribute (struct splx_node_t *node, char *att
 string_t* splx_node_get_name (struct splx_node_t *node);
 struct splx_node_t* splx_get_node_by_name(struct splx_data_t *sd, char *name);
 bool splx_node_attribute_contains (struct splx_node_t *node, char *attr, char *value);
+
+struct splx_node_t* splx_statement_node_get_or_create (struct splx_data_t *sd, struct splx_node_t *subject, char *predicate, struct splx_node_t *object);
+bool splx_statement_node_set (struct splx_data_t *sd, struct splx_node_t *subject, char *predicate, struct splx_node_t *object, struct splx_node_t *node);
+struct splx_node_t* splx_statement_node_get (struct splx_data_t *sd, struct splx_node_t *subject, char *predicate, struct splx_node_t *object);
 
 #define TSPLX_PARSER_H
 #endif

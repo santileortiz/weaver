@@ -20,6 +20,7 @@ let code_block_padding = 12 // px
 css_property_set ("--code-block-padding", code_block_padding + "px");
 
 let opened_notes = [];
+let current_section = "";
 
 // TODO: This is duplicated inside psplx_parser.c, this should be centralized.
 // :content_width
@@ -67,7 +68,7 @@ function sidebar_set_visible (is_visible)
 function toggle_sidebar ()
 {
     var sidebar = document.getElementById("sidebar");
-    
+
     if (sidebar.classList.contains("hidden")) {
         sidebar_set_visible (true);
 
@@ -122,7 +123,7 @@ function note_text_to_element (container, id, note_html)
     }
 
     if (note_has_scroll()) {
-        new_note.style.paddingBottom = "50vh";
+        new_note.style.paddingBottom = "75vh";
     }
 
     return new_note;
@@ -224,6 +225,11 @@ function push_state ()
 
         state += id;
     }
+
+    if (current_section != undefined && current_section.length > 0) {
+        state += `#${current_section}`
+    }
+
     history.pushState(null, "", state);
     hashchange();
 }
@@ -273,7 +279,7 @@ function open_virtual_entity(note_id)
 }
 
 // :pushes_state
-function open_note(note_id)
+function open_note(note_id, at_section)
 {
     let opened_note_ids = opened_notes.map(e => e[1]);
     if (opened_note_ids.includes(note_id)) {
@@ -284,6 +290,8 @@ function open_note(note_id)
     } else {
         opened_notes.push(["normal", note_id]);
     }
+
+    current_section = at_section;
 
     let expanded_note = document.querySelector(".note");
     expanded_note.innerHTML = '';

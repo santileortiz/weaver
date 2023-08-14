@@ -1,0 +1,139 @@
+# Page Links
+
+To create a page link by the target's title use \note{Page Syntax}. Instead of
+the title, the page's ID can also be used \note{V5VQ876393}.
+
+The `->` separator can be used to change the visible text that links to the
+note. \note{Custom Text -> Page Syntax} links to the same page as the previous
+example but shows `Custom Text` instead of the page's title.
+
+Components can be quoted to use otherwise not allowed characters the `->`
+character sequence, like \note{"here" -> "Thin -> Arrow"}.
+
+ - Inside quoted notation `\"` will represent the `"` character.
+
+ - If one component is quoted then all should be quoted. If this isn't true the
+   behavior is the same as for unquoted mode. Compare these equivalent links
+   \note{Custom Text -> "Quoted Page Title"} and \note{"Custom Text" -> "\"Quoted Page Title\""}
+
+When using quoted notation, it's possible to link to a page section, like
+\note{"Page Syntax" > "First Section (H2)" > "Nested (H3)"}. This is not
+available in unquoted notation. Note that links to sections are in general not
+stable, they shouldn't be used extensively because they can easily break:
+
+ -  A section link will break if the path to a linked section changes. For
+    example because the section is relocated within the page or turned into a
+    page itself.
+
+ - A link to a section of a page that has multiple sections with equal title
+   will break if the equally named sections are reordered.
+
+## Test Cases
+
+By page title
+
+ - \note{Page Syntax}
+ - \note{"Page Syntax" > "Test 1 (H2)"}
+ - \note{"Page Syntax" > "Test 1 (H2)" > "Test 1.1 (H3)"}
+ - \note{"Page Syntax" > "Test 1 (H2)" > "Test 1.1 (H3)" > "Test 1.1.1 (H4)"}
+ - \note{"Page Syntax" > "Test 1 (H2)" > "Test 1.1 (H3)" > "Test 1.1.1 (H4)" > "Test 1.1.1.1 (H5)"}
+ - \note{"Page Syntax" > "Test 1 (H2)" > "Test 1.1 (H3)" > "Test 1.1.1 (H4)" > "Test 1.1.1.1 (H5)" > "Test 1.1.1.1.1 (H6)"}
+ - \note{Custom Text -> Page Syntax}
+ - \note{"Custom Text" -> "Page Syntax" > "Test 1 (H2)"}
+ - \note{"Custom Text" -> "Page Syntax" > "Test 1 (H2)" > "Test 1.1 (H3)"}
+ - \note{"Custom Text" -> "Page Syntax" > "Test 1 (H2)" > "Test 1.1 (H3)" > "Test 1.1.1 (H4)"}
+ - \note{"Custom Text" -> "Page Syntax" > "Test 1 (H2)" > "Test 1.1 (H3)" > "Test 1.1.1 (H4)" > "Test 1.1.1.1 (H5)"}
+ - \note{"Custom Text" -> "Page Syntax" > "Test 1 (H2)" > "Test 1.1 (H3)" > "Test 1.1.1 (H4)" > "Test 1.1.1.1 (H5)" > "Test 1.1.1.1.1 (H6)"}
+
+By page id
+
+ - \note{V5VQ876393}
+ - \note{"V5VQ876393" > "Test 1 (H2)"}
+ - \note{"V5VQ876393" > "Test 1 (H2)" > "Test 1.1 (H3)"}
+ - \note{"V5VQ876393" > "Test 1 (H2)" > "Test 1.1 (H3)" > "Test 1.1.1 (H4)"}
+ - \note{"V5VQ876393" > "Test 1 (H2)" > "Test 1.1 (H3)" > "Test 1.1.1 (H4)" > "Test 1.1.1.1 (H5)"}
+ - \note{"V5VQ876393" > "Test 1 (H2)" > "Test 1.1 (H3)" > "Test 1.1.1 (H4)" > "Test 1.1.1.1 (H5)" > "Test 1.1.1.1.1 (H6)"}
+ - \note{Custom Text -> V5VQ876393}
+ - \note{"Custom Text" -> "V5VQ876393" > "Test 1 (H2)"}
+ - \note{"Custom Text" -> "V5VQ876393" > "Test 1 (H2)" > "Test 1.1 (H3)"}
+ - \note{"Custom Text" -> "V5VQ876393" > "Test 1 (H2)" > "Test 1.1 (H3)" > "Test 1.1.1 (H4)"}
+ - \note{"Custom Text" -> "V5VQ876393" > "Test 1 (H2)" > "Test 1.1 (H3)" > "Test 1.1.1 (H4)" > "Test 1.1.1.1 (H5)"}
+ - \note{"Custom Text" -> "V5VQ876393" > "Test 1 (H2)" > "Test 1.1 (H3)" > "Test 1.1.1 (H4)" > "Test 1.1.1.1 (H5)" > "Test 1.1.1.1.1 (H6)"}
+
+No spaces
+
+ - \note{"Page Syntax">"Test 1 (H2)"}
+ - \note{"Page Syntax">"Test 1 (H2)">"Test 1.1 (H3)"}
+ - \note{"Page Syntax">"Test 1 (H2)">"Test 1.1 (H3)">"Test 1.1.1 (H4)"}
+ - \note{"Page Syntax">"Test 1 (H2)">"Test 1.1 (H3)">"Test 1.1.1 (H4)">"Test 1.1.1.1 (H5)"}
+ - \note{"Page Syntax">"Test 1 (H2)">"Test 1.1 (H3)">"Test 1.1.1 (H4)">"Test 1.1.1.1 (H5)">"Test 1.1.1.1.1 (H6)"}
+ - \note{Custom Text->Page Syntax}
+ - \note{Custom Text With->Arrows->Page Syntax}
+ - \note{"Custom Text"->"Page Syntax">"Test 1 (H2)"}
+ - \note{"Custom Text"->"Page Syntax">"Test 1 (H2)">"Test 1.1 (H3)"}
+ - \note{"Custom Text"->"Page Syntax">"Test 1 (H2)">"Test 1.1 (H3)">"Test 1.1.1 (H4)"}
+ - \note{"Custom Text"->"Page Syntax">"Test 1 (H2)">"Test 1.1 (H3)">"Test 1.1.1 (H4)">"Test 1.1.1.1 (H5)"}
+ - \note{"Custom Text"->"Page Syntax">"Test 1 (H2)">"Test 1.1 (H3)">"Test 1.1.1 (H4)">"Test 1.1.1.1 (H5)">"Test 1.1.1.1.1 (H6)"}
+ - \note{"V5VQ876393">"Test 1 (H2)"}
+ - \note{"V5VQ876393">"Test 1 (H2)">"Test 1.1 (H3)"}
+ - \note{"V5VQ876393">"Test 1 (H2)">"Test 1.1 (H3)">"Test 1.1.1 (H4)"}
+ - \note{"V5VQ876393">"Test 1 (H2)">"Test 1.1 (H3)">"Test 1.1.1 (H4)">"Test 1.1.1.1 (H5)"}
+ - \note{"V5VQ876393">"Test 1 (H2)">"Test 1.1 (H3)">"Test 1.1.1 (H4)">"Test 1.1.1.1 (H5)">"Test 1.1.1.1.1 (H6)"}
+ - \note{Custom Text->V5VQ876393}
+ - \note{Custom Text With->Arrows->V5VQ876393}
+ - \note{"Custom Text"->"V5VQ876393">"Test 1 (H2)"}
+ - \note{"Custom Text"->"V5VQ876393">"Test 1 (H2)">"Test 1.1 (H3)"}
+ - \note{"Custom Text"->"V5VQ876393">"Test 1 (H2)">"Test 1.1 (H3)">"Test 1.1.1 (H4)"}
+ - \note{"Custom Text"->"V5VQ876393">"Test 1 (H2)">"Test 1.1 (H3)">"Test 1.1.1 (H4)">"Test 1.1.1.1 (H5)"}
+ - \note{"Custom Text"->"V5VQ876393">"Test 1 (H2)">"Test 1.1 (H3)">"Test 1.1.1 (H4)">"Test 1.1.1.1 (H5)">"Test 1.1.1.1.1 (H6)"}
+
+Unquoted defaults
+
+ - \note{-> Page Syntax}
+ - \note{->Page Syntax}
+ - \note{Custom Text With -> Arrows -> Page Syntax}
+ - \note{-> Custom Text With -> Arrows -> Page Syntax}
+ - \note{Custom Text With > Greater Than -> Page Syntax}
+ - \note{> Custom Text With > Greater Than -> Page Syntax}
+
+Escaping
+
+ - \note{\"Quoted Page Title\"}
+ - \note{"\"Quoted Page Title\""}
+ - \note{"\"Quoted Page Title\"" > "\"Quoted Section Title\""}
+
+These will create virtual notes
+
+ - \note{"Quoted Page Title"}
+ - \note{Title with quoted "end"}
+ - \note{"Title" with quoted start}
+ - \note{Title "with quoted" middle}
+ - \note{"Title with -> arrows -> Page Syntax"}
+ - \note{"Title with > greater than > Page Syntax"}
+ - \note{Title with > greater than > Page Syntax}
+ - \note{> Title with > greater than > Page Syntax}
+ - \note{Page Syntax->}
+ - \note{Page Syntax ->}
+ - \note{Title With > Greater Than ->}
+ - \note{    Title    with  spaces    }
+ - \note{"->"}
+ - \note{">"}
+ - \note{>}
+ - \note{ >}
+ - \note{> }
+ - \note{  >  }
+ - \note{-> >}
+ - \note{ -> >}
+ - \note{ ->  >}
+ - \note{ ->  > }
+ - \note{ ->  > }
+ - \note{  ->  >  }
+
+These will not create a link
+
+ - \note{}
+ - \note{      }
+ - \note{->}
+ - \note{ ->}
+ - \note{-> }
+ - \note{  ->  }

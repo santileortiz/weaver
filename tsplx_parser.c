@@ -678,6 +678,75 @@ struct splx_node_t* splx_get_node_by_name(struct splx_data_t *sd, char *name)
     return result;
 }
 
+
+int splx_statement_node_cmp (struct splx_statement_node_t *a,  struct splx_statement_node_t *b)
+{
+    if (a->subject < b->subject) {
+        return -1;
+    } else if (a->subject > b->subject) {
+        return 1;
+    }
+
+    int pred_cmp = strcmp(a->predicate, b->predicate);
+    if (pred_cmp != 0) {
+        return pred_cmp;
+    }
+
+    if (a->object < b->object) {
+        return -1;
+    } else if (a->object > b->object) {
+        return 1;
+    }
+
+    return 0;
+}
+
+struct splx_node_t* splx_statement_node_get_or_create (struct splx_data_t *sd, struct splx_node_t *subject, char *predicate, struct splx_node_t *object)
+{
+    struct splx_statement_node_t statement = {0};
+    statement.subject = subject;
+    statement.predicate = predicate;
+    statement.object = object;
+
+    struct splx_node_t *node = statement_nodes_map_get (&sd->statement_nodes, statement);
+
+    if (node == NULL) {
+        node = splx_node_new (sd);
+        statement_nodes_map_insert (&sd->statement_nodes, statement, node);
+    }
+
+    return node;
+}
+
+bool splx_statement_node_set (struct splx_data_t *sd, struct splx_node_t *subject, char *predicate, struct splx_node_t *object, struct splx_node_t *node)
+{
+    assert (node != NULL);
+
+    bool success = false;
+
+    struct splx_statement_node_t statement = {0};
+    statement.subject = subject;
+    statement.predicate = predicate;
+    statement.object = object;
+
+    if (statement_nodes_map_get (&sd->statement_nodes, statement) == NULL) {
+        statement_nodes_map_insert (&sd->statement_nodes, statement, node);
+        success = true;
+    }
+
+    return success;
+}
+
+struct splx_node_t* splx_statement_node_get (struct splx_data_t *sd, struct splx_node_t *subject, char *predicate, struct splx_node_t *object)
+{
+    struct splx_statement_node_t statement = {0};
+    statement.subject = subject;
+    statement.predicate = predicate;
+    statement.object = object;
+
+    return statement_nodes_map_get (&sd->statement_nodes, statement);
+}
+
 struct query_ctx_t {
     bool done;
     struct splx_node_list_t *curr_node;
