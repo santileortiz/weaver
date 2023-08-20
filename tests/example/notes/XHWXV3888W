@@ -96,11 +96,59 @@ Unquoted defaults
  - \note{Custom Text With > Greater Than -> Page Syntax}
  - \note{> Custom Text With > Greater Than -> Page Syntax}
 
-Escaping
+Special characters
 
  - \note{\"Quoted Page Title\"}
  - \note{"\"Quoted Page Title\""}
  - \note{"\"Quoted Page Title\"" > "\"Quoted Section Title\""}
+
+ - \note{Page   
+   Syntax}
+
+ - \note{"Page
+   Syntax"}
+
+ - \note{"Custom Text"
+    -> "Page Syntax"}
+
+ - \note{"Custom
+   Text"
+   ->
+   "Page
+   Syntax"
+   >
+   "Test
+   1  (H2)  "}
+
+ - \note{
+
+   "  
+   
+   Custom  
+
+   Text   
+   
+   "   
+
+   ->  
+
+   "  
+    Page   
+
+      Syntax
+
+   "   
+           
+     >      
+
+   "
+      Test    
+
+       1    (H2)
+      "
+           
+
+   }
 
 These will create virtual notes
 

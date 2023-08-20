@@ -966,7 +966,7 @@ def files_sort():
         temp.write('\n'.join([f.fname() for f in file_list]))
         temp.close()
 
-        ex(f'gvim -f {name}')
+        ex(f'nvim-qt -f {name}')
 
         maybe_dup_ids = []
         new_order = open(name, 'r')

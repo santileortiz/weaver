@@ -1049,21 +1049,22 @@ bool char_in_str (char c, char *str)
     return false;
 }
 
+#define str_strip(s) str_strip_full(s, " \t\n")
 static inline
-void str_strip (string_t *str)
+void str_strip_full (string_t *str, char *space_chars)
 {
     if (str_len(str) > 0) {
         char *start = str_data(str);
         char *new_start = str_data(str);
         size_t new_len = str_len(str);
 
-        while (is_space (new_start) || *(new_start) == '\n') {
+        while (char_in_str (*new_start, space_chars)) {
             new_start++;
             new_len--;
         }
 
         if (new_len > 0) {
-            while (is_space (new_start + new_len - 1) || *(new_start + new_len - 1) == '\n') {
+            while (char_in_str (*(new_start + new_len - 1), space_chars)) {
                 new_len--;
             }
         }
@@ -1091,6 +1092,39 @@ void str_rstrip (string_t *str)
 
         str_shrink (str, new_len);
     }
+}
+
+void str_normalize_spaces (string_t *str, char *space_chars)
+{
+    if (str == NULL || space_chars == NULL)  return;
+
+    size_t new_len = str_len(str);
+    char *src = str_data(str);
+    char *dst = src;
+
+    while (*src != '\0') {
+        if (char_in_str(*src, space_chars)) {
+            while (char_in_str(*src, space_chars)) {
+                src++;
+                new_len--;
+            }
+
+            *dst = ' ';
+
+            new_len++;
+            src--;
+
+        } else {
+            *dst = *src;
+        }
+
+        dst++;
+        src++;
+    }
+
+    str_shrink (str, new_len);
+
+    str_strip_full (str, space_chars);
 }
 
 void str_dedent (string_t *str)

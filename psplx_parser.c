@@ -1310,6 +1310,7 @@ void psx_parse_link (char *str, string_t *text_o, string_t *reference_o, string_
 
     bool unquoted = false;
 
+    scr_consume_spaces (scr);
     if (scr_curr_char(scr) == '\"')
     {
         bool match = false;
@@ -1395,15 +1396,17 @@ void psx_parse_link (char *str, string_t *text_o, string_t *reference_o, string_
         }
     }
 
-    str_strip(&text);
+    str_replace(&text, "\\\"", "\"", NULL);
+    str_normalize_spaces(&text, " \t\n");
 
-    str_strip(&reference);
     str_replace(&reference, "\\\"", "\"", NULL);
-    str_replace(&reference, "\n", " ", NULL);
+    str_normalize_spaces(&reference, " \t\n");
 
-    str_strip(&section);
-    str_replace(&section, "\\\"", "\"", NULL);
-    str_replace(&section, "\n", " ", NULL);
+    if (!unquoted) {
+        str_replace(&section, "\\\"", "\"", NULL);
+        str_normalize_spaces(&section, " \t\n");
+    }
+
 
     if (text_o != NULL) str_cpy(text_o, &text);
     if (reference_o != NULL) str_cpy(reference_o, &reference);
