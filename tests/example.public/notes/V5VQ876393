@@ -1,0 +1,24 @@
+<div id="V5VQ876393">
+  <h1 id="user-content-page-syntax">Page Syntax</h1>
+  <p>Titles use a sequence of up to 6 consecutive <code class="code-inline">#</code> characters at the start. The number of <code class="code-inline">#</code> characters denotes their heading level. After the <code class="code-inline">#</code> characters there's a mandatory space before the title.</p>
+  <p>Only the page's title can have a single <code class="code-inline">#</code> character. Any page's section title must start with at least 2 <code class="code-inline">#</code> characters.</p>
+  <h2 id="user-content-paragraphs">Paragraphs</h2>
+  <p>Paragraphs are separated by an empty line. Contiguous lines are not broken, instead they are joined into the same paragraph by a space. Sequences of consecutive space characters are normalized to a single one.</p>
+  <p># A paragraph can start with <code class="code-inline">#</code> if its prefixed with <code class="code-inline">\</code>.</p>
+  <p>#### Only one <code class="code-inline">\</code> character is necessary to escape a sequence of <code class="code-inline">#</code>.</p>
+  <p>Escaping of # characters ## is ### only #### necessary ##### at ###### the start of paragraphs. This escaping isn't necessary in titles either, the space character after the sequence of <code class="code-inline">#</code> characters separates the title marker from the title itself, see <a class="note-link" href="?n=W6FH7VJ9RJ" onclick="return open_note('W6FH7VJ9RJ');"># Page Title With #Hash Characters</a>.</p>
+  <h2 id="user-content-test-1-h2">Test 1 (H2)</h2>
+  <h3 id="user-content-test-11-h3">Test 1.1 (H3)</h3>
+  <h4 id="user-content-test-111-h4">Test 1.1.1 (H4)</h4>
+  <h5 id="user-content-test-1111-h5">Test 1.1.1.1 (H5)</h5>
+  <h6 id="user-content-test-11111-h6">Test 1.1.1.1.1 (H6)</h6>
+  <p>This is the maximum level of nesting allowed.</p>
+  <p>####### This is a paragraph because it exceeds the maximum nesting level.</p>
+  <p>####### Even though it's not necessary to escape title sequences with more than 6 <code class="code-inline">#</code> characters, we still remove the escaping <code class="code-inline">`</code></p>
+  <p>\####### Use <code class="code-inline">\\</code> to get a single <code class="code-inline">\</code> at the start of a paragraph.</p>
+  <h4>Backlinks</h4>
+  <div class="backlinks">
+    <p><a class="note-link" href="?n=XHWXV3888W" onclick="return open_note('XHWXV3888W');">Page Links</a></p>
+    <p><a class="note-link" href="?n=68W5X99W59" onclick="return open_note('68W5X99W59');">Sample PKB</a></p>
+  </div>
+</div>

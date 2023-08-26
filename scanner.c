@@ -155,10 +155,11 @@ bool scr_match_double_quoted_string (struct scanner_t *scr)
     return found;
 }
 
-// NOTE: The resulting sstring_t does include the first found \n character. This
-// has been relevant because this character may triggers different behaviors
-// sometimes they are ignored, sometimes they are replaced to space. If they are
-// not necessary, it's trivial to just subtract 1 from the returned length.
+// NOTE: The resulting sstring_t does include the first found \n character.
+// This has been relevant because this character may trigger different
+// behaviors sometimes they are ignored, sometimes they are replaced with
+// space. If they are not necessary, it's trivial to just subtract 1 from the
+// returned length.
 sstring_t scr_advance_line(struct scanner_t *scr)
 {
     char *start = scr->pos;

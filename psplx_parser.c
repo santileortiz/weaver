@@ -534,6 +534,10 @@ struct psx_token_t ps_next_peek(struct psx_parser_state_t *ps)
             tok->margin = non_space_pos - backup_pos;
             tok->type = TOKEN_TYPE_TITLE;
             tok->heading_number = heading_number;
+
+        } else {
+            ps->scr.pos = backup_pos;
+            ps->scr.column_number = backup_column_number;
         }
 
     } else if (scr_match_str(PS_SCR, "\\code")) {
@@ -1557,9 +1561,15 @@ void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html
     ps_init (ps, content);
     char *original_pos = NULL;
 
+    // Remove escaping character of escaped title sequences or escaped '\' at
+    // the start.
+    if (content[0] == '\\' && (content[1] == '#' || content[1] == '\\')) {
+        scr_advance_char(PS_SCR);
+    }
+
     // TODO: I'm starting to think inline parser shouldn't use a stack based
     // state for handling nested tags. I'm starting to think that a recursive
-    // parser would  better?, but it's just a feeling, It's possible the code
+    // parser would be better?, but it's just a feeling, It's possible the code
     // will still look the same.
     DYNAMIC_ARRAY_APPEND (ps->block_unit_stack, psx_block_unit_new (&ps->pool, BLOCK_UNIT_TYPE_ROOT, container));
     while (!PS_SCR->is_eof && !ps->error) {
@@ -2211,6 +2221,7 @@ void attributes_html_append (struct html_t *html, struct psx_block_t *block, str
         struct html_element_t *types = html_new_element (html, "div");
         html_element_class_add (html, types, "type-list");
 
+        int visible_types_cnt = 0;
         LINKED_LIST_FOR (struct splx_node_list_t *, curr_list_node, type_list) {
             char *type_str = str_data(&curr_list_node->node->str);
             if (strcmp(type_str, "note") != 0) {
@@ -2218,10 +2229,13 @@ void attributes_html_append (struct html_t *html, struct psx_block_t *block, str
                 html_element_class_add (html, value, "type");
                 html_element_append_cstr (html, value, type_str);
                 html_element_append_child (html, types, value);
+                visible_types_cnt++;
             }
         }
 
-        html_element_append_child (html, parent, types);
+        if (visible_types_cnt > 0) {
+            html_element_append_child (html, parent, types);
+        }
     }
 
     int num_visible_attributes = block->data->attributes.num_nodes;

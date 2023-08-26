@@ -1,0 +1,328 @@
+<div id="XHWXV3888W">
+  <h1 id="user-content-page-links">Page Links</h1>
+  <p>To create a page link by the target's title use <a class="note-link" href="?n=V5VQ876393" onclick="return open_note('V5VQ876393');">Page Syntax</a>. Instead of the title, the page's ID can also be used <a class="note-link" href="?n=V5VQ876393" onclick="return open_note('V5VQ876393');">Page Syntax</a>.</p>
+  <p>The <code class="code-inline">-&gt;</code> separator can be used to change the visible text that links to the note. <a class="note-link" href="?n=V5VQ876393" onclick="return open_note('V5VQ876393');">Custom Text</a> links to the same page as the previous example but shows <code class="code-inline">Custom Text</code> instead of the page's title.</p>
+  <p>Components can be quoted to use otherwise not allowed characters the <code class="code-inline">-&gt;</code> character sequence, like <a class="note-link" href="?v=VCMHGGJ222" onclick="return open_virtual_entity('VCMHGGJ222');">here</a>.</p>
+  <ul>
+    <li>
+      <p>Inside quoted notation <code class="code-inline">\"</code> will represent the <code class="code-inline">"</code> character.</p>
+    </li>
+    <li>
+      <p>If one component is quoted then all should be quoted. If this isn't true the behavior is the same as for unquoted mode. Compare these equivalent links <a class="note-link" href="?n=WCM48HVJ5X" onclick="return open_note('WCM48HVJ5X');">Custom Text</a> and <a class="note-link" href="?n=WCM48HVJ5X" onclick="return open_note('WCM48HVJ5X');">Custom Text</a></p>
+    </li>
+  </ul>
+  <p>When using quoted notation, it's possible to link to a page section, like <a class="note-link" href="?n=V5VQ876393#nested-h3" onclick="return open_note('V5VQ876393', 'nested-h3');">Page Syntax<b> &gt; </b>Nested (H3)</a>. This is not available in unquoted notation. Note that links to sections are in general not stable, they shouldn't be used extensively because they can easily break:</p>
+  <ul>
+    <li>
+      <p>A section link will break if the path to a linked section changes. For example because the section is relocated within the page or turned into a page itself.</p>
+    </li>
+    <li>
+      <p>A link to a section of a page that has multiple sections with equal title will break if the equally named sections are reordered.</p>
+    </li>
+  </ul>
+  <h2 id="user-content-test-cases">Test Cases</h2>
+  <p>By page title</p>
+  <ul>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393" onclick="return open_note('V5VQ876393');">Page Syntax</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393#test-1-h2" onclick="return open_note('V5VQ876393', 'test-1-h2');">Page Syntax<b> &gt; </b>Test 1 (H2)</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393#test-11-h3" onclick="return open_note('V5VQ876393', 'test-11-h3');">Page Syntax<b> &gt; </b>Test 1.1 (H3)</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393#test-111-h4" onclick="return open_note('V5VQ876393', 'test-111-h4');">Page Syntax<b> &gt; </b>Test 1.1.1 (H4)</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393#test-1111-h5" onclick="return open_note('V5VQ876393', 'test-1111-h5');">Page Syntax<b> &gt; </b>Test 1.1.1.1 (H5)</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393#test-11111-h6" onclick="return open_note('V5VQ876393', 'test-11111-h6');">Page Syntax<b> &gt; </b>Test 1.1.1.1.1 (H6)</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393" onclick="return open_note('V5VQ876393');">Custom Text</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393#test-1-h2" onclick="return open_note('V5VQ876393', 'test-1-h2');">Custom Text</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393#test-11-h3" onclick="return open_note('V5VQ876393', 'test-11-h3');">Custom Text</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393#test-111-h4" onclick="return open_note('V5VQ876393', 'test-111-h4');">Custom Text</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393#test-1111-h5" onclick="return open_note('V5VQ876393', 'test-1111-h5');">Custom Text</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393#test-11111-h6" onclick="return open_note('V5VQ876393', 'test-11111-h6');">Custom Text</a></p>
+    </li>
+  </ul>
+  <p>By page id</p>
+  <ul>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393" onclick="return open_note('V5VQ876393');">Page Syntax</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393#test-1-h2" onclick="return open_note('V5VQ876393', 'test-1-h2');">Page Syntax<b> &gt; </b>Test 1 (H2)</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393#test-11-h3" onclick="return open_note('V5VQ876393', 'test-11-h3');">Page Syntax<b> &gt; </b>Test 1.1 (H3)</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393#test-111-h4" onclick="return open_note('V5VQ876393', 'test-111-h4');">Page Syntax<b> &gt; </b>Test 1.1.1 (H4)</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393#test-1111-h5" onclick="return open_note('V5VQ876393', 'test-1111-h5');">Page Syntax<b> &gt; </b>Test 1.1.1.1 (H5)</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393#test-11111-h6" onclick="return open_note('V5VQ876393', 'test-11111-h6');">Page Syntax<b> &gt; </b>Test 1.1.1.1.1 (H6)</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393" onclick="return open_note('V5VQ876393');">Custom Text</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393#test-1-h2" onclick="return open_note('V5VQ876393', 'test-1-h2');">Custom Text</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393#test-11-h3" onclick="return open_note('V5VQ876393', 'test-11-h3');">Custom Text</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393#test-111-h4" onclick="return open_note('V5VQ876393', 'test-111-h4');">Custom Text</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393#test-1111-h5" onclick="return open_note('V5VQ876393', 'test-1111-h5');">Custom Text</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393#test-11111-h6" onclick="return open_note('V5VQ876393', 'test-11111-h6');">Custom Text</a></p>
+    </li>
+  </ul>
+  <p>No spaces</p>
+  <ul>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393#test-1-h2" onclick="return open_note('V5VQ876393', 'test-1-h2');">Page Syntax<b> &gt; </b>Test 1 (H2)</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393#test-11-h3" onclick="return open_note('V5VQ876393', 'test-11-h3');">Page Syntax<b> &gt; </b>Test 1.1 (H3)</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393#test-111-h4" onclick="return open_note('V5VQ876393', 'test-111-h4');">Page Syntax<b> &gt; </b>Test 1.1.1 (H4)</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393#test-1111-h5" onclick="return open_note('V5VQ876393', 'test-1111-h5');">Page Syntax<b> &gt; </b>Test 1.1.1.1 (H5)</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393#test-11111-h6" onclick="return open_note('V5VQ876393', 'test-11111-h6');">Page Syntax<b> &gt; </b>Test 1.1.1.1.1 (H6)</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393" onclick="return open_note('V5VQ876393');">Custom Text</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393" onclick="return open_note('V5VQ876393');">Custom Text With-&gt;Arrows</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393" onclick="return open_note('V5VQ876393');">Custom Text</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393#test-1-h2" onclick="return open_note('V5VQ876393', 'test-1-h2');">Custom Text</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393#test-11-h3" onclick="return open_note('V5VQ876393', 'test-11-h3');">Custom Text</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393#test-111-h4" onclick="return open_note('V5VQ876393', 'test-111-h4');">Custom Text</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393#test-1111-h5" onclick="return open_note('V5VQ876393', 'test-1111-h5');">Custom Text</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393#test-11111-h6" onclick="return open_note('V5VQ876393', 'test-11111-h6');">Custom Text</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393#test-1-h2" onclick="return open_note('V5VQ876393', 'test-1-h2');">Page Syntax<b> &gt; </b>Test 1 (H2)</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393#test-11-h3" onclick="return open_note('V5VQ876393', 'test-11-h3');">Page Syntax<b> &gt; </b>Test 1.1 (H3)</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393#test-111-h4" onclick="return open_note('V5VQ876393', 'test-111-h4');">Page Syntax<b> &gt; </b>Test 1.1.1 (H4)</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393#test-1111-h5" onclick="return open_note('V5VQ876393', 'test-1111-h5');">Page Syntax<b> &gt; </b>Test 1.1.1.1 (H5)</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393#test-11111-h6" onclick="return open_note('V5VQ876393', 'test-11111-h6');">Page Syntax<b> &gt; </b>Test 1.1.1.1.1 (H6)</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393" onclick="return open_note('V5VQ876393');">Custom Text</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393" onclick="return open_note('V5VQ876393');">Custom Text With-&gt;Arrows</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393#test-1-h2" onclick="return open_note('V5VQ876393', 'test-1-h2');">Custom Text</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393#test-11-h3" onclick="return open_note('V5VQ876393', 'test-11-h3');">Custom Text</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393#test-111-h4" onclick="return open_note('V5VQ876393', 'test-111-h4');">Custom Text</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393#test-1111-h5" onclick="return open_note('V5VQ876393', 'test-1111-h5');">Custom Text</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393#test-11111-h6" onclick="return open_note('V5VQ876393', 'test-11111-h6');">Custom Text</a></p>
+    </li>
+  </ul>
+  <p>Unquoted defaults</p>
+  <ul>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393" onclick="return open_note('V5VQ876393');">Page Syntax</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393" onclick="return open_note('V5VQ876393');">Page Syntax</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393" onclick="return open_note('V5VQ876393');">Custom Text With -&gt; Arrows</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393" onclick="return open_note('V5VQ876393');">-&gt; Custom Text With -&gt; Arrows</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393" onclick="return open_note('V5VQ876393');">Custom Text With &gt; Greater Than</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393" onclick="return open_note('V5VQ876393');">&gt; Custom Text With &gt; Greater Than</a></p>
+    </li>
+  </ul>
+  <p>Special characters</p>
+  <ul>
+    <li>
+      <p><a class="note-link" href="?n=WCM48HVJ5X" onclick="return open_note('WCM48HVJ5X');">"Quoted Page Title"</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=WCM48HVJ5X" onclick="return open_note('WCM48HVJ5X');">"Quoted Page Title"</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=WCM48HVJ5X#quoted-section-title" onclick="return open_note('WCM48HVJ5X', 'quoted-section-title');">"Quoted Page Title"<b> &gt; </b>"Quoted Section Title"</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393" onclick="return open_note('V5VQ876393');">Page Syntax</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393" onclick="return open_note('V5VQ876393');">Page Syntax</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393" onclick="return open_note('V5VQ876393');">Custom Text</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393#test-1-h2" onclick="return open_note('V5VQ876393', 'test-1-h2');">Custom Text</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393#test-1-h2" onclick="return open_note('V5VQ876393', 'test-1-h2');">Custom Text</a></p>
+    </li>
+  </ul>
+  <p>These will create virtual notes</p>
+  <ul>
+    <li>
+      <p><a class="note-link" href="?v=WXF7QMH956" onclick="return open_virtual_entity('WXF7QMH956');">Quoted Page Title</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?v=V89VMV4HMP" onclick="return open_virtual_entity('V89VMV4HMP');">Title with quoted "end"</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?v=W6672VQWWQ" onclick="return open_virtual_entity('W6672VQWWQ');">"Title" with quoted start</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?v=J2H9VH8QRF" onclick="return open_virtual_entity('J2H9VH8QRF');">Title "with quoted" middle</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?v=3JWVG2XP3X" onclick="return open_virtual_entity('3JWVG2XP3X');">Title with -&gt; arrows -&gt; Page Syntax</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?v=J7FR9RRC9Q" onclick="return open_virtual_entity('J7FR9RRC9Q');">Title with &gt; greater than &gt; Page Syntax</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?v=J7FR9RRC9Q" onclick="return open_virtual_entity('J7FR9RRC9Q');">Title with &gt; greater than &gt; Page Syntax</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?v=H5HW26F642" onclick="return open_virtual_entity('H5HW26F642');">&gt; Title with &gt; greater than &gt; Page Syntax</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?v=JMV9HHMRGF" onclick="return open_virtual_entity('JMV9HHMRGF');">Page Syntax-&gt;</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?v=V5Q869RHM9" onclick="return open_virtual_entity('V5Q869RHM9');">Page Syntax -&gt;</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?v=WH4FQQP965" onclick="return open_virtual_entity('WH4FQQP965');">Title With &gt; Greater Than -&gt;</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?v=W7G6HGX53X" onclick="return open_virtual_entity('W7G6HGX53X');">Title with spaces</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?v=W645HXMQXM" onclick="return open_virtual_entity('W645HXMQXM');">-&gt;</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?v=WJ67FXMP58" onclick="return open_virtual_entity('WJ67FXMP58');">&gt;</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?v=WJ67FXMP58" onclick="return open_virtual_entity('WJ67FXMP58');">&gt;</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?v=WJ67FXMP58" onclick="return open_virtual_entity('WJ67FXMP58');">&gt;</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?v=WJ67FXMP58" onclick="return open_virtual_entity('WJ67FXMP58');">&gt;</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?v=WJ67FXMP58" onclick="return open_virtual_entity('WJ67FXMP58');">&gt;</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?v=WJ67FXMP58" onclick="return open_virtual_entity('WJ67FXMP58');">&gt;</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?v=WJ67FXMP58" onclick="return open_virtual_entity('WJ67FXMP58');">&gt;</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?v=WJ67FXMP58" onclick="return open_virtual_entity('WJ67FXMP58');">&gt;</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?v=WJ67FXMP58" onclick="return open_virtual_entity('WJ67FXMP58');">&gt;</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?v=WJ67FXMP58" onclick="return open_virtual_entity('WJ67FXMP58');">&gt;</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?v=WJ67FXMP58" onclick="return open_virtual_entity('WJ67FXMP58');">&gt;</a></p>
+    </li>
+  </ul>
+  <p>These will not create a link</p>
+  <ul>
+    <li>
+      <p></p>
+    </li>
+    <li>
+      <p></p>
+    </li>
+    <li>
+      <p></p>
+    </li>
+    <li>
+      <p></p>
+    </li>
+    <li>
+      <p></p>
+    </li>
+    <li>
+      <p></p>
+    </li>
+  </ul>
+  <h4>Backlinks</h4>
+  <div class="backlinks">
+    <p><a class="note-link" href="?n=68W5X99W59" onclick="return open_note('68W5X99W59');">Sample PKB</a></p>
+  </div>
+</div>

@@ -1,6 +1,5 @@
 <div id="MJRX49RR78">
   <h1 id="user-content-redacting">Redacting</h1>
-  <div class="type-list"></div>
   <p>Redacting is the mechanism used to separate personal from public content. It hides personal content in public publishing, but preserves useful relationships for personal use.</p>
   <p>This paragraph contains a parenthesized reference to a private page. The redacting feature will remove the parenthesis and its enclosing content when publishing publicly.</p>
   <p>To make redacting undetectable when publishing publicly, we do some space stripping. Spaces <i>after</i> are preserved, but we remove spaces <i>before</i>. As in most places, multiple spaces will be collapsed to a single one.</p>

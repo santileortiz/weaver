@@ -38,4 +38,9 @@ the title itself, see \note{# Page Title With #Hash Characters}.
 
 This is the maximum level of nesting allowed.
 
-####### This is a paragraph
+####### This is a paragraph because it exceeds the maximum nesting level.
+
+\####### Even though it's not necessary to escape title sequences with more
+than 6 `#` characters, we still remove the escaping `\` if present.
+
+\\####### Use \code{\\} to get a single \code{\} at the start of a paragraph.

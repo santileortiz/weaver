@@ -69,6 +69,7 @@ No spaces
  - \note{"Page Syntax">"Test 1 (H2)">"Test 1.1 (H3)">"Test 1.1.1 (H4)">"Test 1.1.1.1 (H5)">"Test 1.1.1.1.1 (H6)"}
  - \note{Custom Text->Page Syntax}
  - \note{Custom Text With->Arrows->Page Syntax}
+ - \note{"Custom Text"->"Page Syntax"}
  - \note{"Custom Text"->"Page Syntax">"Test 1 (H2)"}
  - \note{"Custom Text"->"Page Syntax">"Test 1 (H2)">"Test 1.1 (H3)"}
  - \note{"Custom Text"->"Page Syntax">"Test 1 (H2)">"Test 1.1 (H3)">"Test 1.1.1 (H4)"}

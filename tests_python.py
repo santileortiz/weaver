@@ -1101,20 +1101,36 @@ def test_dir(dir1, dir2):
     equal = True
 
     for file in dirs_cmp.left_only:
-        test_error(f"File {os.path.join(dir1, file)} exists only in {dir1}")
+        test_error(f"File {path_cat(dir1, file)} exists only in {dir1}")
+        test_error(f"cp {path_cat(dir1, file)} {dir2}")
+        test_error(f"nvim -- -O {path_cat('./tests/example/notes/', file)} {path_cat(dir2, file)}")
         equal = False
 
     for file in dirs_cmp.right_only:
-        test_error(f"File {os.path.join(dir2, file)} exists only in {dir2}")
+        test_error(f"File {path_cat(dir2, file)} exists only in {dir2}")
+        test_error(f"cp {path_cat(dir2, file)} {dir1}")
+        test_error(f"nvim -- -O {path_cat('./tests/example/notes/', file)} {path_cat(dir1, file)}")
         equal = False
 
     for file in dirs_cmp.diff_files:
-        test_error(f"{os.path.join(dir1, file)} != {os.path.join(dir2, file)}")
+        # FIXME: Nasty hack just to have correct paths in the command. I should
+        # rework these tests to use code closer to the same we use to generate,
+        # but to assemble the full expected result, then compare the full
+        # generator's output not just the data and pages. Make that code track
+        # the original location of the sourcecode of the expected files.
+        src_dir = dir2
+        if dir2 == './bin/full_static_expected':
+            src_dir = './tests/example.full'
+        elif dir2 == './bin/full_static_expected/notes':
+            src_dir = './tests/example.full/notes'
+
+        test_error(f"{path_cat(dir1, file)} != {path_cat(src_dir, file)}")
+        test_error(f"nvim -- -d {path_cat(dir1, file)} {path_cat(src_dir, file)} -c 'wincmd l | normal! zR'")
         equal = False
 
     for common_dir in dirs_cmp.common_dirs:
-        dir1_path = os.path.join(dir1, common_dir)
-        dir2_path = os.path.join(dir2, common_dir)
+        dir1_path = path_cat(dir1, common_dir)
+        dir2_path = path_cat(dir2, common_dir)
         if not test_dir(dir1_path, dir2_path):
             equal = False
 
@@ -1172,7 +1188,15 @@ def tests():
     file_utility()
 
 
+    static_target_full = './bin/full_static'
     static_target_public = './bin/public_static'
+
+    if path_exists(static_target_full):
+        shutil.rmtree(static_target_full)
+    if path_exists(static_target_public):
+        shutil.rmtree(static_target_public)
+
+
     test_push(f'Public static example')
     success = static_site_test ('./tests/example', static_target_public, './tests/example.public', public=True)
     test_pop(success)
@@ -1183,7 +1207,6 @@ def tests():
     shutil.rmtree (server_home_public)
 
 
-    static_target_full = './bin/full_static'
     test_push(f'Full static example')
     # To avoid having to add all public pages both in the public and full
     # expected outputs, we always use the public one as a base, then the full
@@ -1202,5 +1225,6 @@ def tests():
     shutil.rmtree (server_home_full)
 
 
-    shutil.rmtree (static_target_public)
-    shutil.rmtree (static_target_full)
+    if success:
+        shutil.rmtree (static_target_public)
+        shutil.rmtree (static_target_full)
