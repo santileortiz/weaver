@@ -12,20 +12,16 @@
       <p><a href="http://example.com" target="_blank">link</a></p>
     </li>
     <li>
-      <p><img src="files/image_name.jpg" width="588"></p>
+      <p><img src="files/image_name.jpg"></p>
     </li>
     <li>
-      <p><iframe allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen frameborder="0" height="313.875" src="https://www.youtube-nocookie.com/embed/Rpjab--XQ0U" style="margin: 0 auto; display: block;" width="558"></iframe></p>
+      <p><iframe allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen frameborder="0" height="392.625" src="https://www.youtube-nocookie.com/embed/Rpjab--XQ0U" style="margin: 0 auto; display: block;" width="698"></iframe></p>
     </li>
     <li>
       <p><code class="code-inline">some inline code</code></p>
     </li>
-    <li>
-      <p><span>some<\span> inline <span>html<\span></p>
-    </li>
-    <li>
-      <p><span>{inline math: e^{\pi i} = -1}</span></p>
-    </li>
+    <li><span>some<\span> inline <span>html<\span></li>
+    <li><span>{inline math: e^{\pi i} = -1}</span></li>
   </ul>
   <h2 id="user-content-broken-versions-of-tags">Broken versions of tags</h2>
   <p>TODO: It would be nice if this test was smaller. Maybe test tag parser programmatically and not with note files, then we can iterate to generate these tests in a more compact fashion.</p>
@@ -212,7 +208,7 @@
       <p>\image{url</p>
     </li>
     <li>
-      <p><img src="files/{{" width="588">{{}}}</p>
+      <p><img src="files/{{">{{}}}</p>
     </li>
     <li>
       <p>\youtube{</p>
@@ -248,7 +244,7 @@
       <p>\math{url</p>
     </li>
     <li>
-      <p>\math{{{}{{}}}</p>
+      <p>{{}}}</p>
     </li>
   </ul>
   <p>Broken content but valid parameters</p>
@@ -365,10 +361,10 @@
       <p>\link<a href="http://example.com" target="_blank">link</a></p>
     </li>
     <li>
-      <p>\image<img src="files/image_name.jpg" width="588"></p>
+      <p>\image<img src="files/image_name.jpg"></p>
     </li>
     <li>
-      <p>\youtube<iframe allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen frameborder="0" height="313.875" src="https://www.youtube-nocookie.com/embed/Rpjab--XQ0U" style="margin: 0 auto; display: block;" width="558"></iframe></p>
+      <p>\youtube<iframe allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen frameborder="0" height="392.625" src="https://www.youtube-nocookie.com/embed/Rpjab--XQ0U" style="margin: 0 auto; display: block;" width="698"></iframe></p>
     </li>
     <li>
       <p>\code<code class="code-inline">some inline code</code></p>

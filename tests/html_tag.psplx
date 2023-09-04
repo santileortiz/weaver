@@ -10,7 +10,7 @@
 </div>
 }
 
-Paragraph not part of the HTML.
+Some paragraph not part of the HTML.
 
 \html|197|
 <select id="language-select">
@@ -21,4 +21,4 @@ Paragraph not part of the HTML.
 <div style="display:grid; grid-template-columns: auto auto; gap: 12px;">
 </div>
 
-Paragraph not part of the HTML.
+Another paragraph not part of the HTML.

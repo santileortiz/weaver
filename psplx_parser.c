@@ -2074,10 +2074,6 @@ struct splx_node_t* psx_get_or_set_entity(struct splx_data_t *sd,
         psx_set_virtual_id(entity);
         splx_node_attribute_append_c_str(sd, entity, "a", type, SPLX_NODE_TYPE_OBJECT);
         splx_node_attribute_append_c_str(sd, entity, "name", str_data(&name_clean), SPLX_NODE_TYPE_STRING);
-
-        if (strcmp(type, "note") == 0) {
-            printf (ECMA_YELLOW("warning:") " virtual note \"%s\"\n", str_data(&name_clean));
-        }
     }
 
     str_free (&name_clean);
@@ -2366,9 +2362,34 @@ void block_tree_to_html (struct psx_parser_ctx_t *ctx, struct html_t *html, stru
 
     } else if (block->type == BLOCK_TYPE_PARAGRAPH) {
         if (block->data == NULL) {
-            struct html_element_t *new_dom_element = html_new_element (html, "p");
-            html_element_append_child (html, parent, new_dom_element);
-            block_content_parse_text (ctx, html, new_dom_element, str_data(&block->inline_content));
+            char *block_content = str_data(&block->inline_content);
+
+            char *tag = NULL;
+            char *end = NULL;
+            uint32_t tag_len = 0;
+            psx_match_tag (block_content, block_content, "\\", true,
+                &tag, &tag_len,
+                NULL, NULL, NULL, NULL,
+                &end,
+                NULL);
+
+            struct html_element_t *new_dom_element = NULL;
+            if (end != NULL && *end == '\0' && strncmp(tag, "html", 4) == 0) {
+                // Blocks consisting only of an html tags don't have a wrapper paragraph.
+                new_dom_element = parent;
+
+                // Add a line break to mark the start of the HTML. Only if it's
+                // not within a list item.
+                if (strcmp(str_data(&new_dom_element->tag), "li") != 0) {
+                    html_element_append_no_escape_strn (html, new_dom_element, 1, "\n");
+                }
+
+            } else {
+                new_dom_element = html_new_element (html, "p");
+                html_element_append_child (html, parent, new_dom_element);
+            }
+
+            block_content_parse_text (ctx, html, new_dom_element, block_content);
 
         } else {
             attributed_block_html_append (ctx, html, block, parent);
@@ -2432,7 +2453,7 @@ void block_tree_to_html (struct psx_parser_ctx_t *ctx, struct html_t *html, stru
             block_tree_to_html(ctx, html, sub_block, parent);
 
             // If there are note attributes in the root block, print them after
-            // the first block whoch sould've been the title (heading).
+            // the first block which sould've been the title (heading).
             if (block->data != NULL && is_first) {
                 is_first = false;
                 note_attributes_html_append (html, block, parent);
@@ -2472,7 +2493,10 @@ void block_tree_to_html (struct psx_parser_ctx_t *ctx, struct html_t *html, stru
     str_free (&buff);
 }
 
-void psx_parse_block_attributes (struct psx_parser_state_t *ps, struct psx_block_t *block, char *node_id)
+void psx_parse_block_attributes (struct psx_parser_state_t *ps,
+                                 struct psx_block_t *block,
+                                 char *node_id,
+                                 struct splx_node_t *parent_entity)
 {
     assert (block != NULL);
 
@@ -2531,6 +2555,10 @@ void psx_parse_block_attributes (struct psx_parser_state_t *ps, struct psx_block
 
         if (!splx_node_has_name(block->data)) {
             psx_set_virtual_id(block->data);
+
+            if (parent_entity != NULL) {
+                rt_link_entities (parent_entity, block->data, NULL, NULL);
+            }
         }
 
         // At this point, we parsed some attributes, and we're setting the new
@@ -2585,7 +2613,7 @@ void psx_parse_note_title (struct psx_parser_state_t *ps, sstring_t *title, bool
         // Note attributes are stored in the root block not in the heading
         // block.
         struct psx_block_t *root_block = ps->block_stack[0];
-        psx_parse_block_attributes(ps, root_block, ps->ctx.id);
+        psx_parse_block_attributes(ps, root_block, ps->ctx.id, NULL);
     }
 
     // TODO: Validate that the title has no inline tags.
@@ -2645,6 +2673,8 @@ void psx_append_paragraph_continuation_lines (struct psx_parser_state_t *ps, str
 
 void psx_parse (struct psx_parser_state_t *ps)
 {
+    struct splx_node_t *note_entity = ps->block_stack[0]->data;
+
     while (!PS_SCR->is_eof && !ps->error) {
         struct psx_token_t tok = ps_next(ps);
 
@@ -2707,7 +2737,7 @@ void psx_parse (struct psx_parser_state_t *ps)
                 psx_error (ps, "only the note title can have heading level 1");
             }
 
-            psx_parse_block_attributes(ps, heading_block, NULL);
+            psx_parse_block_attributes(ps, heading_block, NULL, note_entity);
 
             // :pop_leaf_blocks
             ps->block_stack_len--;
@@ -2731,7 +2761,7 @@ void psx_parse (struct psx_parser_state_t *ps)
                 ps->scr.column_number = 0;
             }
 
-            psx_parse_block_attributes(ps, new_paragraph, NULL);
+            psx_parse_block_attributes(ps, new_paragraph, NULL, note_entity);
 
             // Paragraph blocks are never left in the stack. Maybe we should
             // just not push leaf blocks into the stack...
@@ -2812,7 +2842,7 @@ void psx_parse (struct psx_parser_state_t *ps)
                 list_item->margin = tok_peek.margin;
                 struct psx_block_t *new_paragraph = psx_push_block(ps, psx_leaf_block_new(ps, BLOCK_TYPE_PARAGRAPH, tok_peek.margin, tok_peek.value));
                 psx_append_paragraph_continuation_lines (ps, new_paragraph);
-                psx_parse_block_attributes(ps, new_paragraph, NULL);
+                psx_parse_block_attributes(ps, new_paragraph, NULL, note_entity);
 
                 // :pop_leaf_blocks
                 ps->block_stack_len--;
@@ -3255,7 +3285,9 @@ PSX_LATE_USER_TAG_CB(entity_list_tag_handler)
 
         struct splx_node_list_t *types = splx_node_get_attributes (entity, "a");
         LINKED_LIST_FOR (struct splx_node_list_t *, curr_type, types) {
-            if (strcmp(str_data(&curr_type->node->str), str_data(&tag->content)) == 0 && entity_is_visible(entity)) {
+            if (strcmp(str_data(&curr_type->node->str), str_data(&tag->content)) == 0 &&
+                entity_is_visible(entity))
+            {
                 struct html_element_t *list_item = html_new_element (note->html, "li");
                 html_element_append_child (note->html, html_placeholder, list_item);
 
@@ -3277,11 +3309,48 @@ PSX_LATE_USER_TAG_CB(entity_list_tag_handler)
     }
 }
 
+PSX_LATE_USER_TAG_CB(virtual_list_tag_handler)
+{
+    str_set(&html_placeholder->tag, "ul");
+
+    LINKED_LIST_FOR (struct splx_node_list_t *, curr_list_node, rt->sd.entities->floating_values) {
+        struct splx_node_t *entity = curr_list_node->node;
+        struct splx_node_t *virtual_id = splx_node_get_attribute (entity, "t:virtual_id");
+
+        if (virtual_id != NULL && entity_is_visible(entity)) {
+            struct html_element_t *list_item = html_new_element (note->html, "li");
+            html_element_append_child (note->html, html_placeholder, list_item);
+
+            struct html_element_t *paragraph = html_new_element (note->html, "p");
+            html_element_append_child (note->html, list_item, paragraph);
+
+            // TODO: How can there be virtual entities without a name?...
+            string_t name = {0};
+            string_t *entity_name = splx_node_get_name (entity);
+            if (entity_name == NULL) {
+                str_cpy (&name, &virtual_id->str);
+            } else {
+                str_cpy (&name, entity_name);
+            }
+
+            html_append_entity_link (NULL, note->html,
+                paragraph,
+                str_data(&virtual_id->str),
+                NULL,
+                false,
+                &name);
+
+            str_free (&name);
+        }
+    }
+}
+
 // Register callbacks
 // :late_tag_api
 #define PSX_LATE_INTERNAL_TAG_TABLE \
 PSX_INTERNAL_CUSTOM_TAG_ROW ("orphan_list", orphan_list_tag_handler) \
 PSX_INTERNAL_CUSTOM_TAG_ROW ("entity_list", entity_list_tag_handler) \
+PSX_INTERNAL_CUSTOM_TAG_ROW ("virtual_list", virtual_list_tag_handler) \
 
 void psx_populate_internal_late_cb_tree (struct psx_late_user_tag_cb_t *tree)
 {

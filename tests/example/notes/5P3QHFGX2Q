@@ -1,0 +1,9 @@
+# Virtual List
+
+The following special tag lists all entities that don't have a PSPLX file
+associated with them, this is what we call virtual entities.
+
+Private virtual entities (like \personal{Non-public Virtual}) will only show up
+here when publishing privately.
+
+\virtual_list{}

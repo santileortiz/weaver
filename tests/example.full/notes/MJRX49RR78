@@ -8,6 +8,14 @@
         <div class="type-list">
           <div class="type">personal</div>
         </div>
+        <div class="attributes">
+          <div style="align-items: baseline; display: flex; color: var(--secondary-fg-color)">
+            <div class="attribute-label">backlink</div>
+            <div style="row-gap: 3px; display: flex; flex-wrap: wrap; overflow-x: auto;">
+              <div class="attribute-value">MJRX49RR78</div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>

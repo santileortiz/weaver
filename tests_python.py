@@ -1180,10 +1180,10 @@ def tests():
     #test_error(output, indent=0)
     #test_pop(False)
 
-    #test_push(f'PSPLX')
-    #output = ex('bin/psplx_parser_tests', ret_stdout=True, echo=False)
-    #test_error(output, indent=0)
-    #test_pop(False)
+    test_push(f'PSPLX')
+    output = ex('bin/psplx_parser_tests', ret_stdout=True, echo=False)
+    test_error(output, indent=0)
+    test_pop(False)
 
     file_utility()
 

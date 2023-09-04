@@ -174,7 +174,7 @@ void generate_data_javascript (struct note_runtime_t *rt, char *out_fname, char 
     LINKED_LIST_FOR (struct splx_node_list_t *, curr_list_node, rt->sd.entities->floating_values) {
         struct splx_node_t *entity = curr_list_node->node;
 
-        if (!splx_node_is_referenceable (entity)) {
+        if (!splx_node_is_referenceable (entity) &&  entity_is_visible(entity)) {
             struct splx_node_t *virtual_id = splx_node_get_attribute (entity, "t:virtual_id");
 
             // Generate PSPLX

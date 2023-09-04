@@ -1,6 +1,45 @@
 typed_attributes a note ;
     my-type ;
   backlink inline_tags ;
+  link [
+      _ a another-type ;
+        attr "Another Value" ;
+        backlink typed_attributes ;
+        t:virtual_id "VJP2M3RCRH" ;
+    ] ;
+    [
+      _ a type1 ;
+        attr "Some other Value" ;
+        backlink typed_attributes ;
+        t:virtual_id "VQW85F744F" ;
+        url "http://example.com/content" ;
+    ] ;
+    [
+      _ a my-type ;
+        attr1 10 ;
+        attr2 "My Value" ;
+        backlink typed_attributes ;
+        name "Data without block." ;
+        t:virtual_id "VCMHGGJ222" ;
+    ] ;
+    [
+      _ a article ;
+        author q"XXXXXXXXXXXXXXX" ;
+        backlink typed_attributes ;
+        t:virtual_id "34HF3RV3VR" ;
+    ] ;
+    [
+      _ a type2 ;
+        attr3 "Yet Another Value" ;
+        backlink typed_attributes ;
+        t:virtual_id "69739RJ7MF" ;
+    ] ;
+    [
+      _ a type3 ;
+        attr4 123 ;
+        backlink typed_attributes ;
+        t:virtual_id "WM4FXFJHRW" ;
+    ] ;
   my-number 0 ;
   my-str "" ;
   my-url "http://example.com" ;
@@ -8,16 +47,19 @@ typed_attributes a note ;
 
 _ a another-type ;
   attr "Another Value" ;
+  backlink typed_attributes ;
   t:virtual_id "VJP2M3RCRH" ;
 
 _ a type1 ;
   attr "Some other Value" ;
+  backlink typed_attributes ;
   t:virtual_id "VQW85F744F" ;
   url "http://example.com/content" ;
 
 _ a my-type ;
   attr1 10 ;
   attr2 "My Value" ;
+  backlink typed_attributes ;
   name "Data without block." ;
   t:virtual_id "VCMHGGJ222" ;
 
@@ -25,13 +67,16 @@ GGGGGGGGGGGGGGGGGGGGGG a article ;
 
 _ a article ;
   author q"XXXXXXXXXXXXXXX" ;
+  backlink typed_attributes ;
   t:virtual_id "34HF3RV3VR" ;
 
 _ a type2 ;
   attr3 "Yet Another Value" ;
+  backlink typed_attributes ;
   t:virtual_id "69739RJ7MF" ;
 
 _ a type3 ;
   attr4 123 ;
+  backlink typed_attributes ;
   t:virtual_id "WM4FXFJHRW" ;
 

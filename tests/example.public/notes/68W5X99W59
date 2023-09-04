@@ -13,5 +13,8 @@
     <li>
       <p><a class="note-link" href="?n=MJRX49RR78" onclick="return open_note('MJRX49RR78');">Redacting</a></p>
     </li>
+    <li>
+      <p><a class="note-link" href="?n=5P3QHFGX2Q" onclick="return open_note('5P3QHFGX2Q');">Virtual List</a></p>
+    </li>
   </ul>
 </div>
