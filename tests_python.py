@@ -1175,15 +1175,18 @@ def tests():
 
     #test_force_output()
 
-    #test_push(f'TSPLX')
-    #output = ex('bin/tsplx_parser_tests', ret_stdout=True, echo=False)
-    #test_error(output, indent=0)
-    #test_pop(False)
+
+    test_push(f'TSPLX')
+    output = ex('bin/tsplx_parser_tests', ret_stdout=True, echo=False)
+    test_error(output, indent=0)
+    test_pop(re.search('fail|error', output, re.IGNORECASE) == None)
+
 
     test_push(f'PSPLX')
     output = ex('bin/psplx_parser_tests', ret_stdout=True, echo=False)
     test_error(output, indent=0)
-    test_pop(False)
+    test_pop(re.search('fail|error', output, re.IGNORECASE) == None)
+
 
     file_utility()
 
