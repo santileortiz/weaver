@@ -842,6 +842,19 @@ int cstr_replace_char_buff (char *src, char target, char replacement, char *dst)
     return replacement_cnt;
 }
 
+void ascii_to_lower (char *str)
+{
+    if (str == NULL) return;
+
+    while (*str) {
+        if (*str >= 'A' && *str <= 'Z') {
+            *str = *str + ('a' - 'A');
+        }
+
+        str++;
+    }
+}
+
 char* cstr_to_lower (char *str)
 {
     char *old_locale = begin_c_locale();

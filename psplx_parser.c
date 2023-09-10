@@ -1717,22 +1717,28 @@ void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html
                     uint64_t id = canonical_id_parse(str_data(&tag->content), 0);
                     struct vlt_file_t *file = file_id_lookup (ctx->vlt, id);
 
-                    // TODO: Put image extensions into an array, don't duplicate
-                    // upper and lower case cases.
-                    while (strncmp(str_data(&file->extension), "png", 3) != 0 &&
-                           strncmp(str_data(&file->extension), "PNG", 3) != 0 &&
-                           strncmp(str_data(&file->extension), "jpg", 3) != 0 &&
-                           strncmp(str_data(&file->extension), "JPG", 3) != 0 &&
-                           strncmp(str_data(&file->extension), "jpeg", 4) != 0 &&
-                           strncmp(str_data(&file->extension), "JPEG", 4) != 0 &&
-                           strncmp(str_data(&file->extension), "svg", 3) != 0 &&
-                           strncmp(str_data(&file->extension), "SVG", 3) != 0 &&
-                           strncmp(str_data(&file->extension), "gif", 3) != 0 &&
-                           strncmp(str_data(&file->extension), "GIF", 3) != 0) {
+                    string_t file_extension = {0};
+                    str_set (&file_extension, str_data(&file->extension));
+                    ascii_to_lower (str_data(&file_extension));
+
+                    // TODO: Put image extensions into an array.
+                    while (strncmp(str_data(&file_extension), "png", 3) != 0 &&
+                           strncmp(str_data(&file_extension), "jpg", 3) != 0 &&
+                           strncmp(str_data(&file_extension), "jpeg", 4) != 0 &&
+                           strncmp(str_data(&file_extension), "svg", 3) != 0 &&
+                           strncmp(str_data(&file_extension), "gif", 3) != 0 &&
+                           strncmp(str_data(&file_extension), "webp", 4) != 0)
+                    {
                         file = file->next;
+                        str_set (&file_extension, str_data(&file->extension));
+                        ascii_to_lower (str_data(&file_extension));
                     }
 
-                    str_set_printf (&buff, "files/%s", str_data(&file->path));
+                    if (file != NULL) {
+                        str_set_printf (&buff, "files/%s", str_data(&file->path));
+                    }
+
+                    str_free (&file_extension);
 
                 } else if (cstr_starts_with(str_data(&tag->content), "http://") ||
                            cstr_starts_with(str_data(&tag->content), "https://")) {
