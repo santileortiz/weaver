@@ -1722,7 +1722,8 @@ void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html
                     ascii_to_lower (str_data(&file_extension));
 
                     // TODO: Put image extensions into an array.
-                    while (strncmp(str_data(&file_extension), "png", 3) != 0 &&
+                    while (file != NULL &&
+                           strncmp(str_data(&file_extension), "png", 3) != 0 &&
                            strncmp(str_data(&file_extension), "jpg", 3) != 0 &&
                            strncmp(str_data(&file_extension), "jpeg", 4) != 0 &&
                            strncmp(str_data(&file_extension), "svg", 3) != 0 &&
@@ -1730,12 +1731,17 @@ void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html
                            strncmp(str_data(&file_extension), "webp", 4) != 0)
                     {
                         file = file->next;
-                        str_set (&file_extension, str_data(&file->extension));
-                        ascii_to_lower (str_data(&file_extension));
+
+                        if (file != NULL) {
+                            str_set (&file_extension, str_data(&file->extension));
+                            ascii_to_lower (str_data(&file_extension));
+                        }
                     }
 
                     if (file != NULL) {
                         str_set_printf (&buff, "files/%s", str_data(&file->path));
+                    } else {
+                        psx_warning_ctx (ctx, "error on image tag for: %s", str_data(&tag->content));
                     }
 
                     str_free (&file_extension);
@@ -1776,7 +1782,7 @@ void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html
             }
 
         } else if (ps_match(ps, TOKEN_TYPE_TEXT_TAG, "html")) {
-            struct psx_tag_t *tag = ps_parse_tag (ps, &original_pos);
+            struct psx_tag_t *tag = ps_parse_tag_full (&ps->pool, ps, &original_pos, true);
             if (tag->has_content) {
                 struct psx_block_unit_t *head_unit = ps->block_unit_stack[ps->block_unit_stack_len-1];
                 html_element_append_no_escape_strn (html, head_unit->html_element, str_len(&tag->content), str_data(&tag->content));

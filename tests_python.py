@@ -379,6 +379,8 @@ def canonical_file_name_tests():
     canonical_parse_test ("24_9F663P3R7W.1000.100.10.1 My File Name.jpg", CanonicalName(True, 24, None, "9F663P3R7W", [1000, 100, 10, 1], "My File Name", 'jpg'))
     canonical_parse_test ("1_scn_8JRPV4P32J.2 My File Name.jpg", CanonicalName(True, 1, "scn", "8JRPV4P32J", [2], "My File Name", 'jpg'))
     canonical_parse_test ("1_scn_8JRPV4P32J.2  My File Name.jpg", CanonicalName(True, 1, "scn", "8JRPV4P32J", [2], " My File Name", 'jpg'))
+    canonical_parse_test ("2VMH2FXRJF Screen-Shot-2021-12-10-at-3.50.07-PM.png", CanonicalName(True, None, None, "2VMH2FXRJF", [], "Screen-Shot-2021-12-10-at-3.50.07-PM", 'png'))
+
     test_pop()
 
 def canonical_rename_tests():

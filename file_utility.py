@@ -45,7 +45,7 @@ def copy_changed(src, dst):
 
     install_files(file_dict, '/')
 
-canonical_fname_r = '^(?:(?P<idx>[0-9]*)_)?(?:(?P<prefix>.*?)_)?(?P<id>[23456789CFGHJMPQRVWX]{8,})(?P<location>(?:\.[0-9]+)+)?(?: (?P<name>.+?))?(?:\.(?P<extension>.+))?$'
+canonical_fname_r = '^(?:(?P<idx>[0-9]*)_)?(?:(?P<prefix>.*?)_)?(?P<id>[23456789CFGHJMPQRVWX]{8,})(?P<location>(?:\.[0-9]+)+)?(?: (?P<name>.+?))?(?:\.(?P<extension>[^.]+))?$'
 
 
 # TODO: Implement something like an improved C struct but in Python.

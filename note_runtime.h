@@ -28,6 +28,7 @@ struct note_runtime_t {
     mem_pool_t pool;
     int notes_len;
     struct note_t *notes;
+    struct splx_data_t *metadata;
 
     int title_note_ids_len;
     char **title_note_ids;

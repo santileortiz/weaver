@@ -23,7 +23,7 @@ body, html {
     margin: 0;
     padding: 0;
     color: var(--fg-color);
-    font-size: 19px;
+    font-size: 18px;
     font-family: var(--ui-font);
     font-weight: 400;
 

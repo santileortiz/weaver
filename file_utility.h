@@ -5,7 +5,7 @@
 #include "lib/regexp.h"
 
 char *identifier_r = "^[23456789CFGHJMPQRVWX]{8,}$";
-char *canonical_fname_r = "^(?:([0-9]+)_)?(?:(.+?)_)?([23456789CFGHJMPQRVWX]{8,})((?:\\.[0-9]+)+)?(?: (.+?))?\\.(.*)$";
+char *canonical_fname_r = "^(?:([0-9]+)_)?(?:(.+?)_)?([23456789CFGHJMPQRVWX]{8,})((?:\\.[0-9]+)+)?(?: (.+?))?(?:\\.([^.]+))?$";
 
 struct vlt_file_t {
     // It's always relative to base_dir in file_vault_t

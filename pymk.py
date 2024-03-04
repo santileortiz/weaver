@@ -70,7 +70,7 @@ def server_deploy ():
     username = ssh_deployment["username"]
     pem_file = ssh_deployment["authentication"]["path"]
 
-    
+
     # TODO: This should be taken directly from ~/.weaver/config.tsplx, right
     # now we duplicate it here as JSON because there's no Python TSPLX parser
     # yet. Just uploading config.tsplx should work.
@@ -612,8 +612,58 @@ def get_type_config(target_type):
         target_file_dir = 'invoices'
         target_data_file = "digitized_invoices.tsplx"
         tsplx_stub = textwrap.dedent('''\
-            exchange["<+date+>","<+exchanger+>",<+from-value+>,"<+from-currency+>",q("<+from+>"),<+to-value+>,"USD",q("<+to+>")]{
-              "San Francisco 2022";
+            exchange["<+date+>","<+exchanger+>",<+from-value+>,"MXN",q("<+from+>"),<+to-value+>,"USD",q("<+to+>")]{
+              "OMG 2024 Q4";
+              file <+files+>;
+            };
+            ''')
+
+    elif target_type == "movie-ticket":
+        target_file_dir = 'ticket'
+        target_data_file = "ticket.tsplx"
+        tsplx_stub = textwrap.dedent('''\
+            ticket {
+              type "movie";
+              date "<+date+>";
+              film "<+film_title+>";
+              file <+files+>;
+            };
+            ''')
+
+    elif target_type == "event-ticket":
+        target_file_dir = 'ticket'
+        target_data_file = "ticket.tsplx"
+        tsplx_stub = textwrap.dedent('''\
+            ticket {
+              type "event";
+              date "<+date+>";
+              name "<+name+>";
+              place "<+place+>";
+              file <+files+>;
+            };
+            ''')
+
+    elif target_type == "music-festival-ticket":
+        target_file_dir = 'ticket'
+        target_data_file = "ticket.tsplx"
+        tsplx_stub = textwrap.dedent('''\
+            ticket {
+              type "concert"; "event";
+              date "<+date+>";
+              name "<+name+>";
+              artist q"<+artist+>";
+              file <+files+>;
+            };
+            ''')
+
+    elif target_type == "concert-ticket":
+        target_file_dir = 'ticket'
+        target_data_file = "ticket.tsplx"
+        tsplx_stub = textwrap.dedent('''\
+            ticket {
+              type "concert";
+              date "<+date+>";
+              artist q"<+artist+>";
               file <+files+>;
             };
             ''')
@@ -623,6 +673,7 @@ def get_type_config(target_type):
         target_data_file = "ticket.tsplx"
         tsplx_stub = textwrap.dedent('''\
             ticket {
+              type "transport";
               transport-means "bus";
               file <+files+>;
             };
@@ -633,6 +684,7 @@ def get_type_config(target_type):
         target_data_file = "ticket.tsplx"
         tsplx_stub = textwrap.dedent('''\
             ticket {
+              type "transport";
               from "<++>";
               to "<++>";
               transport-means "airplane";
@@ -652,7 +704,7 @@ def get_type_config(target_type):
             }};
             ''')
 
-    elif target_type in ["person", "establishment"]:
+    elif target_type in ["person", "establishment", "contact"]:
         tsplx_stub = textwrap.dedent(f'''\
             {target_type}["<+name+>"]{{
               file <+files+>;
@@ -735,11 +787,17 @@ def scan():
     if rest_args != None and len(rest_args) == 1:
         target_type = rest_args[0]
 
-    if show_help or (target_type == None and target_file_dir == None):
+    if show_help:
         print ("usage:")
-        print (f"  ./pymk.py {get_function_name()} TARGET_TYPE")
-        print (f"  ./pymk.py {get_function_name()} --directory TARGET_DIRECTORY")
+        print (f" ./pymk.py {get_function_name()}")
+        print (f" ./pymk.py {get_function_name()} --directory TARGET_DIRECTORY")
+        print (f" ./pymk.py {get_function_name()} TARGET_TYPE")
         return
+
+    if target_type == None and target_file_dir == None:
+        target_file_dir = fu.source_files_dir
+
+    is_stub_mode = target_type != None
 
     # If we don't pass a device to 'scanimage' and leave it to figure it out,
     # scanning takes significantly longer (10s per scan). To make things faster
@@ -752,22 +810,32 @@ def scan():
     elif len(scanner_names) == 1:
         scanner_name = scanner_names[0]
 
-    if target_type != None:
+    if is_stub_mode:
         target_file_dir, target_data_file, tsplx_stub = get_type_config(target_type)
     target_file_dir, target_data_file = fu.get_target(target_type, target_file_dir, target_data_file)
 
     help_str = textwrap.dedent("""\
         Commands:
-          n new scan (new instance)
-          d new document (in same instance)
+          d new document
           p scan next page in document
-
           e end document section
-          w end instance (optional, n and q imply this)
 
           h help
           q quit
         """)
+    if is_stub_mode:
+        help_str = textwrap.dedent("""\
+            Commands:
+              n new scan (new instance)
+              d new document (in same instance)
+              p scan next page in document
+
+              e end document section
+              w end instance (optional, n and q imply this)
+
+              h help
+              q quit
+            """)
 
     mfd = fu.MultiFileDocument(target_file_dir)
     ensure_dir(target_file_dir)
@@ -800,8 +868,8 @@ def scan():
     win.addstr(f'Using device: {scanner_name}\n\n')
     win.addstr(help_str)
 
-    if target_type != None:
-        instance_files = None
+    instance_files = []
+    if is_stub_mode:
         tsplx_data = None
 
     while True:
@@ -809,11 +877,11 @@ def scan():
         c = input_char(win)
         win.addstr('\n')
 
-        if c.lower() == 'n':
+        if is_stub_mode and c.lower() == 'n':
             path_to_scan = fu.mfd_new(mfd)
             error, output = new_scan (path_to_scan, resolution, device=scanner_name)
 
-            if not error and target_type != None:
+            if not error:
                 assert target_data_file != None
 
                 # If there was a tsplx data to be written, write it out. This
@@ -841,30 +909,29 @@ def scan():
                 win.addstr(' could not scan page\n')
 
         elif c.lower() == 'd':
-            if target_type != None:
-                path_to_scan = fu.mfd_new(mfd)
-                error, output = new_scan (path_to_scan, resolution, device=scanner_name)
+            path_to_scan = fu.mfd_new(mfd)
+            error, output = new_scan (path_to_scan, resolution, device=scanner_name)
 
-                if not error:
-                    instance_files.append(mfd.identifier)
+            if not error:
+                instance_files.append(mfd.identifier)
+
+                if is_stub_mode:
                     tsplx_data = resolve_stub(target_type,
                             tsplx_stub=tsplx_stub,
                             identifier=None,
                             files=instance_files)
-
                     win.addstr(f'TSPLX:\n{tsplx_data}')
+                else:
+                    win.addstr('\n'.join(mfd.document_files))
 
-                win.addstr(f'{output}\n')
-                win.refresh()
-
-            else:
-                win.addstr('error: new document in instance only makes sense when specifying a type, right now no stubs are being generated.\n')
+            win.addstr(f'{output}\n')
+            win.refresh()
 
         elif c.lower() == 'p':
             path_to_scan = fu.mfd_new_page (mfd)
             error, output = new_scan (path_to_scan, resolution, device=scanner_name)
 
-            if target_type != None:
+            if is_stub_mode:
                 tsplx_data = resolve_stub(target_type,
                         tsplx_stub=tsplx_stub,
                         identifier=None,
@@ -872,6 +939,8 @@ def scan():
 
                 win.addstr(f'TSPLX:\n')
                 win.addstr(f'{tsplx_data}\n')
+            else:
+                win.addstr('\n'.join(mfd.document_files))
 
             win.addstr(f'{output}\n')
             win.refresh()
@@ -892,30 +961,30 @@ def scan():
             for p in mfd.document_files:
                 win.addstr (f'  {p}\n')
 
-        elif c.lower() == 'w':
-            if target_type != None:
-                if tsplx_data != None:
-                    append_instance(target_data_file, tsplx_data)
+        elif is_stub_mode and c.lower() == 'w':
+            if tsplx_data != None:
+                append_instance(target_data_file, tsplx_data)
 
-                    win.addstr(f'TSPLX:\n')
-                    win.addstr(f'{tsplx_data}\n')
-                    tsplx_data = None
-
-                else:
-                    win.addstr('error: no instance data to be written out, did nothing.\n')
+                win.addstr(f'TSPLX:\n')
+                win.addstr(f'{tsplx_data}\n')
+                tsplx_data = None
 
             else:
-                win.addstr('error: new document in instance only makes sense when specifying a type, right now no stubs are being generated.\n')
+                win.addstr('error: no instance data to be written out, did nothing.\n')
 
         elif c.lower() == 'h':
             win.addstr(help_str)
 
         elif c.lower() == 'q':
-            if target_type != None and tsplx_data != None:
+            if is_stub_mode and tsplx_data != None:
                 append_instance(target_data_file, tsplx_data)
             break
 
     curses.endwin()
+
+    if not is_stub_mode:
+        for i in instance_files:
+            print(i)
 
 def files_sort():
     """
@@ -1979,6 +2048,16 @@ def process_csv_data_dump():
 
     with open(path_cat(fu.data_dir, 'santileortiz-fibery.tsplx'), 'w+') as target:
         target.write(res)
+
+def diff():
+    file_ids = get_cli_no_opt ()
+
+    if len(sys.argv) < 3:
+        print (f"usage: ./pymk.py {get_function_name()} <id1> <id2> ...")
+        return
+
+    file_args_str = " ".join([ex(f"./bin/weaver lookup {id}", ret_stdout=True, echo=False) for id in file_ids])
+    ex (f"nvim-qt -- -d {file_args_str}")
 
 builtin_completions = ['--get_build_deps']
 if __name__ == "__main__":

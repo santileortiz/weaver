@@ -3320,6 +3320,10 @@ char* abs_path (char *path, mem_pool_t *pool)
 
 void str_set_path (string_t *str, char *path)
 {
+    // TODO: We can't use abs_path() because _path_ isn't guaranteed to exist.
+    // We would need an alternate resolution for '.' and '..' segments in the
+    // path.
+
     char *user_path = resolve_user_path (path, NULL);
     str_set (str, user_path);
     free (user_path);

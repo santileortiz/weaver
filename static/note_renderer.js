@@ -142,7 +142,7 @@ function copy_note_cmd ()
         unescaped = unescaped.replace("\n", "\\n");
         unescaped = unescaped.replace("\"", "\\\"");
         unescaped = unescaped.replace("#", "\\#");
-        psplx = ` -c ':r! printf "${unescaped}"'`;
+        psplx = ` -- -c ':r! printf "${unescaped}"'`;
     }
 
     dummy_input.value = `nvim ${home_path}/notes/` + open_note[1] + psplx

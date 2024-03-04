@@ -2,6 +2,7 @@
  * Copyright (C) 2021 Santiago León O.
  */
 #include "common.h"
+#include "datetime.c"
 #include "scanner.c"
 #include "binary_tree.c"
 #include "test_logger.c"
@@ -18,6 +19,9 @@
 
 //////////////////////////////////////
 // Platform functions for testing
+
+#define META_CREATED_AT "created-at"
+#define META_UPDATED_AT "updated-at"
 
 void rt_init_push_file (struct note_runtime_t *rt, char *fname)
 {
@@ -45,7 +49,55 @@ void rt_init_push_file (struct note_runtime_t *rt, char *fname)
     } else {
         title_to_note_insert (&rt->notes_by_title, &new_note->title, new_note);
 
-        psx_get_or_set_entity(&rt->sd, new_note->id, "note", str_data(&new_note->title));
+        struct splx_node_t *note_node = psx_get_or_set_entity(&rt->sd, new_note->id, "note", str_data(&new_note->title));
+
+        char *fname_abs = abs_path (fname, NULL);
+        struct statx s = {0};
+        int res = statx(0, fname_abs, 0, STATX_BTIME, &s);
+        if (res == 0) {
+            char *metadata_date_created = NULL;
+            char *metadata_date_updated = NULL;
+            if (rt->metadata != NULL) {
+                struct splx_node_t *metadata_node = splx_get_node_by_id (rt->metadata, new_note->id);
+
+                if (metadata_node != NULL) {
+                    struct splx_node_t *date_created_node = splx_node_get_attribute (metadata_node, META_CREATED_AT);
+                    metadata_date_created = str_data(&date_created_node->str);
+
+                    struct splx_node_t *date_updated_node = splx_node_get_attribute (metadata_node, META_UPDATED_AT);
+                    metadata_date_updated = str_data(&date_updated_node->str);
+                }
+            }
+
+            struct date_t date = {0};
+            char date_str[DATE_TIMESTAMP_MAX_LEN];
+
+            date = date_read_unix(s.stx_btime.tv_sec);
+            date_write_rfc3339(&date, date_str);
+            if (metadata_date_created != NULL) {
+                bool success = false;
+                int cmp = date_cmp_str(metadata_date_created, date_str, &success, NULL);
+                if (success && cmp < 0) {
+                    strcpy(date_str, metadata_date_created);
+                }
+            } else {
+                printf("A %s\n", fname);
+            }
+            splx_node_attribute_append_c_str(&rt->sd, note_node, META_CREATED_AT, date_str, SPLX_NODE_TYPE_STRING);
+
+            date = date_read_unix(s.stx_mtime.tv_sec);
+            date_write_rfc3339(&date, date_str);
+            if (metadata_date_updated != NULL) {
+                bool success = false;
+                int cmp = date_cmp_str(metadata_date_updated, date_str, &success, NULL);
+                if (success && cmp < 0) {
+                    printf("M %s\n", fname);
+                }
+            }
+            splx_node_attribute_append_c_str(&rt->sd, note_node, META_UPDATED_AT, date_str, SPLX_NODE_TYPE_STRING);
+        }
+
+        free (fname_abs);
     }
 }
 
@@ -86,6 +138,8 @@ struct config_t {
     string_t home;
 
     string_t config_path;
+
+    string_t metadata_path;
 
     string_t source_notes_path;
     string_t source_files_path;
@@ -150,6 +204,51 @@ void generate_data_json (struct note_runtime_t *rt, char *out_fname)
 
     full_file_write (str_data(&generated_data), str_len(&generated_data), out_fname);
     str_free (&generated_data);
+}
+
+void generate_metadata (struct note_runtime_t *rt, struct config_t *cfg)
+{
+    string_t metadata_str = {0};
+    STACK_ALLOCATE (struct splx_data_t, metadata);
+
+    LINKED_LIST_FOR (struct splx_node_list_t *, curr_list_node, rt->sd.entities->floating_values) {
+        struct splx_node_t *entity = curr_list_node->node;
+
+        bool is_note = false;
+        struct splx_node_list_t *types = splx_node_get_attributes(entity, "a");
+        LINKED_LIST_FOR (struct splx_node_list_t *, curr_attr, types) {
+            struct splx_node_t *node = curr_attr->node;
+
+            if (strcmp("note", str_data(&node->str)) == 0) {
+                is_note = true;
+            }
+        }
+
+        if (is_note) {
+            char *entity_id = str_data(splx_node_get_id (entity));
+
+            if (strlen(entity_id) > 0) {
+                struct splx_node_t *metadata_node = splx_node(metadata, entity_id, SPLX_NODE_TYPE_OBJECT);
+
+                struct splx_node_t *date_created_node = splx_node_get_attribute (entity, META_CREATED_AT);
+                splx_node_attribute_append_c_str(metadata, metadata_node, META_CREATED_AT, str_data(&date_created_node->str), SPLX_NODE_TYPE_STRING);
+
+                struct splx_node_t *date_updated_node = splx_node_get_attribute (entity, META_UPDATED_AT);
+                splx_node_attribute_append_c_str(metadata, metadata_node, META_UPDATED_AT, str_data(&date_updated_node->str), SPLX_NODE_TYPE_STRING);
+
+                str_cat_splx_canonical_shallow(&metadata_str, metadata_node);
+                str_cat_c(&metadata_str, "\n");
+
+            } else {
+                 // TODO: Which entities of note type don't have an id?... I've
+                // seen some hit this case, haven't looked closer at where they
+                // were created.
+            }
+        }
+    }
+
+    full_file_write (str_data(&metadata_str), str_len(&metadata_str), str_data(&cfg->metadata_path));
+    str_free(&metadata_str);
 }
 
 void generate_data_javascript (struct note_runtime_t *rt, char *out_fname, char *home)
@@ -308,6 +407,9 @@ int main(int argc, char** argv)
     str_set_path (&cfg->config_path, str_data(&cfg->home));
     str_cat_path (&cfg->config_path, "config.tsplx");
 
+    str_set_path (&cfg->metadata_path, str_data(&cfg->home));
+    str_cat_path (&cfg->metadata_path, "metadata.tsplx");
+
     str_set_path (&cfg->source_notes_path, str_data(&cfg->home));
     str_cat_path (&cfg->source_notes_path, "notes/");
 
@@ -317,8 +419,16 @@ int main(int argc, char** argv)
     struct splx_data_t config = {0};
     tsplx_parse_name (&config, str_data(&cfg->config_path));
 
+    STACK_ALLOCATE(struct splx_data_t, metadata);
+    if (path_exists(str_data(&cfg->metadata_path))) {
+        tsplx_parse_name (metadata, str_data(&cfg->metadata_path));
+    } else {
+        metadata = NULL;
+    }
+
     rt->is_public = get_cli_bool_opt_ctx (cli_ctx, "--public", argv, argc);
     rt_init (rt, &config);
+    rt->metadata = metadata;
 
     rt->vlt.base_dir = str_data(&cfg->source_files_path);
     vlt_init (&rt->vlt);
@@ -505,6 +615,7 @@ int main(int argc, char** argv)
                     printf (ECMA_RED("error: ") "refusing to generate static site. Using command line input but output directory is missing as parameter, use --output-dir\n");
                 }
 
+                generate_metadata(rt, cfg);
                 generate_data_javascript(rt, str_data(&output_data_file), cli_home ? str_data(&cfg->home) : DEFAULT_HOME_DIR);
                 generate_data_json(rt, str_data(&output_json_file));
 
