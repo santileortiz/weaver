@@ -40,6 +40,13 @@ typed_attributes a note ;
         backlink typed_attributes ;
         t:virtual_id "WM4FXFJHRW" ;
     ] ;
+    [
+      _ a type3 ;
+        attr4 123 ;
+        backlink typed_attributes ;
+        name "Attributed list item without content" ;
+        t:virtual_id "WXF7QMH956" ;
+    ] ;
   my-number 0 ;
   my-str "" ;
   my-url "http://example.com" ;
@@ -79,4 +86,10 @@ _ a type3 ;
   attr4 123 ;
   backlink typed_attributes ;
   t:virtual_id "WM4FXFJHRW" ;
+
+_ a type3 ;
+  attr4 123 ;
+  backlink typed_attributes ;
+  name "Attributed list item without content" ;
+  t:virtual_id "WXF7QMH956" ;
 

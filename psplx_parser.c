@@ -2683,6 +2683,29 @@ void psx_append_paragraph_continuation_lines (struct psx_parser_state_t *ps, str
     }
 }
 
+void psx_push_attributed_block(struct psx_parser_state_t *ps, struct psx_token_t token, struct splx_node_t *note_entity)
+{
+    struct psx_block_t *new_paragraph = psx_push_block (ps, psx_leaf_block_new(ps, BLOCK_TYPE_PARAGRAPH, token.margin, token.value));
+
+    // Sigh... more nastiness caused by the peek API...
+    // :marker_over_peek
+    if (*token.value.s != '^' || sstr_find_char(&token.value, ' ') != NULL) {
+        psx_append_paragraph_continuation_lines (ps, new_paragraph);
+
+    } else {
+        // The block paragraph token was actually the beginning of
+        // block attributes this means the block's content is actually
+        // empty.
+        strn_set (&new_paragraph->inline_content, "", 0);
+
+        // :restore_pos
+        ps->scr.pos = token.value.s;
+        ps->scr.column_number = 0;
+    }
+
+    psx_parse_block_attributes(ps, new_paragraph, NULL, note_entity);
+}
+
 void psx_parse (struct psx_parser_state_t *ps)
 {
     struct splx_node_t *note_entity = ps->block_stack[0]->data;
@@ -2755,25 +2778,7 @@ void psx_parse (struct psx_parser_state_t *ps)
             ps->block_stack_len--;
 
         } else if (ps_match(ps, TOKEN_TYPE_PARAGRAPH, NULL)) {
-            struct psx_block_t *new_paragraph = psx_push_block (ps, psx_leaf_block_new(ps, BLOCK_TYPE_PARAGRAPH, tok.margin, tok.value));
-
-            // Sigh... more nastiness caused by the peek API...
-            // :marker_over_peek
-            if (*tok.value.s != '^' || sstr_find_char(&tok.value, ' ') != NULL) {
-                psx_append_paragraph_continuation_lines (ps, new_paragraph);
-
-            } else {
-                // The block paragraph token was actually the beginning of
-                // block attributes this means the block's content is actually
-                // empty.
-                strn_set (&new_paragraph->inline_content, "", 0);
-
-                // :restore_pos
-                ps->scr.pos = tok.value.s;
-                ps->scr.column_number = 0;
-            }
-
-            psx_parse_block_attributes(ps, new_paragraph, NULL, note_entity);
+            psx_push_attributed_block(ps, tok, note_entity);
 
             // Paragraph blocks are never left in the stack. Maybe we should
             // just not push leaf blocks into the stack...
@@ -2852,9 +2857,7 @@ void psx_parse (struct psx_parser_state_t *ps)
                 ps_next(ps);
 
                 list_item->margin = tok_peek.margin;
-                struct psx_block_t *new_paragraph = psx_push_block(ps, psx_leaf_block_new(ps, BLOCK_TYPE_PARAGRAPH, tok_peek.margin, tok_peek.value));
-                psx_append_paragraph_continuation_lines (ps, new_paragraph);
-                psx_parse_block_attributes(ps, new_paragraph, NULL, note_entity);
+                psx_push_attributed_block(ps, tok_peek, note_entity);
 
                 // :pop_leaf_blocks
                 ps->block_stack_len--;

@@ -51,50 +51,90 @@ void rt_init_push_file (struct note_runtime_t *rt, char *fname)
 
         struct splx_node_t *note_node = psx_get_or_set_entity(&rt->sd, new_note->id, "note", str_data(&new_note->title));
 
+        // TODO: This assumes statx() always exists and contains birth time.
+        // This seems to be a somewhat modern API that's not guaranteed to work
+        // for all operating systems or C runtime libraries. What would be a
+        // better cross platform alternative?, should probably add it into
+        // common.h.
         char *fname_abs = abs_path (fname, NULL);
         struct statx s = {0};
         int res = statx(0, fname_abs, 0, STATX_BTIME, &s);
         if (res == 0) {
-            char *metadata_date_created = NULL;
-            char *metadata_date_updated = NULL;
+            char *metadata_created_at = NULL;
+            char *metadata_updated_at = NULL;
             if (rt->metadata != NULL) {
                 struct splx_node_t *metadata_node = splx_get_node_by_id (rt->metadata, new_note->id);
 
                 if (metadata_node != NULL) {
-                    struct splx_node_t *date_created_node = splx_node_get_attribute (metadata_node, META_CREATED_AT);
-                    metadata_date_created = str_data(&date_created_node->str);
+                    struct splx_node_t *created_at_node = splx_node_get_attribute (metadata_node, META_CREATED_AT);
+                    metadata_created_at = str_data(&created_at_node->str);
 
-                    struct splx_node_t *date_updated_node = splx_node_get_attribute (metadata_node, META_UPDATED_AT);
-                    metadata_date_updated = str_data(&date_updated_node->str);
+                    struct splx_node_t *updated_at_node = splx_node_get_attribute (metadata_node, META_UPDATED_AT);
+                    metadata_updated_at = str_data(&updated_at_node->str);
                 }
             }
 
+            bool use_metadata_created_at = false; // True if create-at in the metadata file is older than the one from the filesystem
             struct date_t date = {0};
-            char date_str[DATE_TIMESTAMP_MAX_LEN];
 
+            char fs_created_at[DATE_TIMESTAMP_MAX_LEN];
+            char result_created_at[DATE_TIMESTAMP_MAX_LEN];
             date = date_read_unix(s.stx_btime.tv_sec);
-            date_write_rfc3339(&date, date_str);
-            if (metadata_date_created != NULL) {
+            date_write_rfc3339(&date, fs_created_at);
+            strcpy(result_created_at, fs_created_at); // Default result for create-at is the filesystem's
+            if (metadata_created_at != NULL) {
                 bool success = false;
-                int cmp = date_cmp_str(metadata_date_created, date_str, &success, NULL);
+                int cmp = date_cmp_str(metadata_created_at, result_created_at, &success, NULL);
                 if (success && cmp < 0) {
-                    strcpy(date_str, metadata_date_created);
+                    // If there's a metadata file containing an older create-at
+                    // make that the result instead.
+                    use_metadata_created_at = true;
+                    strcpy(result_created_at, metadata_created_at);
                 }
             } else {
-                printf("A %s\n", fname);
+                printf("A %s - %s\n", new_note->id, str_data(&new_note->title));
             }
-            splx_node_attribute_append_c_str(&rt->sd, note_node, META_CREATED_AT, date_str, SPLX_NODE_TYPE_STRING);
+            splx_node_attribute_append_c_str(&rt->sd, note_node, META_CREATED_AT, result_created_at, SPLX_NODE_TYPE_STRING);
 
+            char result_updated_at[DATE_TIMESTAMP_MAX_LEN];
             date = date_read_unix(s.stx_mtime.tv_sec);
-            date_write_rfc3339(&date, date_str);
-            if (metadata_date_updated != NULL) {
+            date_write_rfc3339(&date, result_updated_at);
+            if (metadata_updated_at != NULL) {
                 bool success = false;
-                int cmp = date_cmp_str(metadata_date_updated, date_str, &success, NULL);
+                int cmp = date_cmp_str(metadata_updated_at, result_updated_at, &success, NULL);
                 if (success && cmp < 0) {
-                    printf("M %s\n", fname);
+                    // If there's a metadata file with an older update-at than
+                    // the file system's, then the file content changed. Notify
+                    // that this was the case.
+                    printf("M %s - %s\n", new_note->id, str_data(&new_note->title));
                 }
             }
-            splx_node_attribute_append_c_str(&rt->sd, note_node, META_UPDATED_AT, date_str, SPLX_NODE_TYPE_STRING);
+
+            bool success = false;
+            int cmp = date_cmp_str(fs_created_at, result_updated_at, &success, NULL);
+            if (success && use_metadata_created_at && cmp == 0 && metadata_updated_at != NULL) {
+                // If we're using created-at from the metadata file (metadata
+                // file contains an older create-at than the file system) and
+                // both create-at and update-at in the filesystem are equal,
+                // then it's very likely the whole note database was just
+                // copy/pasted and the actual content of the page was not
+                // modified. Then we better use the metadata's update-at, as
+                // long as there's one.
+                strcpy(result_updated_at, metadata_updated_at);
+            }
+            splx_node_attribute_append_c_str(&rt->sd, note_node, META_UPDATED_AT, result_updated_at, SPLX_NODE_TYPE_STRING);
+
+            // TODO: There's notes with dynamic data:
+            //
+            // - Those that show a list of entities. For these updated-at
+            //   should be the last generation date, instead of the page's
+            //   content modification date. Should this happen at the "note
+            //   entity" data level, or at the frontend level by just marking
+            //   some notes as "dynamic" and passing the latest generation
+            //   date?.
+            //
+            // - Virtual notes. What should be the create/update dates for
+            //   them?.
         }
 
         free (fname_abs);
@@ -230,11 +270,11 @@ void generate_metadata (struct note_runtime_t *rt, struct config_t *cfg)
             if (strlen(entity_id) > 0) {
                 struct splx_node_t *metadata_node = splx_node(metadata, entity_id, SPLX_NODE_TYPE_OBJECT);
 
-                struct splx_node_t *date_created_node = splx_node_get_attribute (entity, META_CREATED_AT);
-                splx_node_attribute_append_c_str(metadata, metadata_node, META_CREATED_AT, str_data(&date_created_node->str), SPLX_NODE_TYPE_STRING);
+                struct splx_node_t *created_at_node = splx_node_get_attribute (entity, META_CREATED_AT);
+                splx_node_attribute_append_c_str(metadata, metadata_node, META_CREATED_AT, str_data(&created_at_node->str), SPLX_NODE_TYPE_STRING);
 
-                struct splx_node_t *date_updated_node = splx_node_get_attribute (entity, META_UPDATED_AT);
-                splx_node_attribute_append_c_str(metadata, metadata_node, META_UPDATED_AT, str_data(&date_updated_node->str), SPLX_NODE_TYPE_STRING);
+                struct splx_node_t *updated_at_node = splx_node_get_attribute (entity, META_UPDATED_AT);
+                splx_node_attribute_append_c_str(metadata, metadata_node, META_UPDATED_AT, str_data(&updated_at_node->str), SPLX_NODE_TYPE_STRING);
 
                 str_cat_splx_canonical_shallow(&metadata_str, metadata_node);
                 str_cat_c(&metadata_str, "\n");

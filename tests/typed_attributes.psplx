@@ -50,3 +50,8 @@ PSPLX version of the test created for the bug described in
   ^type3{
     attr4 123;
   }
+
+- ^type3{
+    name "Attributed list item without content";
+    attr4 123;
+  }
