@@ -849,13 +849,22 @@ struct date_t date_read_unix(int64_t seconds)
     struct date_t res = {0};
     time_t timestamp = seconds;
 
+    // NOTE: This isn't reentrant. Be careful of changing to localtime_r()
+    // without ensuring tzset() has been called before [1].
+    //
+    // [1]: https://www.mail-archive.com/vim_dev@googlegroups.com/msg52941.html
     struct tm *t = localtime(&timestamp);
+
     res.year   = t->tm_year + 1900;
     res.month  = t->tm_mon + 1;
     res.day    = t->tm_mday;
     res.hour   = t->tm_hour;
     res.minute = t->tm_min;
     res.second = t->tm_sec;
+
+    res.is_set_utc_offset = true;
+    res.utc_offset_hour = -(timezone/60)/60;
+    res.utc_offset_minute = -(timezone/60)%60;
 
     return res;
 }
