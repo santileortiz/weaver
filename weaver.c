@@ -99,16 +99,6 @@ void rt_init_push_file (struct note_runtime_t *rt, char *fname)
             char result_updated_at[DATE_TIMESTAMP_MAX_LEN];
             date = date_read_unix(s.stx_mtime.tv_sec);
             date_write_rfc3339(&date, result_updated_at);
-            if (metadata_updated_at != NULL) {
-                bool success = false;
-                int cmp = date_cmp_str(metadata_updated_at, result_updated_at, &success, NULL);
-                if (success && cmp < 0) {
-                    // If there's a metadata file with an older update-at than
-                    // the file system's, then the file content changed. Notify
-                    // that this was the case.
-                    printf("M %s - %s\n", new_note->id, str_data(&new_note->title));
-                }
-            }
 
             bool success = false;
             int cmp = date_cmp_str(fs_created_at, result_updated_at, &success, NULL);
@@ -122,6 +112,18 @@ void rt_init_push_file (struct note_runtime_t *rt, char *fname)
                 // long as there's one.
                 strcpy(result_updated_at, metadata_updated_at);
             }
+
+            if (metadata_updated_at != NULL) {
+                success = false;
+                int cmp = date_cmp_str(metadata_updated_at, result_updated_at, &success, NULL);
+                if (success && cmp < 0) {
+                    // If there's a metadata file with an older update-at than
+                    // the file system's, then the file content changed. Notify
+                    // that this was the case.
+                    printf("M %s - %s\n", new_note->id, str_data(&new_note->title));
+                }
+            }
+
             splx_node_attribute_append_c_str(&rt->sd, note_node, META_UPDATED_AT, result_updated_at, SPLX_NODE_TYPE_STRING);
 
             // TODO: There's notes with dynamic data:
