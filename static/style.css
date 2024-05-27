@@ -10,6 +10,7 @@
     --sidebar-width: 240px;
     --topbar-height: 45px;
     --bleed: 6px;
+    --block-spacing: 0.5em; /* Half of the effective visible spacing */
 }
 
 :root {
@@ -63,7 +64,21 @@ p, ul, ol {
 }
 
 p, .attributes {
-    padding: 0.5em 0;
+    padding: var(--block-spacing) 0;
+}
+
+.block-quote {
+    margin: var(--block-spacing) 0;
+    padding-left: 15px;
+    border-left: 5px solid var(--fg-color);
+}
+
+.block-quote p:first-child {
+    padding-top: 0;
+}
+
+.block-quote p:last-child {
+    padding-bottom: 0;
 }
 
 ul, ol {

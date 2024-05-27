@@ -367,7 +367,7 @@ void generate_data_javascript (struct note_runtime_t *rt, char *out_fname, char 
 
             dummy_note->html = html_new (&dummy_note->pool, "div");
             if (virtual_id != NULL) {
-                html_element_attribute_set (dummy_note->html, dummy_note->html->root, "id", str_data(splx_node_get_id (virtual_id)));
+                html_element_attribute_set (dummy_note->html, dummy_note->html->root, SSTR("id"), SSTR(str_data(splx_node_get_id (virtual_id))));
             }
             block_tree_to_html (ctx, dummy_note->html, dummy_note->tree, dummy_note->html->root);
             render_backlinks (rt, dummy_note);

@@ -685,6 +685,13 @@ struct psx_token_t ps_inline_next_full(struct psx_parser_state_t *ps, bool escap
         char *start = scr_pos(PS_SCR);
         while (!PS_SCR->is_eof && !ps_is_operator(ps) && !scr_is_space(PS_SCR)) {
             scr_advance_char (PS_SCR);
+
+            // NOTE: Why this is necessary is very tricky. Removing it causes
+            // an end of a note consisting of single word paragraphs to
+            // disappear. Adding the check at within the while() condition
+            // causes an infinite loop. It MUST be here, inside the while and
+            // after scr_advance_char().
+            if (*ps->scr.pos == '\n') break;
         }
 
         tok.value = SSTRING(start, scr_pos(PS_SCR) - start);
@@ -1189,7 +1196,7 @@ struct html_element_t* html_append_note_link(struct psx_parser_state_t *ps, stru
         str_cat_c (&buff, "#");
         str_cat_section_id (&buff, section, false);
     }
-    html_element_attribute_set (html, link_element, "href", str_data(&buff));
+    html_element_attribute_set (html, link_element, SSTR("href"), SSTR(str_data(&buff)));
 
     if (section != NULL && *section != '\0') {
         str_set (&buff, "");
@@ -1198,7 +1205,7 @@ struct html_element_t* html_append_note_link(struct psx_parser_state_t *ps, stru
     } else {
         str_set_printf (&buff, "return open_note('%s');", target_id);
     }
-    html_element_attribute_set (html, link_element, "onclick", str_data(&buff));
+    html_element_attribute_set (html, link_element, SSTR("onclick"), SSTR(str_data(&buff)));
     html_element_class_add (html, link_element, "note-link");
 
     html_element_append_strn (html, link_element, str_len(text), str_data(text));
@@ -1232,10 +1239,10 @@ struct html_element_t* html_append_entity_link(struct psx_parser_state_t *ps, st
         str_cat_c (&buff, "#");
         str_cat_section_id (&buff, section, false);
     }
-    html_element_attribute_set (html, link_element, "href", str_data(&buff));
+    html_element_attribute_set (html, link_element, SSTR("href"), SSTR(str_data(&buff)));
 
     str_set_printf (&buff, "return open_virtual_entity('%s');", target_id);
-    html_element_attribute_set (html, link_element, "onclick", str_data(&buff));
+    html_element_attribute_set (html, link_element, SSTR("onclick"), SSTR(str_data(&buff)));
     html_element_class_add (html, link_element, "note-link");
 
     html_element_append_strn (html, link_element, str_len(text), str_data(text));
@@ -1652,8 +1659,8 @@ void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html
                 struct html_element_t *link_element = html_new_element (html, "a");
                 strn_set (&buff, url.s, url.len);
                 str_replace (&buff, "\n", "", NULL);
-                html_element_attribute_set (html, link_element, "href", str_data(&buff));
-                html_element_attribute_set (html, link_element, "target", "_blank");
+                html_element_attribute_set (html, link_element, SSTR("href"), SSTR(str_data(&buff)));
+                html_element_attribute_set (html, link_element, SSTR("target"), SSTR("_blank"));
 
                 strn_set (&buff, title.s, title.len);
                 str_replace (&buff, "\n", " ", NULL);
@@ -1687,15 +1694,15 @@ void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html
 
                     struct html_element_t *html_element = html_new_element (html, "iframe");
                     str_set_printf (&buff, "%.6g", width);
-                    html_element_attribute_set (html, html_element, "width", str_data(&buff));
+                    html_element_attribute_set (html, html_element, SSTR("width"), SSTR(str_data(&buff)));
                     str_set_printf (&buff, "%.6g", height);
-                    html_element_attribute_set (html, html_element, "height", str_data(&buff));
-                    html_element_attribute_set (html, html_element, "style", "margin: 0 auto; display: block;");
+                    html_element_attribute_set (html, html_element, SSTR("height"), SSTR(str_data(&buff)));
+                    html_element_attribute_set (html, html_element, SSTR("style"), SSTR("margin: 0 auto; display: block;"));
                     str_set_printf (&buff, "https://www.youtube-nocookie.com/embed/%.*s", video_id.len, video_id.s);
-                    html_element_attribute_set (html, html_element, "src", str_data(&buff));
-                    html_element_attribute_set (html, html_element, "frameborder", "0");
-                    html_element_attribute_set (html, html_element, "allow", "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture");
-                    html_element_attribute_set (html, html_element, "allowfullscreen", "");
+                    html_element_attribute_set (html, html_element, SSTR("src"), SSTR(str_data(&buff)));
+                    html_element_attribute_set (html, html_element, SSTR("frameborder"), SSTR("0"));
+                    html_element_attribute_set (html, html_element, SSTR("allow"), SSTR("accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"));
+                    html_element_attribute_set (html, html_element, SSTR("allowfullscreen"), SSTR(""));
                     psx_append_html_element(ps, html, html_element);
                     regfree (regex);
 
@@ -1753,7 +1760,7 @@ void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html
                 } else {
                     str_set_printf (&buff, "files/%s", str_data(&tag->content));
                 }
-                html_element_attribute_set (html, img_element, "src", str_data(&buff));
+                html_element_attribute_set (html, img_element, SSTR("src"), SSTR(str_data(&buff)));
 
                 psx_append_html_element(ps, html, img_element);
 
@@ -2270,7 +2277,7 @@ void attributes_html_append (struct html_t *html, struct psx_block_t *block, str
             }
 
             struct html_element_t *attribute = html_new_element (html, "div");
-            html_element_attribute_set (html, attribute, "style", "align-items: baseline; display: flex; color: var(--secondary-fg-color)");
+            html_element_attribute_set (html, attribute, SSTR("style"), SSTR("align-items: baseline; display: flex; color: var(--secondary-fg-color)"));
 
             struct html_element_t *label = html_new_element (html, "div");
             html_element_class_add (html, label, "attribute-label");
@@ -2280,7 +2287,7 @@ void attributes_html_append (struct html_t *html, struct psx_block_t *block, str
             // NOTE: This additionar wrapper div for values is added so that they
             // wrap nicely and are left aligned with all other values.
             struct html_element_t *values = html_new_element (html, "div");
-            html_element_attribute_set (html, values, "style", "row-gap: 3px; display: flex; flex-wrap: wrap; overflow-x: auto;");
+            html_element_attribute_set (html, values, SSTR("style"), SSTR("row-gap: 3px; display: flex; flex-wrap: wrap; overflow-x: auto;"));
             LINKED_LIST_FOR (struct splx_node_list_t *, curr_list_node, curr_attribute->value) {
                 struct html_element_t *value = html_new_element (html, "div");
                 html_element_class_add (html, value, "attribute-value");
@@ -2312,7 +2319,7 @@ void note_attributes_html_append (struct html_t *html, struct psx_block_t *block
 
     if (num_visible_attributes > 0) {
         struct html_element_t *attributes = html_new_element (html, "div");
-        html_element_attribute_set (html, attributes, "id", "__attributes");
+        html_element_attribute_set (html, attributes, SSTR("id"), SSTR("__attributes"));
         html_element_append_child (html, parent, attributes);
     }
 }
@@ -2328,7 +2335,7 @@ void attributed_block_html_append (struct psx_parser_ctx_t *ctx, struct html_t *
     assert(block->data != NULL);
 
     struct html_element_t *new_dom_element = html_new_element (html, "p");
-    html_element_attribute_set (html, new_dom_element, "data-block-attributes", "");
+    html_element_attribute_set (html, new_dom_element, SSTR("data-block-attributes"), SSTR(""));
     html_element_append_child (html, parent, new_dom_element);
     block_content_parse_text (ctx, html, new_dom_element, str_data(&block->inline_content));
 }
@@ -2338,7 +2345,7 @@ void attributed_block_html_append (struct psx_parser_ctx_t *ctx, struct html_t *
 
     struct html_element_t *padding = html_new_element (html, "div");
     html_element_append_child (html, parent, padding);
-    html_element_attribute_set (html, padding, "style", "padding: 0.5em 0;");
+    html_element_attribute_set (html, padding, SSTR("style"), SSTR("padding: 0.5em 0;"));
 
     struct html_element_t *new_dom_element = html_new_element (html, "div");
     html_element_append_child (html, padding, new_dom_element);
@@ -2358,7 +2365,7 @@ void attributed_block_html_append (struct psx_parser_ctx_t *ctx, struct html_t *
     if (str_len(&block->inline_content) > 0) {
         str_cat_c (&style,  "border-top: 1px solid #0000001c;");
     }
-    html_element_attribute_set (html, block_attributes, "style", str_data(&style));
+    html_element_attribute_set (html, block_attributes, SSTR("style"), SSTR(str_data(&style)));
 
     attributes_html_append (html, block, block_attributes, block_internal_attributes, ARRAY_SIZE(block_internal_attributes));
 }
@@ -2413,7 +2420,7 @@ void block_tree_to_html (struct psx_parser_ctx_t *ctx, struct html_t *html, stru
 
         str_set (&buff, "");
         str_cat_section_id (&buff, str_data(&block->inline_content), true);
-        html_element_attribute_set (html, new_dom_element, "id", str_data(&buff));
+        html_element_attribute_set (html, new_dom_element, SSTR("id"), SSTR(str_data(&buff)));
 
         html_element_append_child (html, parent, new_dom_element);
         block_content_parse_text (ctx, html, new_dom_element, str_data(&block->inline_content));
@@ -2429,7 +2436,7 @@ void block_tree_to_html (struct psx_parser_ctx_t *ctx, struct html_t *html, stru
         // html_element_style_set(html, code_element, "padding-left", "0.25em");
 
         html_element_append_cstr (html, code_element, str_data(&block->inline_content));
-        html_element_attribute_set (html, code_element, "style", "display: block;");
+        html_element_attribute_set (html, code_element, SSTR("style"), SSTR("display: block;"));
         html_element_append_child (html, pre_element, code_element);
 
         // Previously I was using a hack to show tight, centered code blocks if
@@ -2866,7 +2873,7 @@ void psx_parse (struct psx_parser_state_t *ps)
     }
 }
 
-struct psx_block_t* parse_note_text (mem_pool_t *pool, struct psx_parser_ctx_t *ctx, char *note_text)
+struct psx_block_t* parse_note_text(mem_pool_t *pool, struct psx_parser_ctx_t *ctx, char *note_text)
 {
     STACK_ALLOCATE (struct psx_parser_state_t, ps);
     ps->ctx = *ctx;
@@ -2877,6 +2884,7 @@ struct psx_block_t* parse_note_text (mem_pool_t *pool, struct psx_parser_ctx_t *
     struct psx_block_t *root_block = psx_container_block_new(ps, BLOCK_TYPE_ROOT, 0);
     DYNAMIC_ARRAY_APPEND (ps->block_stack, root_block);
 
+    // Parse and validate note's title
     sstring_t title = {0};
     psx_parse_note_title (ps, &title, true);
     if (!ps->error) {
@@ -2888,6 +2896,8 @@ struct psx_block_t* parse_note_text (mem_pool_t *pool, struct psx_parser_ctx_t *
     }
 
     // Parse note's content
+    // NOTE: Would it be useful for performance to later have quick pass that
+    // parses the title and skips the content?.
     psx_parse (ps);
 
     if (ps->error) {
@@ -2902,18 +2912,23 @@ struct psx_block_t* parse_note_text (mem_pool_t *pool, struct psx_parser_ctx_t *
     return root_block;
 }
 
-struct psx_block_t* psx_parse_string (struct block_allocation_t *ba, char *text, string_t *error_msg)
+// This parses a PSPLX formatted string into an HTML string. It doesn't expect
+// the input to be a full note (e.g. it won't fail if it's missing a title).
+// TODO: It should be possible to set ctx to NULL then create a dummy one
+// internally.
+// TODO: The ba parameter should not be necessary.
+struct psx_block_t*
+psx_parse_string(mem_pool_t *pool, char *psplx_str, struct psx_parser_ctx_t *ctx, struct block_allocation_t *ba)
 {
     STACK_ALLOCATE (struct psx_parser_state_t, ps);
-    ps->ctx.error_msg = error_msg;
-    ps_init (ps, text);
-
+    ps->ctx = *ctx;
     ps->block_allocation = *ba;
+    ps_init (ps, psplx_str);
 
     struct psx_block_t *root_block = psx_container_block_new(ps, BLOCK_TYPE_ROOT, 0);
     DYNAMIC_ARRAY_APPEND (ps->block_stack, root_block);
 
-    // Parse note's content
+    // Parse psplx content
     psx_parse (ps);
 
     if (ps->error) {
@@ -3032,7 +3047,7 @@ char* markup_to_html (
     // Generate HTML          @AUTO_MACRO(BEGIN)
     if (!note->error) {
         note->html = html_new (&note->pool, "div");
-        html_element_attribute_set (note->html, note->html->root, "id", note->id);
+        html_element_attribute_set (note->html, note->html->root, SSTR("id"), SSTR(note->id));
         block_tree_to_html (ctx, note->html, note->tree, note->html->root);
 
         if (note->html == NULL) {
@@ -3125,8 +3140,63 @@ void psx_replace_block_multiple (struct block_allocation_t *ba, struct psx_block
     LINKED_LIST_PUSH (ba->blocks_fl, tmp);
 }
 
-// This is here because it's trying to emulate how users would define custom
-// tags. We use it for an internal tag just as test for the API.
+// The following tries to emulate how users would define custom tags. We define
+// some internal tags just as test for the API.
+PSX_USER_TAG_CB(block_tag_handler)
+{
+    mem_pool_t pool_l = {0};
+
+    char *original_pos;
+    struct psx_tag_t *tag = ps_parse_tag_full (&pool_l, ps_inline, &original_pos, true);
+    if (tag->has_content) {
+        struct html_t *html = html_new(&pool_l, "div");
+
+        // FIXME: Generation of data.js adds invalid characters if we don't do
+        // this. Maybe some null character slips through?...
+        str_cat_c (&tag->content, "\n");
+
+        string_t class_name = {0};
+        str_set_printf (&class_name, "block");
+        if (tag->parameters.positional != NULL) {
+            str_cat_c (&class_name, "-");
+            str_cat_sstr (&class_name, &tag->parameters.positional->v);
+        }
+        html_element_attribute_set(html, html->root, SSTR("class"), str_as_sstr(&class_name));
+        str_free(&class_name);
+
+
+        // TODO: This block_allocation_t and ctx thing is a huge mess. Should
+        // add ba to context the from the parser state use a pointer to the
+        // parent one.
+        STACK_ALLOCATE(struct block_allocation_t, ba);
+        ba->pool = &pool_l;
+        struct psx_block_t *block_content =
+            psx_parse_string (&pool_l, str_data(&tag->content), ctx, ba);
+
+        if (block_content != NULL) {
+            psx_create_links (ctx, &block_content);
+
+            psx_block_tree_user_callbacks (ctx, ba, &block_content);
+
+            block_tree_to_html (ctx, html, block_content, html->root);
+
+        } else {
+            html_element_set_text (html, html->root, "PSPLX PARSE ERROR");
+        }
+
+
+        string_t *html_str = html_to_string(html, &ps_inline->pool, 2);
+        str_set_printf (&replacement->s, "\\html|%d|%s", str_len(html_str), str_data(html_str));
+
+    } else {
+        ps_restore_pos (ps_inline, original_pos);
+    }
+
+    mem_pool_destroy (&pool_l);
+
+    return USER_TAG_CB_STATUS_CONTINUE;
+}
+
 PSX_USER_TAG_CB (summary_tag_handler)
 {
     struct psx_tag_t *tag = ps_parse_tag (ps_inline, NULL);
@@ -3223,6 +3293,7 @@ PSX_USER_TAG_CB(math_tag_display_handler)
 PSX_INTERNAL_CUSTOM_TAG_ROW ("math",        math_tag_inline_handler) \
 PSX_INTERNAL_CUSTOM_TAG_ROW ("Math",        math_tag_display_handler) \
 PSX_INTERNAL_CUSTOM_TAG_ROW ("summary",     summary_tag_handler) \
+PSX_INTERNAL_CUSTOM_TAG_ROW ("block",       block_tag_handler) \
 
 void psx_populate_internal_cb_tree (struct psx_user_tag_cb_t *tree)
 {
@@ -3239,8 +3310,8 @@ void psx_populate_internal_cb_tree (struct psx_user_tag_cb_t *tree)
 // defined, a placeholder HTML element will be emmitted at parse time, but the
 // callback will be deferred until later when all internal PSPLX parsing is
 // complete. This ensures for example that TSPLX contains all links. It also
-// avoids the perills of being called during parsing execution and the
-// possibility of messing up the parser's state.
+// avoids the perils of being called during parsing and the possibility of
+// messing up the parser's state.
 
 PSX_LATE_USER_TAG_CB(orphan_list_tag_handler)
 {

@@ -1207,7 +1207,16 @@ typedef struct {
     uint32_t len;
 } sstring_t;
 #define SSTRING(s,len) ((sstring_t){s,len})
+
+// These 2 are under test, which one is easier to remember?
 #define SSTRING_C(s) SSTRING(s,strlen(s))
+#define SSTR(s) SSTRING(s,strlen(s))
+
+static inline
+sstring_t str_as_sstr (string_t *str)
+{
+    return SSTRING(str_data(str), str_len(str));
+}
 
 static inline
 sstring_t sstr_set (char *s, uint32_t len)
@@ -1251,6 +1260,12 @@ static inline
 void str_set_sstr(string_t *str, sstring_t *sstr)
 {
     strn_set (str, sstr->s, sstr->len);
+}
+
+static inline
+void str_cat_sstr(string_t *str, sstring_t *sstr)
+{
+    strn_cat_c (str, sstr->s, sstr->len);
 }
 
 bool is_empty_str (char *s)

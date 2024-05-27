@@ -62,7 +62,7 @@ char* markup_to_html (
 #define PROCESS_NOTE_GENERATE_HTML \
     if (!note->error) { \
         note->html = html_new (&note->pool, "div"); \
-        html_element_attribute_set (note->html, note->html->root, "id", note->id); \
+        html_element_attribute_set (note->html, note->html->root, SSTR("id"), SSTR(note->id)); \
         block_tree_to_html (ctx, note->html, note->tree, note->html->root); \
  \
         if (note->html == NULL) { \

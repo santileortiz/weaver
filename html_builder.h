@@ -97,13 +97,14 @@ void html_element_set_text (struct html_t *html, struct html_element_t *html_ele
     struct html_element_t *new_text_node = html_new_node (html);
     str_set (&new_text_node->text, text);
 
+    // Recycle the old children node
     if (html_element->children != NULL) {
         html_element->children_end->next = html->element_fl;
         html->element_fl = html_element->children;
-
-        html_element->children_end = new_text_node;
-        html_element->children = new_text_node;
     }
+
+    html_element->children_end = new_text_node;
+    html_element->children = new_text_node;
 }
 
 #define html_element_append_cstr(html,html_element,cstr) html_element_append_strn(html, html_element, strlen(cstr), cstr);
@@ -138,20 +139,21 @@ void html_element_append_no_escape_strn (struct html_t *html, struct html_elemen
 }
 
 // TODO: Make this receive printf parameters and format string.
-void html_element_attribute_set (struct html_t *html, struct html_element_t *html_element, char *attribute, char *value)
+void html_element_attribute_set (struct html_t *html, struct html_element_t *html_element,
+    sstring_t attribute, sstring_t value)
 {
     mem_pool_variable_ensure (html);
 
-    string_t *attribute_str = str_new_pooled (html->pool, attribute);
+    string_t *attribute_str = strn_new_pooled (html->pool, attribute.s, attribute.len);
 
     struct attribute_map_node_t *node;
     attribute_map_lookup (&html_element->attributes, *attribute_str, &node);
     if (node == NULL) {
-        string_t *value_str = str_new_pooled (html->pool, value);
+        string_t *value_str = strn_new_pooled (html->pool, value.s, value.len);
         attribute_map_insert (&html_element->attributes, *attribute_str, *value_str);
 
     } else {
-        str_set (&node->value, value);
+        strn_set (&node->value, value.s, value.len);
     }
 }
 
@@ -167,7 +169,7 @@ void html_element_class_add (struct html_t *html, struct html_element_t *html_el
     struct attribute_map_node_t *node;
     attribute_map_lookup (&html_element->attributes, attr, &node);
     if (node == NULL) {
-        html_element_attribute_set (html, html_element, str_data(&attr), value);
+        html_element_attribute_set (html, html_element, SSTR(str_data(&attr)), SSTR(value));
 
     } else {
         str_cat_printf (&node->value, " %s", value);
@@ -188,7 +190,7 @@ void html_element_style_add (struct html_t *html, struct html_element_t *html_el
     attribute_map_lookup (&html_element->attributes, attr, &node);
     if (node == NULL) {
         // And the double freed block was allocated here...
-        html_element_attribute_set (html, html_element, str_data(&attr), value);
+        html_element_attribute_set (html, html_element, SSTR(str_data(&attr)), SSTR(value));
 
     } else {
         // The double free seems to come from here!...
@@ -295,4 +297,11 @@ char* html_to_str (struct html_t *html, mem_pool_t *pool, int indent)
     str_free (&result);
 
     return res;
+}
+
+string_t* html_to_string (struct html_t *html, mem_pool_t *pool, int indent)
+{
+    string_t *result = str_new_pooled(pool, "");
+    str_cat_html (result, html, indent);
+    return result;
 }
