@@ -29,6 +29,9 @@ ensure_dir(out_dir)
 public_out_dir = path_cat(cache_dir, 'public')
 ensure_dir(public_out_dir)
 
+blog_out_dir = path_cat(out_dir, 'blog')
+ensure_dir(public_out_dir)
+
 example_output = os.path.abspath(path_resolve('./bin/example_static/'))
 example_public_output = os.path.abspath(path_resolve('./bin/example_public_static/'))
 
@@ -253,6 +256,8 @@ def search_notes ():
 
 def generate_common (source=fu.source_files_dir, target=out_dir):
     success = weaver_maybe_build()
+
+    # TODO: Move this into weaver.c
     fu.copy_changed(static_dir, target)
     fu.copy_changed(source, path_cat(target, fu.files_dirname))
 
@@ -262,6 +267,9 @@ def generate ():
     if generate_common():
         ex (f'./bin/weaver generate --static --verbose')
 
+        generate_common (source='./static_blog', target=blog_out_dir)
+        ex (f'./bin/weaver generate --custom blog --public --verbose --output-dir {blog_out_dir}')
+
 def generate_public ():
     if generate_common():
         ex (f'./bin/weaver generate --static --public --verbose')
@@ -270,6 +278,9 @@ def publish ():
     if generate_common(target=public_out_dir):
         ex (f'./bin/weaver generate --static --public --verbose --output-dir {public_out_dir}')
         ex ('rclone sync --fast-list --checksum ~/.cache/weaver/public/ aws-s3:weaver.thrachyon.net/santileortiz/');
+
+        ex (f'./bin/weaver generate --custom blog --public --verbose --output-dir {blog_out_dir}')
+        ex ('rclone sync --fast-list --checksum ~/.cache/weaver/www/blog/ aws-s3:santileortiz.com/');
 
 
 def generate_example ():

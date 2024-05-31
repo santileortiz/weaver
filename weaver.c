@@ -211,6 +211,7 @@ enum cli_command_t {
 
 enum cli_output_type_t {
     CLI_OUTPUT_TYPE_STATIC_SITE,
+    CLI_OUTPUT_TYPE_CUSTOM_SITE,
     CLI_OUTPUT_TYPE_HTML,
     CLI_OUTPUT_TYPE_CSV,
     CLI_OUTPUT_TYPE_DEFAULT
@@ -510,6 +511,11 @@ int main(int argc, char** argv)
         }
     }
 
+    char *custom_sources_dir = get_cli_arg_opt_ctx (cli_ctx, "--custom", argv, argc);
+    if (custom_sources_dir != NULL) {
+        output_type = CLI_OUTPUT_TYPE_CUSTOM_SITE;
+    }
+
     if (!ensure_path_exists (str_data(&cfg->home))) {
         success = false;
         printf (ECMA_RED("error: ") "app home directory could not be created\n");
@@ -664,6 +670,27 @@ int main(int argc, char** argv)
                 if (is_verbose) {
                     printf ("target: %s\n", str_data(&cfg->target_path));
                 }
+
+            } if (output_type == CLI_OUTPUT_TYPE_CUSTOM_SITE) {
+                if (!has_js) {
+                    printf (ECMA_YELLOW("warning: ") "generating static site without javascript engine\n");
+                }
+
+                string_t src_dir_path = {0};
+                str_set_path (&src_dir_path, str_data(&cfg->home));
+                str_cat_path (&src_dir_path, custom_sources_dir);
+                str_cat_path (&src_dir_path, ""); // Ensure path ends in '/'
+                if (!dir_exists(str_data(&src_dir_path))) {
+                    printf (ECMA_RED("error: ") "no custom sources directory '%s'\n", custom_sources_dir);
+                    exit(EXIT_FAILURE);
+                }
+
+                string_t out_dir_path = {0};
+                str_set_path (&out_dir_path, str_data(&cfg->target_path));
+                path_ensure_dir (str_data(&out_dir_path));
+                str_cat_path (&out_dir_path, ""); // Ensure path ends in '/'
+
+                copy_dir (str_data(&src_dir_path), str_data(&out_dir_path));
 
             } else if (rt->notes_len == 1) {
                 if (output_type == CLI_OUTPUT_TYPE_HTML) {

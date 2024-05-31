@@ -3472,6 +3472,110 @@ char* full_file_read_no_trailing_newline (mem_pool_t *pool, const char *path, ui
     return data;
 }
 
+bool file_copy (const char *src_path, const char *dst_path)
+{
+    bool success = true;
+
+    int src_f = open(src_path, O_RDONLY);
+    if (src_f < 0) {
+        perror("open");
+        success = false;
+    }
+
+    int dst_f = open(dst_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (dst_f < 0) {
+        perror("open");
+        close(src_f);
+        success = false;
+    }
+
+    char buffer[8192];
+    ssize_t bytes_read;
+    while ((bytes_read = read(src_f, buffer, sizeof(buffer))) > 0) {
+        if (write(dst_f, buffer, bytes_read) != bytes_read) {
+            perror("write");
+            close(src_f);
+            close(dst_f);
+            success = false;
+        }
+    }
+
+    if (bytes_read < 0) {
+        perror("read");
+        success = false;
+    }
+
+    if (success) {
+        close(src_f);
+        close(dst_f);
+    }
+
+    return success;
+}
+
+bool copy_dir(const char *src_dir, const char *dst_dir)
+{
+    bool success = true;
+    struct stat src_stat, dst_stat;
+
+    if (stat(src_dir, &src_stat) != 0) {
+        perror("stat");
+        success = false;
+    }
+
+    if (!S_ISDIR(src_stat.st_mode)) {
+        fprintf(stderr, "Source is not a directory\n");
+        success = false;
+    }
+
+    DIR *dir = opendir(src_dir);
+    if (!dir) {
+        perror("opendir");
+        success = false;
+    }
+
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL) {
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+
+        char src_path[4096];
+        char dst_path[4096];
+        snprintf(src_path, sizeof(src_path), "%s/%s", src_dir, entry->d_name);
+        snprintf(dst_path, sizeof(dst_path), "%s/%s", dst_dir, entry->d_name);
+
+        if (stat(src_path, &src_stat) != 0) {
+            perror("stat");
+            continue;
+        }
+
+        if (S_ISDIR(src_stat.st_mode)) {
+            copy_dir(src_path, dst_path);
+        } else {
+            int update = 1;
+
+            if (stat(dst_path, &dst_stat) == 0) {
+                if (src_stat.st_mtime <= dst_stat.st_mtime) {
+                    update = 0;
+                }
+            }
+
+            if (update) {
+                file_copy (src_path, dst_path);
+                //struct utimbuf new_times;
+                //new_times.actime = src_stat.st_atime;
+                //new_times.modtime = src_stat.st_mtime;
+                //utime(dst_path, &new_times);
+            }
+        }
+    }
+
+    closedir(dir);
+
+    return success;
+}
+
 bool path_exists (char *path)
 {
     if (path == NULL) return false;
