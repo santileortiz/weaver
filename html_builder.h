@@ -287,6 +287,28 @@ void str_cat_html(string_t *str, struct html_t *html, int indent)
     str_cat_c (str, "\n");
 }
 
+static inline
+void str_cat_html_element_children(string_t *str,
+    struct html_element_t *element, int indent)
+{
+    LINKED_LIST_FOR (struct html_element_t*, curr_child, element->children)
+    {
+        str_cat_html_element (str,curr_child,indent,0);
+    }
+    str_cat_c (str, "\n");
+}
+
+static inline
+void str_cat_html_element_siblings(string_t *str,
+    struct html_element_t *element, int indent)
+{
+    LINKED_LIST_FOR (struct html_element_t*, curr_child, element)
+    {
+        str_cat_html_element (str,curr_child,indent,0);
+    }
+    str_cat_c (str, "\n");
+}
+
 char* html_to_str (struct html_t *html, mem_pool_t *pool, int indent)
 {
     string_t result = {0};

@@ -874,7 +874,7 @@ char* cstr_to_lower (char *str)
     // Convert the wide character string back
     size_t mblen = wcstombs(NULL, tmp_wstr, 0);
     char* lower_str = (char*)malloc(sizeof(char) * (mblen + 1));
-    wcstombs(lower_str, tmp_wstr, wlen + 1);
+    wcstombs(lower_str, tmp_wstr, mblen + 1);
 
     free(wstr);
     free(tmp_wstr);

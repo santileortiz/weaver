@@ -1554,6 +1554,62 @@ void psx_name_clean (string_t *str)
     // TODO: Reduce multiple space sequences to single space.
 }
 
+void str_cat_inline_content_as_plain (char *content, string_t *str)
+{
+    string_t buff = {0};
+    STACK_ALLOCATE (struct psx_parser_state_t, ps_inline);
+    ps_init (ps_inline, content);
+
+    while (!ps_inline->scr.is_eof && !ps_inline->error) {
+        struct psx_token_t tok = ps_inline_next (ps_inline);
+        if (ps_match(ps_inline, TOKEN_TYPE_TEXT_TAG, "summary") ||
+            ps_match(ps_inline, TOKEN_TYPE_TEXT_TAG, "i") || // TODO: Recurse
+            ps_match(ps_inline, TOKEN_TYPE_TEXT_TAG, "b") || // TODO: Recurse
+            ps_match(ps_inline, TOKEN_TYPE_TEXT_TAG, "todo") || // TODO: Not implemented
+            ps_match(ps_inline, TOKEN_TYPE_TEXT_TAG, "math") ||
+            ps_match(ps_inline, TOKEN_TYPE_TEXT_TAG, "Math"))
+        {
+            char *content = NULL;
+            uint32_t content_len = 0;
+
+            psx_match_tag_data (&ps_inline->scr, true, NULL, NULL, &content, &content_len);
+
+            if (content_len > 0) {
+                strn_cat_c (str, content, content_len);
+            }
+
+        } else if (ps_match(ps_inline, TOKEN_TYPE_TEXT_TAG, "link") ||
+            ps_match(ps_inline, TOKEN_TYPE_TEXT_TAG, "note"))
+        {
+            // TODO...
+            psx_match_tag_data (&ps_inline->scr, true, NULL, NULL, NULL, NULL);
+
+        } else if (ps_match(ps_inline, TOKEN_TYPE_DATA_TAG, NULL)) {
+            char *parameters = NULL;
+            uint32_t parameters_len = 0;
+
+            psx_match_tag_data (&ps_inline->scr, true, &parameters, &parameters_len, NULL, NULL);
+
+            if (parameters_len > 0) {
+                strn_cat_c (str, parameters, parameters_len);
+            }
+
+        } else if (ps_match(ps_inline, TOKEN_TYPE_TEXT, NULL) ||
+            ps_match(ps_inline, TOKEN_TYPE_SPACE, NULL))
+        {
+            str_set_sstr (&buff, &tok.value);
+            str_replace (&buff, "\n", " ", NULL);
+            str_cat (str, &buff);
+
+        } else {
+            // Skip tag's content.
+            psx_match_tag_data (&ps_inline->scr, true, NULL, NULL, NULL, NULL);
+        }
+    }
+
+    ps_destroy (ps_inline);
+}
+
 // This function parses the content of a block of text. The formatting is
 // limited to tags that affect the formating inline. This parsing function
 // will not add nested blocks like paragraphs, lists, code blocks etc.
@@ -1723,6 +1779,11 @@ void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html
                 if (is_canonical_id(str_data(&tag->content))) {
                     uint64_t id = canonical_id_parse(str_data(&tag->content), 0);
                     struct vlt_file_t *file = file_id_lookup (ctx->vlt, id);
+
+                    struct note_runtime_t *rt = rt_get();
+                    if (rt) {
+                        DYNAMIC_ARRAY_APPEND(rt->used_file_ids, id);
+                    }
 
                     string_t file_extension = {0};
                     str_set (&file_extension, str_data(&file->extension));
@@ -3366,31 +3427,25 @@ PSX_LATE_USER_TAG_CB(entity_list_tag_handler)
         note->tree->data = splx_node_get_or_create(&rt->sd, note->id, SPLX_NODE_TYPE_OBJECT);
     }
 
-    LINKED_LIST_FOR (struct splx_node_list_t *, curr_list_node, rt->sd.entities->floating_values) {
+    struct splx_node_list_t *entities_of_type = splx_get_node_by_type (&rt->sd,  str_data(&tag->content));
+    LINKED_LIST_FOR (struct splx_node_list_t *, curr_list_node, entities_of_type) {
         struct splx_node_t *entity = curr_list_node->node;
 
-        struct splx_node_list_t *types = splx_node_get_attributes (entity, "a");
-        LINKED_LIST_FOR (struct splx_node_list_t *, curr_type, types) {
-            if (strcmp(str_data(&curr_type->node->str), str_data(&tag->content)) == 0 &&
-                entity_is_visible(entity))
-            {
-                struct html_element_t *list_item = html_new_element (note->html, "li");
-                html_element_append_child (note->html, html_placeholder, list_item);
+        struct html_element_t *list_item = html_new_element (note->html, "li");
+        html_element_append_child (note->html, html_placeholder, list_item);
 
-                struct html_element_t *paragraph = html_new_element (note->html, "p");
-                html_element_append_child (note->html, list_item, paragraph);
+        struct html_element_t *paragraph = html_new_element (note->html, "p");
+        html_element_append_child (note->html, list_item, paragraph);
 
-                string_t *name = splx_node_get_name(entity);
-                html_append_link (NULL, note->html, paragraph, NULL, entity, NULL, &tag->content, name);
+        string_t *name = splx_node_get_name(entity);
+        html_append_link (NULL, note->html, paragraph, NULL, entity, NULL, &tag->content, name);
 
-                if (name != NULL) {
-                    // TODO: This isn't working right now. It causes a weird
-                    // infinite loop in my own notes. I need to reproduce this
-                    // in a smaller environment to be able to debug it. It
-                    // breaks backlinks to database pages.
-                    //psx_create_link(&rt->sd, note->tree->data, note->id, &tag->content, name);
-                }
-            }
+        if (name != NULL) {
+            // TODO: This isn't working right now. It causes a weird
+            // infinite loop in my own notes. I need to reproduce this
+            // in a smaller environment to be able to debug it. It
+            // breaks backlinks to database pages.
+            //psx_create_link(&rt->sd, note->tree->data, note->id, &tag->content, name);
         }
     }
 }

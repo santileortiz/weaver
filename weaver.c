@@ -14,6 +14,12 @@
 #include "block.h"
 #include "note_runtime.h"
 
+// Mustache Templating
+#include "lib/cJSON.h"
+#include "lib/mustach.h"
+#include "lib/mustach-wrap.h"
+#include "lib/mustach-cjson.h"
+
 #include "psplx_parser.c"
 #include "note_runtime.c"
 
@@ -92,7 +98,7 @@ void rt_init_push_file (struct note_runtime_t *rt, char *fname)
                     strcpy(result_created_at, metadata_created_at);
                 }
             } else {
-                printf("A %s - %s\n", new_note->id, str_data(&new_note->title));
+                str_cat_printf(&rt->changes_log, "A %s - %s\n", new_note->id, str_data(&new_note->title));
             }
             splx_node_attribute_append_c_str(&rt->sd, note_node, META_CREATED_AT, result_created_at, SPLX_NODE_TYPE_STRING);
 
@@ -120,7 +126,7 @@ void rt_init_push_file (struct note_runtime_t *rt, char *fname)
                     // If there's a metadata file with an older update-at than
                     // the file system's, then the file content changed. Notify
                     // that this was the case.
-                    printf("M %s - %s\n", new_note->id, str_data(&new_note->title));
+                    str_cat_printf(&rt->changes_log, "M %s - %s\n", new_note->id, str_data(&new_note->title));
                 }
             }
 
@@ -607,6 +613,10 @@ int main(int argc, char** argv)
         if (command == CLI_COMMAND_GENERATE) {
             path_ensure_dir (str_data(&cfg->target_notes_path));
 
+            if (!is_empty_str(str_data(&rt->changes_log))) {
+                printf("%s\n", str_data(&rt->changes_log));
+            }
+
             if (output_type == CLI_OUTPUT_TYPE_STATIC_SITE) {
                 bool has_output = false;
                 if (!has_js) {
@@ -691,6 +701,172 @@ int main(int argc, char** argv)
                 str_cat_path (&out_dir_path, ""); // Ensure path ends in '/'
 
                 copy_dir (str_data(&src_dir_path), str_data(&out_dir_path));
+
+                // Clear the used_file_ids so we get only those used in the
+                // content for blog posts, not all the notes.
+                // :custom_site_file_output
+                rt->used_file_ids_len = 0;
+
+                // Model Creation
+                struct splx_node_list_t *splx_posts = splx_get_node_by_type (&rt->sd,  "blog-post");
+
+                // TODO: Filter posts that represent entities which are not
+                // visible. Maybe the visibility concept should happen at the
+                // SPLX data level not the note level?.
+
+                // TODO: This mutates the original SPLX data for posts, we
+                // don't use it for anything else so it's fine. Still, it would
+                // be good to have a SPLX "context" mechanism where changes can
+                // be performed and then rolled back. Like a database transaction.
+                LINKED_LIST_FOR (struct splx_node_list_t *, curr_list_node, splx_posts) {
+                    struct splx_node_t *entity = curr_list_node->node;
+                    string_t buff = {0};
+
+
+                    // Effective URL property
+                    string_t *name = splx_node_get_name(entity);
+                    str_cat_section_id (&buff, str_data(name), false);
+                    str_cat_c (&buff, ".html");
+                    splx_node_attribute_append_c_str(&rt->sd, entity, "url", str_data(&buff), SPLX_NODE_TYPE_STRING);
+
+
+                    // Pretty formatting of date
+                    struct splx_node_t *publish_date = splx_node_get_attribute(entity, "published-at");
+                    if (publish_date) {
+                        struct date_t date = {0};
+                        if (date_read (str_data(splx_node_get_id(publish_date)), &date, &buff)) {
+                            str_set_printf (&buff, "%s %i, %i", month_names[date.month-1], date.day, date.year);
+                        } else {
+                            printf(ECMA_RED("error: ") "%s", str_data(&buff));
+                        }
+                        splx_node_attribute_append_c_str(&rt->sd, entity, "published-at@pretty", str_data(&buff), SPLX_NODE_TYPE_STRING);
+                    }
+
+
+                    mem_pool_t pool_l = {0};
+                    struct note_t *note = rt_get_note_by_id (str_data(splx_node_get_id(entity)));
+
+                    // Excerpt
+                    if (note != NULL) {
+                        STACK_ALLOCATE (struct splx_data_t, empty_sd);
+                        STACK_ALLOCATE (struct psx_parser_ctx_t, empty_ctx);
+                        empty_ctx->sd = empty_sd;
+                        struct psx_block_t *note_tree = parse_note_text (&pool_l, empty_ctx, str_data(&note->psplx));
+                        splx_destroy (empty_sd);
+
+                        struct psx_block_t *after_title = note_tree->block_content->next;
+                        if (after_title != NULL && after_title->type == BLOCK_TYPE_PARAGRAPH) {
+
+                            string_t excerpt = {0};
+                            str_cat_inline_content_as_plain (str_data(&after_title->inline_content), &excerpt);
+                            splx_node_attribute_append_c_str(&rt->sd, entity, "excerpt", str_data(&excerpt), SPLX_NODE_TYPE_STRING);
+                            str_free (&excerpt);
+                        }
+
+                    }
+
+                    // Content
+                    if (!note->error) {
+                        struct html_t *content_html = html_new (&pool_l, "div");
+                        STACK_ALLOCATE (struct psx_parser_ctx_t, ctx);
+                        ctx->vlt = &rt->vlt;
+                        block_tree_to_html (ctx, content_html, note->tree, content_html->root);
+
+                        str_set (&buff, "");
+                        str_cat_html_element_siblings(&buff, content_html->root->children->next->next->next, 2);
+                        splx_node_attribute_append_c_str(&rt->sd, entity, "content", str_data(&buff), SPLX_NODE_TYPE_STRING);
+                    }
+
+                    mem_pool_destroy (&pool_l);
+                }
+
+                splx_node_list_sort(&splx_posts, "published-at", true);
+
+
+                cJSON *json_model = cJSON_CreateObject();
+                cJSON *json_posts = cJSON_splx_create_array(splx_posts);
+                cJSON_AddItemToObject(json_model, "posts", json_posts);
+                //printf("%s\n", cJSON_Print(json_model)) ;
+
+
+                // index.html
+                {
+                    size_t src_dir_path_len = str_len(&src_dir_path);
+                    str_cat_path (&src_dir_path, "index.html");
+
+                    size_t out_dir_path_len = str_len(&out_dir_path);
+                    str_cat_path (&out_dir_path, "index.html");
+
+                    uint64_t template_str_len;
+                    char *template_str = full_file_read (NULL, str_data(&src_dir_path), &template_str_len);
+                    size_t out_len;
+                    char *out;
+
+                    mustach_cJSON_mem(template_str, 0, json_model, 0, &out, &out_len);
+                    full_file_write (out, out_len, str_data(&out_dir_path));
+
+                    free(out);
+                    str_put_c (&src_dir_path, src_dir_path_len, "\0");
+                    str_put_c (&out_dir_path, out_dir_path_len, "\0");
+                }
+
+
+                // Posts
+                {
+                    size_t src_dir_path_len = str_len(&src_dir_path);
+                    str_cat_path (&src_dir_path, "post.html");
+
+                    size_t out_dir_path_len = str_len(&out_dir_path);
+
+                    for (int i=0; i < cJSON_GetArraySize(json_posts); i++) {
+                        cJSON *json_post = cJSON_GetArrayItem(json_posts, i);
+
+                        str_cat_path (&out_dir_path, cJSON_GetStringValue(cJSON_GetObjectItem(json_post, "url")));
+
+                        uint64_t template_str_len;
+                        char *template_str = full_file_read (NULL, str_data(&src_dir_path), &template_str_len);
+                        size_t out_len;
+                        char *out;
+
+                        mustach_cJSON_mem(template_str, 0, json_post, 0, &out, &out_len);
+                        full_file_write (out, out_len, str_data(&out_dir_path));
+
+                        str_put_c (&out_dir_path, out_dir_path_len, "\0");
+                    }
+                    str_put_c (&src_dir_path, src_dir_path_len, "\0");
+                }
+
+                // Files
+                // :custom_site_file_output
+                //
+                // TODO: Maybe don't copy source files? Often we use the same
+                // id for a file created with an editor like extension .drawio
+                // and its export result with extension .png. Right now both
+                // are copied, but maybe only the export result should be...
+                {
+                    str_set_path (&src_dir_path, rt->vlt.base_dir);
+                    size_t src_dir_path_len = str_len(&src_dir_path);
+
+                    str_cat_path (&out_dir_path, "files");
+                    size_t out_dir_path_len = str_len(&out_dir_path);
+                    path_ensure_dir (str_data(&out_dir_path));
+
+                    for (int i=0; i<rt->used_file_ids_len; i++) {
+                        struct vlt_file_t *files = file_id_lookup (&rt->vlt, rt->used_file_ids[i]);
+
+                        LINKED_LIST_FOR (struct vlt_file_t *, file, files) {
+                            str_cat_path (&src_dir_path, str_data(&file->path));
+                            str_cat_path (&out_dir_path, str_data(&file->path));
+
+                            file_copy (str_data(&src_dir_path), str_data(&out_dir_path));
+
+                            str_put_c (&src_dir_path, src_dir_path_len, "\0");
+                            str_put_c (&out_dir_path, out_dir_path_len, "\0");
+                        }
+                    }
+                }
+
+                cJSON_Delete(json_model);
 
             } else if (rt->notes_len == 1) {
                 if (output_type == CLI_OUTPUT_TYPE_HTML) {

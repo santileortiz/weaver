@@ -1077,7 +1077,7 @@ bool recurrent_event_next (struct recurrent_event_t *re, struct date_t *curr_occ
     } else {
         result = *curr_occurence;
     }
-    
+
     date_add_value (&result, re->frequency, re->scale);
 
     if (re->date_element.year != 0) {

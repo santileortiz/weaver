@@ -5,7 +5,7 @@ import tests_python
 
 import traceback
 import tempfile
-from datetime import datetime
+from datetime import datetime, timezone
 import curses, time
 from natsort import natsorted
 import random
@@ -127,7 +127,6 @@ def server_deploy ():
 
 viewer_pid_pname = 'viewer_pid'
 def view():
-    import screeninfo
 
     if len(sys.argv) < 3:
         print (f"usage: ./pymk.py {get_function_name()} QUERY")
@@ -140,54 +139,80 @@ def view():
     if last_pid != None and psutil.pid_exists(int(last_pid)):
         ex (f'kill {last_pid}')
 
-    # Wasted quite a bit of time attempting these alternative implementations:
-    #
-    # 1. Tried using the following command to watch a file-view directory, then
-    #    used python to clear it and populate it with symbolic links to the
-    #    files we wanted to see.
-    #
-    #    - Requires an additional directory that needs to be managed.
-    #    - Was quite slow, when invoking it from vim reloading felt like it
-    #      took about 1 second. This seems to be on the pqiv side because
-    #      calling it from Python was also slow.
-    #    - I was scared of invoking a remove command that would follow links
-    #      and remove the original files. Wasted time adding checks to ensure I
-    #      was only deleting symbolic links.
-    #
-    # 2. Tried using pqiv's commands by sending them through a pipe to stdin as
-    #    described here https://github.com/phillipberndt/pqiv/issues/183
-    #
-    #    - Requires a special fifo resource that needs to be managed.
-    #    - Commands are quite limited. There is no "remove_all()" so we need to
-    #      remove all files one by one.
-    #    - Execution order of commands doesn't seem to be guaranteed, probably
-    #      piqv tries to be clever and uses multithreading?.
-    #    - Some commands seemed to get lost?.
-    #    - I ended up in broken states, should have removed all old images
-    #      loaded new ones, but I ended up with a mix.
-    #    - The fifo got into a broken state at least once, I had to remove it
-    #      and recreate it.
-    #    - A single error stopped further command execution.
-    #    - Even though I never set /home/santiago/weaver as input directory
-    #      (but it was the WD), got lots of errors like
-    #           Failed to load image /home/santiago/.weaver/files/book-photos/2QGW64VPQ9.1.jpg: Error opening file /home/santiago/weaver: Is a directory
-    #
-    # All of this to realize that just closing and reopening pqiv is the
-    # simplest, fastest and most reliable mechanism. Don't know how I went all
-    # other routes even after knowing of the window positioning and sizing
-    # actions from the very beginning.
+    # If we have a mixed set of extensions, this array defines which one will
+    # be opened.
+    file_extension_priority = {'.svg', '.drawio'}
 
-    # Find leftmost coordinate of primary monitor
-    x_pos = next(filter(lambda m: m.is_primary, screeninfo.get_monitors())).x
+    # Should be a list of image file extensions supported by pqiv.
+    image_extensions = {'.png', '.jpg', '.jpeg', '.bmp'}
 
     files = ex(f"./bin/weaver lookup --csv {query}", ret_stdout=True, echo=False).split('\n')
-    pid = ex_bg(f'pqiv --sort --allow-empty-window --wait-for-images-to-appear --lazy-load --window-position=0,{x_pos} --scale-mode-screen-fraction=0.95 --hide-info-box ' + ' '.join([f"'{fname}'" for fname in files]))
-    if is_vim_mode:
-        vim_window_id = ex("wmctrl -l -p | awk -v pid=$PPID '$5~/splx/ {print $1}'", ret_stdout=True, echo=False)
-        if vim_window_id != "":
-            time.sleep(0.2)
-            ex(f"wmctrl -i -a {vim_window_id}", echo=False)
-    store (viewer_pid_pname, pid)
+
+    # If all files have image extensions open all of them using pqiv. This
+    # image viewer is good because:
+    # - It can be configured to load only the specified subset of images.
+    # - Images will be viewed in sorted order according to their sequence.
+    # - Screen position of the viewer can be controlled.
+    if all(file.lower().endswith(tuple(image_extensions)) for file in files):
+        # Wasted quite a bit of time attempting these alternative implementations:
+        #
+        # 1. Tried using the following command to watch a file-view directory, then
+        #    used python to clear it and populate it with symbolic links to the
+        #    files we wanted to see.
+        #
+        #    - Requires an additional directory that needs to be managed.
+        #    - Was quite slow, when invoking it from vim reloading felt like it
+        #      took about 1 second. This seems to be on the pqiv side because
+        #      calling it from Python was also slow.
+        #    - I was scared of invoking a remove command that would follow links
+        #      and remove the original files. Wasted time adding checks to ensure I
+        #      was only deleting symbolic links.
+        #
+        # 2. Tried using pqiv's commands by sending them through a pipe to stdin as
+        #    described here https://github.com/phillipberndt/pqiv/issues/183
+        #
+        #    - Requires a special fifo resource that needs to be managed.
+        #    - Commands are quite limited. There is no "remove_all()" so we need to
+        #      remove all files one by one.
+        #    - Execution order of commands doesn't seem to be guaranteed, probably
+        #      piqv tries to be clever and uses multithreading?.
+        #    - Some commands seemed to get lost?.
+        #    - I ended up in broken states, should have removed all old images
+        #      loaded new ones, but I ended up with a mix.
+        #    - The fifo got into a broken state at least once, I had to remove it
+        #      and recreate it.
+        #    - A single error stopped further command execution.
+        #    - Even though I never set /home/santiago/weaver as input directory
+        #      (but it was the WD), got lots of errors like
+        #           Failed to load image /home/santiago/.weaver/files/book-photos/2QGW64VPQ9.1.jpg: Error opening file /home/santiago/weaver: Is a directory
+        #
+        # All of this to realize that just closing and reopening pqiv is the
+        # simplest, fastest and most reliable mechanism. Don't know how I went all
+        # other routes even after knowing of the window positioning and sizing
+        # actions from the very beginning.
+
+        # Find leftmost coordinate of primary monitor
+        import screeninfo
+        x_pos = next(filter(lambda m: m.is_primary, screeninfo.get_monitors())).x
+
+        pid = ex_bg(f'pqiv --sort --allow-empty-window --wait-for-images-to-appear --lazy-load --window-position=0,{x_pos} --scale-mode-screen-fraction=0.95 --hide-info-box ' + ' '.join([f"'{fname}'" for fname in files]))
+        if is_vim_mode:
+            vim_window_id = ex("wmctrl -l -p | awk -v pid=$PPID '$5~/splx/ {print $1}'", ret_stdout=True, echo=False)
+            if vim_window_id != "":
+                time.sleep(0.2)
+                ex(f"wmctrl -i -a {vim_window_id}", echo=False)
+        store (viewer_pid_pname, pid)
+
+    else:
+        priority_dict = {ext: i for i, ext in enumerate(file_extension_priority)}
+
+        def get_priority(file):
+            for ext in file_extension_priority:
+                if file.lower().endswith(ext):
+                    return priority_dict[ext]
+            return len(file_extension_priority)
+
+        ex(f"xdg-open '{sorted(files, key=get_priority)[0]}'")
 
 def new_note ():
     is_vim_mode = get_cli_bool_opt('--vim')
@@ -267,7 +292,7 @@ def generate ():
     if generate_common():
         ex (f'./bin/weaver generate --static --verbose')
 
-        generate_common (source='./static_blog', target=blog_out_dir)
+        fu.copy_changed('./static/lib', blog_out_dir)
         ex (f'./bin/weaver generate --custom blog --public --verbose --output-dir {blog_out_dir}')
 
 def generate_public ():
@@ -344,6 +369,8 @@ def common_build(c_sources, out_fname, use_js, subprocess_test=True):
 
     if not subprocess_test:
         C_FLAGS += " -DTEST_NO_SUBPROCESS"
+
+    c_sources += " lib/cJSON.c lib/mustach.c lib/mustach-wrap.c lib/mustach-cjson.c"
 
     generate_automacros ('automacros.h')
 
@@ -1169,8 +1196,8 @@ def files_date_sort():
                 else:
                     unsortable.append(path)
 
-            elif path.lower().endswith(".mov"):
-                output = ex(f"exiftool -s -H -u -CreateDate -api quicktimeutc '{path}'", ret_stdout=True, echo=False)
+            elif path.lower().endswith(".mov") or path.lower().endswith(".mp4"):
+                output = ex(f"exiftool -s -H -u -CreateDate '{path}'", ret_stdout=True, echo=False)
 
                 if len(output) > 0:
                     lines = [x for x in output.split('\n')]
@@ -1181,28 +1208,22 @@ def files_date_sort():
 
                     parsed_timestamp = parse_timestamp(timestamp, min_date)
                     if parsed_timestamp:
+                        # QuickTime videos are specified to have UTC timezones,
+                        # see [1]. Calling exiftool without "-api quicktimeutc"
+                        # always prints UTC time, not local time. Even though
+                        # it doesn't add the +00:00 or Z at the end. We
+                        # substitute it here to make the timestamp be timezone
+                        # aware.
+                        #
+                        # The MP4 specification [2] pretty much copied
+                        # QuickTime's atom structure, including the mvhd atom
+                        # with the UTC timestamps as 64 bit integers.
+                        #
+                        # [1]: https://exiftool.org/forum/index.php?topic=13886.msg75031#msg75031
+                        # [2]: ISO/IEC 14496-14, section 8.3.1.
+                        parsed_timestamp = parsed_timestamp.replace(tzinfo=timezone.utc);
+
                         timestamped_paths.append((parsed_timestamp,path))
-                        assumed_utc.append(path)
-                    else:
-                        unsortable.append(path)
-
-                else:
-                    unsortable.append(path)
-
-            elif path.lower().endswith(".mp4"):
-                output = ex(f"exiftool -s -H -u -CreateDate -api quicktimeutc '{path}'", ret_stdout=True, echo=False)
-
-                if len(output) > 0:
-                    lines = [x for x in output.split('\n')]
-                    fields = {x[1]:x[3:] for x in map(lambda x: x.split(), lines)}
-                    datetime_value = fields['CreateDate']
-                    timestamp = f"{datetime_value[0].replace(':','-')}T{datetime_value[1]}"
-                    print_row([timestamp, '-', fname])
-
-                    parsed_timestamp = parse_timestamp(timestamp, min_date)
-                    if parsed_timestamp:
-                        timestamped_paths.append((parsed_timestamp,path))
-                        assumed_default_utc_offset.append(path)
                     else:
                         unsortable.append(path)
 
@@ -2069,6 +2090,149 @@ def diff():
 
     file_args_str = " ".join([ex(f"./bin/weaver lookup {id}", ret_stdout=True, echo=False) for id in file_ids])
     ex (f"nvim-qt -- -d {file_args_str}")
+
+
+def cli_esc(path):
+    return path.replace(' ', '\\ ')
+
+photos_dirname = "Buzón de Fotos"
+picture_collections = ["~/Pictures/Fotos/", "~/Pictures/Fotos Santiago/"]
+
+def delete_empty_dirs(path):
+    # Walk through the directory tree from bottom to top
+    for root, dirs, files in os.walk(path, topdown=False):
+        for directory in dirs:
+            dir_path = os.path.join(root, directory)
+
+            if not os.listdir(dir_path):
+                os.rmdir(dir_path)
+            else:
+                # If the directory is not empty, check if it contains only directories
+                if all(os.path.isdir(path_cat(dir_path, item)) for item in os.listdir(dir_path)):
+                    delete_empty_dirs(dir_path)
+
+                    if not os.listdir(dir_path):
+                        os.rmdir(dir_path)
+                    else:
+                        print (cma_red("error: ") + f"flattening left non empty directory {dir_path}")
+
+def photos_download ():
+    dir_data = json.loads(ex (f"rclone lsjson google-drive:/{cli_esc(photos_dirname)}/", ret_stdout=True, echo=False))
+    [print(f'[{str(i)}] {f["Path"]}') for i, f in enumerate(dir_data)]
+    download_idx = int(input('Download: '))
+    album_name_upstream = dir_data[download_idx]["Path"]
+    album_name = album_name_upstream.strip()
+    album_name_escaped = cli_esc(album_name)
+
+    tgt_dir = None
+    for collection in picture_collections:
+        album_path = path_resolve(path_cat(collection, album_name))
+        print (album_path)
+        if path_exists(album_path) and path_isdir(album_path):
+            tgt_dir = album_path
+            break
+
+    if not tgt_dir:
+        [print(f'[{str(i)}] {f}') for i, f in enumerate(picture_collections)]
+        collection_idx = int(input('Move into: '))
+        tgt_dir = path_resolve(path_cat(picture_collections[collection_idx], album_name))
+
+
+    cmds = []
+
+    print()
+    print (ecma_magenta("Downloading"))
+    cmd = f"rclone -v copy google-drive:/{cli_esc(photos_dirname)}/{cli_esc(album_name_upstream)} ~/{cli_esc(photos_dirname)}/{album_name_escaped}/"
+    cmds.append(cmd)
+    ex (cmd)
+
+    # TODO: Maybe instead of a named scratch directory move to a randomly
+    # generated temporary directory. Then we won't have possible failures?...
+    # the _success_ variable would probably be unnecessary.
+    success = True
+    if tgt_dir and path_exists(tgt_dir) and path_isdir(tgt_dir) and photos_dirname in tgt_dir:
+        print (cma_red("error: ") + "Can't guarantee duplication against existing collection deletes downloaded folders because the download temporary directory name is contained in the collection's path.")
+        success = False
+
+    if success:
+        ensure_dir(tgt_dir)
+
+        print()
+        print(ecma_magenta("Finding Duplicates"))
+        cmd = f"~/scrapbook/bin/scrapbook --find-duplicates-file --remove --prefer-removal-substr {cli_esc(photos_dirname)} ~/{cli_esc(photos_dirname)}/{album_name_escaped}/ {cli_esc(tgt_dir)}"
+        cmds.append(cmd)
+        ex (cmd)
+
+        # TODO: Check that even if the file was duplicated, the directory position
+        # it's at may imply new metadata at the flattening step, how do we support
+        # not reimporting and having multiple IDs for the picture and at the same
+        # time coalesce the metadata?. Right now this isn't handled propery, better
+        # to delete the whole collection and start over again. Thought of
+        # implementing deletion within the collection then using that after the
+        # duplication step, but it's not good because what happens if manual
+        # metadata was added to the existing instance within the collection?.
+
+        print()
+        print(ecma_magenta("Importing"))
+        cmd = f"./pymk.py dir_import ~/{cli_esc(photos_dirname)}/{album_name_escaped}/"
+        cmds.append(cmd)
+        ex (cmd)
+
+        src_dir = path_resolve(path_cat("~/", photos_dirname, album_name))
+        print()
+        print(ecma_magenta("Flattening"))
+        values = []
+        for root, dirs, _ in os.walk(src_dir):
+            depth = root[len(src_dir):].count(os.sep)
+
+            if len(values) <= depth:
+                values.append(set())
+
+            for directory in dirs:
+                if directory != '_':
+                    values[depth].add(directory)
+
+        # Remove empty sets at the end
+        while values and not values[-1]:
+            values.pop()
+
+        if len(values) > 0:
+            print(f"value sets: {values}")
+
+            # TODO: Do a more clever guessing of the properties for each level
+            # based either on some configuration or mapping value names to the
+            # current schema of SPLX data.
+            properties = []
+            if len(values) == 1:
+                properties = ["camera-owner"]
+            elif len(values) == 2:
+                properties = ["place", "camera-owner"]
+
+            cmd = f"./pymk.py dir_flatten --properties {','.join(properties)} ~/{cli_esc(photos_dirname)}/{album_name_escaped}/"
+            cmds.append(cmd)
+            ex (cmd)
+
+            delete_empty_dirs(src_dir)
+        else:
+            print ("No directories, skipping...")
+
+
+        print()
+        print(ecma_magenta("Moving Into Collection"))
+        cmd = f"mv ~/{cli_esc(photos_dirname)}/{album_name_escaped}/* {cli_esc(tgt_dir)}"
+        cmds.append(cmd)
+        ex (cmd)
+
+        print()
+        print(ecma_magenta("Sorting Album in Collection"))
+        cmd = f"./pymk.py files_date_sort {cli_esc(tgt_dir)}/"
+        cmds.append(cmd)
+        ex (cmd)
+
+    print()
+    print (ecma_cyan("Executed:"))
+    [print(c) for c in cmds]
+
 
 builtin_completions = ['--get_build_deps']
 if __name__ == "__main__":

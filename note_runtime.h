@@ -45,10 +45,14 @@ struct note_runtime_t {
     struct file_vault_t vlt;
     struct splx_data_t sd;
 
+    DYNAMIC_ARRAY_DEFINE(uint64_t,used_file_ids);
+
     struct psx_late_user_tag_cb_t user_late_cb_tree;
     LINKED_LIST_DECLARE(struct late_cb_invocation_t,invocations);
 
     int next_virtual_id;
+
+    string_t changes_log;
 } __g_note_runtime;
 
 struct note_t* rt_new_note (struct note_runtime_t *rt, char *id, size_t id_len);

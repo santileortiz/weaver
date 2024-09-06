@@ -2099,3 +2099,80 @@ bool splx_node_attribute_contains (struct splx_node_t *node, char *attr, char *v
 
     return found;
 }
+
+struct splx_node_list_t* splx_get_node_by_type (struct splx_data_t *sd, char *type)
+{
+    struct splx_node_list_t *result = NULL;
+
+    LINKED_LIST_FOR (struct splx_node_list_t *, curr_list_node, sd->entities->floating_values) {
+        struct splx_node_t *entity = curr_list_node->node;
+
+        struct splx_node_list_t *types = splx_node_get_attributes (entity, "a");
+        LINKED_LIST_FOR (struct splx_node_list_t *, curr_type, types) {
+            if (strcmp(str_data(&curr_type->node->str), type) == 0)
+            {
+                struct splx_node_list_t *list_node = tps_wrap_in_list_node (sd, entity);
+                LINKED_LIST_PUSH (result, list_node);
+            }
+        }
+    }
+
+    return result;
+}
+
+cJSON* cJSON_splx_create_array(struct splx_node_list_t *node_list)
+{
+    cJSON *result = cJSON_CreateArray();
+    LINKED_LIST_FOR (struct splx_node_list_t *, curr_list_node, node_list) {
+        struct splx_node_t *entity = curr_list_node->node;
+
+        cJSON *post = cJSON_CreateObject();
+        cJSON_AddItemToArray(result, post);
+
+        string_t *id = splx_node_get_id(entity);
+        cJSON_AddItemToObject(post, "@id",
+                              cJSON_CreateString(str_data(id)));
+
+        BINARY_TREE_FOR (cstr_to_splx_node_list_map, &entity->attributes, curr_attribute) {
+            cJSON *value = NULL;
+            if (curr_attribute->value->next == NULL) {
+                value = cJSON_CreateString(str_data(splx_node_get_id(curr_attribute->value->node)));
+            } else {
+                value = cJSON_CreateArray();
+                LINKED_LIST_FOR (struct splx_node_list_t *, curr_node_list_element, curr_attribute->value) {
+                    cJSON_AddItemToArray(value,
+                                         cJSON_CreateString(str_data(splx_node_get_id(curr_node_list_element->node))));
+                }
+            }
+
+            cJSON_AddItemToObject(post, curr_attribute->key, value);
+        }
+    }
+    return result;
+}
+
+struct splx_node_attribute_value_cmp_clsr_t {
+    bool reverse;
+    char *attribute;
+};
+
+int splx_node_attribute_value_cmp (struct splx_node_t *a, struct splx_node_t *b, struct splx_node_attribute_value_cmp_clsr_t *user_data)
+{
+    int result = strcmp(
+        str_data(splx_node_get_id(splx_node_get_attribute(a, user_data->attribute))),
+        str_data(splx_node_get_id(splx_node_get_attribute(b, user_data->attribute)))
+    );
+
+    return user_data->reverse ? -1*result : result;
+}
+
+templ_sort_stable_ll(_splx_node_list_sort,struct splx_node_list_t,splx_node_attribute_value_cmp(a->node, b->node, user_data));
+
+void splx_node_list_sort (struct splx_node_list_t **list, char *attribute, bool reverse)
+{
+    struct splx_node_attribute_value_cmp_clsr_t clsr = {0};
+    clsr.attribute = attribute;
+    clsr.reverse = reverse;
+
+    _splx_node_list_sort_user_data (list, -1, &clsr);
+}
