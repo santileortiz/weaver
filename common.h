@@ -3103,6 +3103,12 @@ char *cstr_dupreplace(mem_pool_t *pool, char *src, char *find, char *replace, in
    }
 }
 
+char* cstr_lstrip (char *str)
+{
+    for (; *str && is_space(str); str++);
+    return str;
+}
+
 char* cstr_rstrip (char *str)
 {
     size_t len = strlen(str);
@@ -3114,6 +3120,12 @@ char* cstr_rstrip (char *str)
         }
     }
     return str;
+}
+
+char* cstr_strip (char *str)
+{
+    str = cstr_lstrip (str);
+    return cstr_rstrip (str);
 }
 
 void cstr_split (mem_pool_t *pool, char *str, char *sep, char ***arr_out, int *arr_len_out)

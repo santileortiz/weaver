@@ -26,6 +26,7 @@ let current_section = "";
 // :content_width
 let content_max_width = 728;
 css_property_set ("--content-width", content_max_width + "px");
+css_property_set ("--carousel-max-width", content_max_width + "px");
 
 function is_desktop()
 {
@@ -109,6 +110,8 @@ function get_title(id)
 function note_text_to_element (container, id, note_html)
 {
     set_innerhtml_and_run_scripts(container, note_html);
+
+    carousel_init_in (container);
 
     document.title = get_title(id);
     let new_note = document.getElementById(id);

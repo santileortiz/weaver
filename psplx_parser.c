@@ -1775,55 +1775,74 @@ void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html
             if (tag->has_content) {
                 str_replace (&tag->content, "\n", " ", NULL);
 
-                struct html_element_t *img_element = html_new_element (html, "img");
-                if (is_canonical_id(str_data(&tag->content))) {
-                    uint64_t id = canonical_id_parse(str_data(&tag->content), 0);
-                    struct vlt_file_t *file = file_id_lookup (ctx->vlt, id);
+                mem_pool_t pool_l = {0};
+                char **images;
+                int num_images;
+                cstr_split (&pool_l, str_data(&tag->content), ",", &images, &num_images);
 
-                    struct note_runtime_t *rt = rt_get();
-                    if (rt) {
-                        DYNAMIC_ARRAY_APPEND(rt->used_file_ids, id);
-                    }
+                struct html_element_t *parent_element = psx_get_head_html_element(ps);
+                if (num_images > 1) {
+                    parent_element = html_new_element (html, "div");
+                    html_element_attribute_set (html, parent_element, SSTR("class"), SSTR("carousel"));
+                    psx_append_html_element (ps, html, parent_element);
+                }
 
-                    string_t file_extension = {0};
-                    str_set (&file_extension, str_data(&file->extension));
-                    ascii_to_lower (str_data(&file_extension));
+                for (int i=0; i<num_images; i++) {
+                    char *curr_image = cstr_strip(images[i]);
 
-                    // TODO: Put image extensions into an array.
-                    while (file != NULL &&
-                           strncmp(str_data(&file_extension), "png", 3) != 0 &&
-                           strncmp(str_data(&file_extension), "jpg", 3) != 0 &&
-                           strncmp(str_data(&file_extension), "jpeg", 4) != 0 &&
-                           strncmp(str_data(&file_extension), "svg", 3) != 0 &&
-                           strncmp(str_data(&file_extension), "gif", 3) != 0 &&
-                           strncmp(str_data(&file_extension), "webp", 4) != 0)
-                    {
-                        file = file->next;
+                    struct html_element_t *img_element = html_new_element (html, "img");
+                    if (is_canonical_id(curr_image)) {
+                        uint64_t id = canonical_id_parse(curr_image, 0);
+                        struct vlt_file_t *file = file_id_lookup (ctx->vlt, id);
+
+                        struct note_runtime_t *rt = rt_get();
+                        if (rt) {
+                            DYNAMIC_ARRAY_APPEND(rt->used_file_ids, id);
+                        }
+
+                        string_t file_extension = {0};
+                        str_set (&file_extension, str_data(&file->extension));
+                        ascii_to_lower (str_data(&file_extension));
+
+                        // TODO: Put image extensions into an array.
+                        while (file != NULL &&
+                            strncmp(str_data(&file_extension), "png", 3) != 0 &&
+                            strncmp(str_data(&file_extension), "jpg", 3) != 0 &&
+                            strncmp(str_data(&file_extension), "jpeg", 4) != 0 &&
+                            strncmp(str_data(&file_extension), "svg", 3) != 0 &&
+                            strncmp(str_data(&file_extension), "gif", 3) != 0 &&
+                            strncmp(str_data(&file_extension), "webp", 4) != 0)
+                        {
+                            file = file->next;
+
+                            if (file != NULL) {
+                                str_set (&file_extension, str_data(&file->extension));
+                                ascii_to_lower (str_data(&file_extension));
+                            }
+                        }
 
                         if (file != NULL) {
-                            str_set (&file_extension, str_data(&file->extension));
-                            ascii_to_lower (str_data(&file_extension));
+                            str_set_printf (&buff, "files/%s", str_data(&file->path));
+                        } else {
+                            psx_warning_ctx (ctx, "error on image tag for: %s", curr_image);
                         }
-                    }
 
-                    if (file != NULL) {
-                        str_set_printf (&buff, "files/%s", str_data(&file->path));
+                        str_free (&file_extension);
+
+                    } else if (cstr_starts_with(curr_image, "http://") ||
+                        cstr_starts_with(curr_image, "https://"))
+                    {
+                        str_set_printf (&buff, "%s", curr_image);
+
                     } else {
-                        psx_warning_ctx (ctx, "error on image tag for: %s", str_data(&tag->content));
+                        str_set_printf (&buff, "files/%s", curr_image);
                     }
+                    html_element_attribute_set (html, img_element, SSTR("src"), SSTR(str_data(&buff)));
 
-                    str_free (&file_extension);
-
-                } else if (cstr_starts_with(str_data(&tag->content), "http://") ||
-                           cstr_starts_with(str_data(&tag->content), "https://")) {
-                    str_set_printf (&buff, "%s", str_data(&tag->content));
-
-                } else {
-                    str_set_printf (&buff, "files/%s", str_data(&tag->content));
+                    html_element_append_child (html, parent_element, img_element);
                 }
-                html_element_attribute_set (html, img_element, SSTR("src"), SSTR(str_data(&buff)));
 
-                psx_append_html_element(ps, html, img_element);
+                mem_pool_destroy (&pool_l);
 
             } else {
                 ps_restore_pos (ps, original_pos);
