@@ -1,0 +1,9 @@
+# Bracket Link Tests
+
+Test cases for links using bracked notation, like [[Page Syntax]].
+
+By page title
+
+ - [[Page Syntax]]
+ - [[Custom Text -> Page Syntax]]
+ - [["Custom Text" -> "Page Syntax"]]

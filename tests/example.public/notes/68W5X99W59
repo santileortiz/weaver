@@ -1,5 +1,19 @@
 <div id="68W5X99W59">
   <h1 id="user-content-sample-pkb">Sample PKB</h1>
+  <div class="attributes">
+    <div style="align-items: baseline; display: flex; color: var(--secondary-fg-color)">
+      <div class="attribute-label">created-at</div>
+      <div style="row-gap: 3px; display: flex; flex-wrap: wrap; overflow-x: auto;">
+        <div class="attribute-value">2023-03-19T16:25:05-00:00</div>
+      </div>
+    </div>
+    <div style="align-items: baseline; display: flex; color: var(--secondary-fg-color)">
+      <div class="attribute-label">updated-at</div>
+      <div style="row-gap: 3px; display: flex; flex-wrap: wrap; overflow-x: auto;">
+        <div class="attribute-value">2023-08-26T02:57:48-06:00</div>
+      </div>
+    </div>
+  </div>
   <p>This is a small personal knowledge base that tests features beyond TSPLX/PSPLX syntax parsing and HTML generation.</p>
   <p>In this environment we can test for example the difference between local and public site generations, linking between pages, data (consolidation/navigation/visualization), file references etc.</p>
   <p>Tested features</p>

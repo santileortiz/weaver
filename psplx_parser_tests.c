@@ -1,6 +1,7 @@
 /*
  * Copyright (C) 2021 Santiago León O.
  */
+#include "lib/cJSON.h"
 
 #include "common.h"
 #include "scanner.c"
@@ -238,6 +239,22 @@ int main(int argc, char** argv)
     string_t buff = {0};
 
     STACK_ALLOCATE (struct test_ctx_t , t);
+
+    {
+        bool success = true;
+        test_push (t, "Testing bracket link syntax");
+
+        test_push (t, "Simple");
+        test_bool (t, psx_match_bracket_link ("[[Note Title]]", NULL, NULL, NULL, NULL));
+
+        test_push (t, "Custom Text");
+        test_bool (t, psx_match_bracket_link ("[[Custom Text -> Page Syntax]]", NULL, NULL, NULL, NULL));
+
+        test_push (t, "Negative Test");
+        test_bool (t, !psx_match_bracket_link ("[Note Ti", NULL, NULL, NULL, NULL));
+
+        test_pop (t, success);
+    }
 
     __g_note_runtime = ZERO_INIT (struct note_runtime_t);
     struct note_runtime_t *rt = &__g_note_runtime;

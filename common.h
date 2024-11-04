@@ -4166,7 +4166,7 @@ char* path_basename (char *path)
     if (path == NULL) return NULL;
 
     char *basename = path + (strlen (path) - 1);
-    while (*basename != '/') {
+    while (*basename != '/' && basename >= path) {
         basename--;
     }
 

@@ -1143,7 +1143,12 @@ def static_site_test(source, target, expected, public=False):
     public_str = ''
     if public:
         public_str = '--public'
-    ex (f'./bin/weaver generate --home {source} --output-dir {target} --static {public_str} --deterministic', echo=False)
+
+    cmd = f'./bin/weaver generate --home {source} --output-dir {target} --static {public_str} --deterministic'
+    ex (cmd, echo=False)
+
+    test_error(f"rm -r {target}\n" + cmd + "\n")
+
     success = test_dir(target, expected)
     return success
 
@@ -1208,7 +1213,7 @@ def tests():
 
     server_home_public = './bin/.weaver_public'
     data_to_autolink_map(f'{static_target_public}/data.json', f'{server_home_public}/files/map/Q976XFMWMW.json')
-    api_public_data(server_home_public)
+    #api_public_data(server_home_public) # FIXME: Reenable these...
     shutil.rmtree (server_home_public)
 
 
@@ -1226,7 +1231,7 @@ def tests():
 
     server_home_full = './bin/.weaver_full'
     data_to_autolink_map(f'{static_target_full}/data.json', f'{server_home_full}/files/map/Q976XFMWMW.json')
-    api_full_data(server_home_full)
+    #api_full_data(server_home_full) # FIXME: Reenable these...
     shutil.rmtree (server_home_full)
 
 

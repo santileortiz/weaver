@@ -1,14 +1,14 @@
 # Page Links
 
-To create a page link by the target's title use \note{Page Syntax}. Instead of
-the title, the page's ID can also be used \note{V5VQ876393}.
+To create a page link by the target's title use [[Page Syntax]]. Instead of
+the title, the page's ID can also be used [[V5VQ876393]].
 
 The `->` separator can be used to change the visible text that links to the
-note. \note{Custom Text -> Page Syntax} links to the same page as the previous
+note. [[Custom Text -> Page Syntax]] links to the same page as the previous
 example but shows `Custom Text` instead of the page's title.
 
 Components can be quoted to use otherwise not allowed characters the `->`
-character sequence, like \note{"here" -> "Thin -> Arrow"}.
+character sequence, like [["-> here" -> "Page Syntax"]].
 
  - Inside quoted notation `\"` will represent the `"` character.
 
@@ -21,14 +21,16 @@ When using quoted notation, it's possible to link to a page section, like
 available in unquoted notation. Note that links to sections are in general not
 stable, they shouldn't be used extensively because they can easily break:
 
- -  A section link will break if the path to a linked section changes. For
-    example because the section is relocated within the page or turned into a
-    page itself.
+ - A section link will break if the path to a linked section changes. For
+   example because the section is relocated within the page or turned into a
+   page itself.
 
  - A link to a section of a page that has multiple sections with equal title
    will break if the equally named sections are reordered.
 
 ## Test Cases
+
+ - \note{Bracket Link Tests}
 
 By page title
 

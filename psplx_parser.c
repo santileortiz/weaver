@@ -475,6 +475,189 @@ bool psx_match_tag (char *str, char *pos,
     return success;
 }
 
+bool psx_match_end (char *str, char *end_str)
+{
+    return (end_str == NULL && *str == '\0') || (end_str != NULL && *str == *end_str);
+}
+
+bool psx_match_link (char *str,
+                     char *end_str,
+
+                     // Out
+                     string_t *text, string_t *reference, string_t *section,
+                     char **end)
+{
+    string_t l_text = {0};
+    string_t l_reference = {0};
+    string_t l_section = {0};
+
+    STACK_ALLOCATE(struct scanner_t, scr);
+    scr->str = str;
+    scr->pos = str;
+
+    bool unquoted = false;
+
+    scr_consume_spaces (scr);
+    if (scr_curr_char(scr) == '\"')
+    {
+        bool match = false;
+
+        sstring_t t1 = {0};
+        sstring_t t2 = {0};
+        sstring_t t3 = {0};
+
+        t1.s = scr->pos+1;
+        match = scr_match_double_quoted_string (scr);
+        t1.len = match ? scr->pos - t1.s - 1 : 0;
+
+        scr_consume_spaces (scr);
+        if (scr_match_str (scr, "->")) {
+            scr_consume_spaces (scr);
+
+            t2.s = scr->pos+1;
+            match = scr_match_double_quoted_string (scr);
+            t2.len = match ? scr->pos - t2.s - 1 : 0;
+        }
+
+        scr_consume_spaces (scr);
+        while (scr_match_str (scr, ">")) {
+            scr_consume_spaces (scr);
+
+            t3.s = scr->pos+1;
+            match = scr_match_double_quoted_string (scr);
+            t3.len = match ? scr->pos - t3.s - 1 : 0;
+
+            scr_consume_spaces (scr);
+        }
+
+        if (!psx_match_end(scr->pos, end_str)) {
+            // Maybe this should instead be a failure state, treat it as
+            // unquoted from the calling site in the case of \note{} notation.
+            unquoted = true;
+
+        } else {
+            if (t1.len > 0 && t2.len == 0 && t3.len == 0) {
+                str_set_sstr (&l_reference, &t1);
+
+            } else if (t1.len > 0 && t2.len > 0 && t3.len == 0) {
+                str_set_sstr (&l_text, &t1);
+                str_set_sstr (&l_reference, &t2);
+
+            } else if (t1.len > 0 && t2.len == 0 && t3.len > 0) {
+                str_set_sstr (&l_reference, &t1);
+                str_set_sstr (&l_section, &t3);
+
+            } else {
+                str_set_sstr (&l_text, &t1);
+                str_set_sstr (&l_reference, &t2);
+                str_set_sstr (&l_section, &t3);
+            }
+        }
+    } else {
+        unquoted = true;
+    }
+
+    if (unquoted) {
+        char *arrow =  "->";
+        int arrow_len =  strlen(arrow);
+        char *last_arrow = NULL;
+        for (char *s=scr_advance_until_str(scr, arrow);
+             s;
+             s = scr_advance_until_str(scr, arrow))
+        {
+            scr_match_str(scr, arrow);
+            last_arrow = s;
+        }
+
+        if (last_arrow != NULL && !psx_match_end(last_arrow + arrow_len, end_str)) {
+            strn_set (&l_text, scr->str, last_arrow - scr->str);
+            str_strip(&l_text);
+
+            if (end_str != NULL) {
+                scr_advance_until_str(scr, end_str);
+                strn_set (&l_reference, last_arrow + arrow_len, scr->pos - (last_arrow + arrow_len));
+            } else {
+                str_set (&l_reference, last_arrow + arrow_len);
+            }
+            str_strip(&l_reference);
+
+        } else {
+            sstring_t r = {0};
+            r.s = scr->pos;
+            if (end_str != NULL) {
+                scr_advance_until_str (scr, end_str);
+            } else {
+                scr_advance_until_char (scr, '\0');
+            }
+            r.len = scr->pos - r.s;
+
+            str_set_sstr (&l_reference, &r);
+
+            // In unquoted syntax a reference being set to "->" is very likely
+            // to be broken notation. To create a page titled "->" use quoted
+            // syntax.
+            str_strip(&l_reference);
+            if (strcmp ("->", str_data(&l_reference)) == 0) {
+                 str_set (&l_reference, "");
+            }
+        }
+    }
+
+    str_replace(&l_text, "\\\"", "\"", NULL);
+    str_normalize_spaces(&l_text, " \t\n");
+
+    str_replace(&l_reference, "\\\"", "\"", NULL);
+    str_normalize_spaces(&l_reference, " \t\n");
+
+    if (!unquoted) {
+        str_replace(&l_section, "\\\"", "\"", NULL);
+        str_normalize_spaces(&l_section, " \t\n");
+    }
+
+
+    if (text != NULL) str_cpy(text, &l_text);
+    if (reference != NULL) str_cpy(reference, &l_reference);
+    if (section != NULL) str_cpy(section, &l_section);
+
+    str_free(&l_text);
+    str_free(&l_reference);
+    str_free(&l_section);
+
+    if (end != NULL) *end = scr->pos;
+    return psx_match_end (scr->pos, end_str);
+}
+
+// Matches the [[ ]] notation of links.
+bool psx_match_bracket_link (char *str,
+
+                             // Out
+                             string_t *text, string_t *reference, string_t *section,
+                             char **end)
+{
+    bool success = true;
+
+    if (str == NULL) {
+        return false;
+    }
+
+    STACK_ALLOCATE(struct scanner_t, scr);
+    scr->str = str;
+    scr->pos = str;
+
+    scr_consume_spaces (scr);
+
+    success = scr_match_str (scr, "[[");
+
+    if (success) {
+        success = psx_match_link (scr->pos, "]]", text, reference, section, &scr->pos);
+    }
+
+    if (success) success = scr_match_str (scr, "]]");
+
+    if (end != NULL) *end = scr->pos;
+    return success;
+}
+
 struct psx_token_t ps_next_peek(struct psx_parser_state_t *ps)
 {
     STACK_ALLOCATE (struct psx_token_t, tok);
@@ -1180,34 +1363,78 @@ void str_cat_section_id (string_t *str, char *section, bool user_content)
     str_free(&clean);
 }
 
-struct html_element_t* html_append_note_link(struct psx_parser_state_t *ps, struct html_t *html, struct html_element_t *parent,
-                                             char *target_id,
-                                             char *section,
-                                             bool display_section,
-                                             string_t *text)
+struct html_element_t* html_append_forced_external_link(struct psx_parser_state_t *ps, struct html_t *html, struct html_element_t *parent,
+    char *target_id,
+    string_t *text)
 {
     string_t buff = {0};
 
     psx_maybe_warn_hidden_target (ps, target_id);
 
     struct html_element_t *link_element = html_new_element (html, "a");
-    str_set_printf (&buff, "?n=%s", target_id);
+    struct note_runtime_t *rt = rt_get();
+
+    if (rt != NULL) {
+        struct splx_node_t *entity = splx_get_node_by_id (&rt->sd, target_id);
+        struct splx_node_list_t *urls_list = splx_node_get_attributes(entity, "url");
+
+        if (urls_list != NULL) {
+            str_cpy (&buff, &urls_list->node->str);
+            html_element_attribute_set (html, link_element, SSTR("href"), SSTR(str_data(&buff)));
+
+            html_element_attribute_set (html, link_element, SSTR("target"), SSTR("_blank"));
+
+        } else {
+            psx_error (ps, "Forcing external link on entity without url attribute '%s'", target_id);
+        }
+    }
+
+    str_cpy (&buff, text);
+    html_element_append_strn (html, link_element, str_len(&buff), str_data(&buff));
+    psx_append_html_element(ps, html, link_element);
+
+    str_free(&buff);
+    return link_element;
+}
+
+struct html_element_t* html_append_internal_link(struct psx_parser_state_t *ps, struct html_t *html, struct html_element_t *parent,
+    char *target_id,
+    char *section,
+    bool display_section,
+    string_t *text,
+    char *url_prefix,
+    char *onclick_callback)
+{
+    string_t buff = {0};
+
+    psx_maybe_warn_hidden_target (ps, target_id);
+
+    // href
+    struct html_element_t *link_element = html_new_element (html, "a");
+    str_set_printf (&buff, "?%s=%s", url_prefix, target_id);
     if (section != NULL && *section != '\0') {
+        // Is there any useful case for a virtual link having a section?...
         str_cat_c (&buff, "#");
         str_cat_section_id (&buff, section, false);
     }
     html_element_attribute_set (html, link_element, SSTR("href"), SSTR(str_data(&buff)));
 
+
+    // onclick
     if (section != NULL && *section != '\0') {
         str_set (&buff, "");
         str_cat_section_id (&buff, section, false);
-        str_set_printf (&buff, "return open_note('%s', '%s');", target_id, str_data(&buff));
+        str_set_printf (&buff, "return %s('%s', '%s');", onclick_callback, target_id, str_data(&buff));
     } else {
-        str_set_printf (&buff, "return open_note('%s');", target_id);
+        str_set_printf (&buff, "return %s('%s');", onclick_callback, target_id);
     }
     html_element_attribute_set (html, link_element, SSTR("onclick"), SSTR(str_data(&buff)));
+
+
     html_element_class_add (html, link_element, "note-link");
 
+
+    // Section
     html_element_append_strn (html, link_element, str_len(text), str_data(text));
     if (section != NULL && *section != '\0' && display_section) {
         struct html_element_t *bold = html_new_element (html, "b");
@@ -1222,40 +1449,41 @@ struct html_element_t* html_append_note_link(struct psx_parser_state_t *ps, stru
     return link_element;
 }
 
-struct html_element_t* html_append_entity_link(struct psx_parser_state_t *ps, struct html_t *html, struct html_element_t *parent,
+struct html_element_t* html_append_note_link(struct psx_parser_state_t *ps, struct html_t *html, struct html_element_t *parent,
+                                             char *target_id,
+                                             char *section,
+                                             bool display_section,
+                                             string_t *text,
+                                             bool force_external_links)
+{
+    struct html_element_t *link_element;
+
+    if (!force_external_links) {
+        link_element = html_append_internal_link (ps, html, parent, target_id, section, display_section, text,
+            "n", "open_note");
+    } else {
+        link_element = html_append_forced_external_link (ps, html, parent, target_id, text);
+    }
+
+    return link_element;
+}
+
+struct html_element_t* html_append_virtual_link(struct psx_parser_state_t *ps, struct html_t *html, struct html_element_t *parent,
                                                char *target_id,
                                                char *section,
                                                bool display_section,
-                                               string_t *text)
+                                               string_t *text,
+                                               bool force_external_links)
 {
-    string_t buff = {0};
+    struct html_element_t *link_element;
 
-    psx_maybe_warn_hidden_target (ps, target_id);
-
-    struct html_element_t *link_element = html_new_element (html, "a");
-    str_set_printf (&buff, "?v=%s", target_id);
-    // Is there any useful case for an entity link having a section?...
-    if (section != NULL && *section != '\0') {
-        str_cat_c (&buff, "#");
-        str_cat_section_id (&buff, section, false);
+    if (!force_external_links) {
+        link_element = html_append_internal_link (ps, html, parent, target_id, section, display_section, text,
+            "v", "open_virtual_entity");
+    } else {
+        link_element = html_append_forced_external_link (ps, html, parent, target_id, text);
     }
-    html_element_attribute_set (html, link_element, SSTR("href"), SSTR(str_data(&buff)));
 
-    str_set_printf (&buff, "return open_virtual_entity('%s');", target_id);
-    html_element_attribute_set (html, link_element, SSTR("onclick"), SSTR(str_data(&buff)));
-    html_element_class_add (html, link_element, "note-link");
-
-    html_element_append_strn (html, link_element, str_len(text), str_data(text));
-    if (section != NULL && *section != '\0' && display_section) {
-        struct html_element_t *bold = html_new_element (html, "b");
-        html_element_append_strn (html, bold, 3, " > ");
-        html_element_append_child (html, link_element, bold);
-
-        html_element_append_strn (html, link_element, strlen(section), section);
-    }
-    html_element_append_child (html, parent, link_element);
-
-    str_free(&buff);
     return link_element;
 }
 
@@ -1272,20 +1500,25 @@ void html_append_link (struct psx_parser_state_t *ps,
                        string_t *text,
                        struct splx_node_t *target,
                        char *section,
-                       string_t *type, string_t *name)
+                       char *type, char *name,
+                       bool force_external_links)
 {
     if (type == NULL || name == NULL) return;
 
     // TODO: Does removing this cause any issues? If not, then also remove the
     // passing of type/name parameters
     //struct note_runtime_t *rt = rt_get();
-    //struct splx_node_t *target = splx_get_node_by_name_optional_type(&rt->sd, str_data(type), str_data(name));
+    //struct splx_node_t *target = splx_get_node_by_name_optional_type(&rt->sd, type, name);
 
     bool display_section = false;
     string_t *html_text = text;
     if (text == NULL || str_len(text) == 0) {
         html_text = splx_node_get_name(target);
         display_section = true;
+
+        if (html_text == NULL) {
+            html_text = splx_node_get_id(target);
+        }
     }
 
     if (entity_is_visible(target)) {
@@ -1295,142 +1528,30 @@ void html_append_link (struct psx_parser_state_t *ps,
                                    str_data(splx_node_get_id(target)),
                                    section,
                                    display_section,
-                                   html_text);
+                                   html_text,
+                                   force_external_links);
 
         } else {
             struct splx_node_t *virtual_id = splx_node_get_attribute (target, "t:virtual_id");
-            html_append_entity_link (ps, html,
+            html_append_virtual_link (ps, html,
                                      parent,
                                      str_data(splx_node_get_id (virtual_id)),
                                      section,
                                      display_section,
-                                     html_text);
+                                     html_text,
+                                     force_external_links);
         }
     }
-}
-
-void psx_parse_link (char *str, string_t *text_o, string_t *reference_o, string_t *section_o)
-{
-    string_t text = {0};
-    string_t reference = {0};
-    string_t section = {0};
-
-    STACK_ALLOCATE(struct scanner_t, scr);
-    scr->str = str;
-    scr->pos = str;
-
-    bool unquoted = false;
-
-    scr_consume_spaces (scr);
-    if (scr_curr_char(scr) == '\"')
-    {
-        bool match = false;
-
-        sstring_t t1 = {0};
-        sstring_t t2 = {0};
-        sstring_t t3 = {0};
-
-        t1.s = scr->pos+1;
-        match = scr_match_double_quoted_string (scr);
-        t1.len = match ? scr->pos - t1.s - 1 : 0;
-
-        scr_consume_spaces (scr);
-        if (scr_match_str (scr, "->")) {
-            scr_consume_spaces (scr);
-
-            t2.s = scr->pos+1;
-            match = scr_match_double_quoted_string (scr);
-            t2.len = match ? scr->pos - t2.s - 1 : 0;
-        }
-
-        scr_consume_spaces (scr);
-        while (scr_match_str (scr, ">")) {
-            scr_consume_spaces (scr);
-
-            t3.s = scr->pos+1;
-            match = scr_match_double_quoted_string (scr);
-            t3.len = match ? scr->pos - t3.s - 1 : 0;
-
-            scr_consume_spaces (scr);
-        }
-
-        if (scr_curr_char (scr) != '\0') {
-            unquoted = true;
-
-        } else {
-            if (t1.len > 0 && t2.len == 0 && t3.len == 0) {
-                str_set_sstr (&reference, &t1);
-
-            } else if (t1.len > 0 && t2.len > 0 && t3.len == 0) {
-                str_set_sstr (&text, &t1);
-                str_set_sstr (&reference, &t2);
-
-            } else if (t1.len > 0 && t2.len == 0 && t3.len > 0) {
-                str_set_sstr (&reference, &t1);
-                str_set_sstr (&section, &t3);
-
-            } else {
-                str_set_sstr (&text, &t1);
-                str_set_sstr (&reference, &t2);
-                str_set_sstr (&section, &t3);
-            }
-        }
-    } else {
-        unquoted = true;
-    }
-
-    if (unquoted) {
-        char *arrow =  "->";
-        int arrow_len =  strlen(arrow);
-        char *last_arrow = NULL;
-        for (char *s=scr_advance_until_str(scr, arrow);
-             s;
-             s = scr_advance_until_str(scr, arrow))
-        {
-            scr_match_str(scr, arrow);
-            last_arrow = s;
-        }
-
-        if (last_arrow != NULL && *(last_arrow + arrow_len) != '\0') {
-            strn_set (&text, scr->str, last_arrow - scr->str);
-            str_set (&reference, last_arrow + arrow_len);
-        } else {
-            str_set (&reference, str);
-
-            // In unquoted syntax a reference being set to "->" is very likely
-            // to be broken notation. To create a page titled "->" use quoted
-            // syntax.
-            str_strip(&reference);
-            if (strcmp ("->", str_data(&reference)) == 0) {
-                 str_set (&reference, "");
-            }
-        }
-    }
-
-    str_replace(&text, "\\\"", "\"", NULL);
-    str_normalize_spaces(&text, " \t\n");
-
-    str_replace(&reference, "\\\"", "\"", NULL);
-    str_normalize_spaces(&reference, " \t\n");
-
-    if (!unquoted) {
-        str_replace(&section, "\\\"", "\"", NULL);
-        str_normalize_spaces(&section, " \t\n");
-    }
-
-
-    if (text_o != NULL) str_cpy(text_o, &text);
-    if (reference_o != NULL) str_cpy(reference_o, &reference);
-    if (section_o != NULL) str_cpy(section_o, &section);
 }
 
 void html_redact_or_append_link (struct psx_parser_state_t *ps,
                                  struct html_t *html,
                                  struct html_element_t *parent,
-                                 string_t *type, string_t *name)
+                                 char *type, string_t *s,
+                                 bool force_external_links)
 {
     // TODO: Some types pass null here, see references.
-    if (type == NULL || name == NULL) return;
+    if (type == NULL || s == NULL) return;
 
     struct note_runtime_t *rt = rt_get();
 
@@ -1438,7 +1559,7 @@ void html_redact_or_append_link (struct psx_parser_state_t *ps,
     string_t text = {0};
     string_t reference = {0};
     string_t section = {0};
-    psx_parse_link (str_data(name), &text, &reference, &section);
+    psx_match_link (str_data(s), NULL, &text, &reference, &section, NULL);
 
     bool reference_is_id = (splx_get_node_by_id(&rt->sd, str_data(&reference)) != NULL);
     struct splx_node_t *target = NULL;
@@ -1446,7 +1567,7 @@ void html_redact_or_append_link (struct psx_parser_state_t *ps,
         target = splx_get_node_by_id (&rt->sd, str_data(&reference));
 
     } else {
-        target = splx_get_node_by_name_optional_type(&rt->sd, str_data(type), str_data(&reference));
+        target = splx_get_node_by_name_optional_type(&rt->sd, type, str_data(&reference));
     }
 
 
@@ -1539,13 +1660,12 @@ void html_redact_or_append_link (struct psx_parser_state_t *ps,
         }
 
         if (!redacted) {
-            html_append_link (ps, html, parent, &text, target, str_data(&section), type, name);
+            html_append_link (ps, html, parent, &text, target, str_data(&section), type, str_data(s), force_external_links);
         }
 
     } else {
-        //printf ("\\%s{%s}\n", str_data(type), str_data(name));
+        //printf ("\\%s{%s}\n", str_data(type), str_data(s));
     }
-
 }
 
 void psx_name_clean (string_t *str)
@@ -1616,7 +1736,8 @@ void str_cat_inline_content_as_plain (char *content, string_t *str)
 //
 // TODO: How do we handle the prescence of nested blocks here?, ignore them and
 // print them or raise an error and stop parsing.
-void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html, struct html_element_t *container, char *content)
+void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html, struct html_element_t *container, char *content,
+    bool force_external_links)
 {
     string_t buff = {0};
     STACK_ALLOCATE (struct psx_parser_state_t, ps);
@@ -1888,7 +2009,22 @@ void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html
             ps_restore_pos (ps, original_pos);
             ps_html_cat_literal_tag (ps, tag, html);
 
-        } else if (rt_get() != NULL && ctx->note != NULL && ps_match(ps, TOKEN_TYPE_TEXT_TAG, NULL)) {
+        } else if (rt_get() != NULL &&
+            psx_match_bracket_link (tok.value.s, NULL, NULL, NULL, NULL))
+        {
+            char *end;
+            psx_match_bracket_link (tok.value.s, NULL, NULL, NULL, &end);
+            string_t content = {0};
+            strn_set (&content, tok.value.s + strlen("[["), end - strlen("]]") - (tok.value.s + strlen("[[")));
+
+            html_redact_or_append_link (ps, html, psx_get_head_html_element(ps), "note", &content, force_external_links);
+
+            str_free(&content);
+            ps->scr.pos = end;
+
+        } else if (rt_get() != NULL && ctx->note != NULL &&
+            ps_match(ps, TOKEN_TYPE_TEXT_TAG, NULL))
+        {
             struct note_runtime_t *rt = rt_get ();
             strn_set (&buff, ps->token.value.s, ps->token.value.len);
             psx_late_user_tag_cb_t *cb = psx_late_user_tag_cb_get(&rt->user_late_cb_tree, str_data(&buff));
@@ -1908,7 +2044,7 @@ void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html
                     psx_name_clean (&name);
 
                     str_set_sstr (&type, &tag->token.value);
-                    html_redact_or_append_link (ps, html, psx_get_head_html_element(ps), &type, &name);
+                    html_redact_or_append_link (ps, html, psx_get_head_html_element(ps), str_data(&type), &name, force_external_links);
 
                     str_free (&type);
                     str_free (&name);
@@ -1928,7 +2064,7 @@ void block_content_parse_text (struct psx_parser_ctx_t *ctx, struct html_t *html
 
                 str_set_sstr (&name, &tag->parameters.positional->v);
                 str_set_sstr (&type, &tag->token.value);
-                html_redact_or_append_link (ps, html, psx_get_head_html_element(ps), &type, &name);
+                html_redact_or_append_link (ps, html, psx_get_head_html_element(ps), str_data(&type), &name, force_external_links);
 
                 str_free (&type);
                 str_free (&name);
@@ -2187,7 +2323,7 @@ void psx_create_link(struct splx_data_t *sd,
     string_t text = {0};
     string_t reference = {0};
     string_t section = {0};
-    psx_parse_link (str_data(tgt_name), &text, &reference, &section);
+    psx_match_link (str_data(tgt_name), NULL, &text, &reference, &section, NULL);
 
     if (str_len(&reference) > 0) {
         //prnt_debug_string (str_data(&text));
@@ -2304,9 +2440,67 @@ void psx_create_links_full (struct psx_parser_ctx_t *ctx, struct psx_block_t **r
 
 
 char *note_internal_attributes[] = {"name", "a", "t:virtual_id", "link", "backlink"};
-char *block_internal_attributes[] = {"a", "t:virtual_id"};
+char *block_internal_attributes[] = {"a", "t:virtual_id", "backlink"};
 
-void attributes_html_append (struct html_t *html, struct psx_block_t *block, struct html_element_t *parent,
+void append_attribute_value (struct psx_parser_ctx_t *ctx, struct html_t *html,
+    struct html_element_t *parent, char *value)
+{
+    struct note_runtime_t *rt = rt_get();
+
+    string_t display_name = {0};
+    string_t value_target = {0};
+
+    if (is_canonical_id (value) && rt != NULL) {
+        uint64_t id = canonical_id_parse(value, 0);
+        struct vlt_file_t *file = file_id_lookup (&rt->vlt, id);
+
+        DYNAMIC_ARRAY_APPEND(rt->used_file_ids, id);
+
+        if (file != NULL) {
+            str_set_printf (&value_target, "files/%s", str_data(&file->path));
+            str_cat_printf (&display_name, "📚 ");
+
+            if (str_len(&file->name) > 0) {
+                str_cat_printf (&display_name, "%s.%s", str_data(&file->name), str_data(&file->extension));
+            } else {
+                str_cat_printf (&display_name, "%s", path_basename(str_data(&file->path)));
+            }
+
+        } else {
+            psx_warning_ctx (ctx, "missing target for reference for: %s", value);
+        }
+
+    } else if (cstr_starts_with(value, "http://") ||
+        cstr_starts_with(value, "https://"))
+    {
+        str_set_printf (&value_target, "%s", value);
+    }
+
+    if (str_len(&display_name) == 0) {
+        str_cat_c (&display_name, value);
+    }
+
+    struct html_element_t *value_element;
+
+    if (str_len(&value_target) > 0) {
+        value_element = html_new_element (html, "a");
+        html_element_attribute_set (html, value_element, SSTR("target"), SSTR("_blank"));
+        html_element_attribute_set (html, value_element, SSTR("href"), SSTR(str_data(&value_target)));
+        html_element_class_add (html, value_element, "note-link");
+
+    } else {
+        value_element = html_new_element (html, "div");
+    }
+
+    html_element_class_add (html, value_element, "attribute-value");
+    html_element_append_cstr (html, value_element, str_data(&display_name));
+    html_element_append_child (html, parent, value_element);
+
+    str_free (&value_target);
+    str_free (&display_name);
+}
+
+void attributes_html_append (struct psx_parser_ctx_t *ctx, struct html_t *html, struct psx_block_t *block, struct html_element_t *parent,
                              char **skip_attrs, int skip_attrs_len)
 {
     // Types
@@ -2333,6 +2527,24 @@ void attributes_html_append (struct html_t *html, struct psx_block_t *block, str
         }
     }
 
+
+    // Show file attachments
+    struct note_runtime_t *rt = rt_get();
+    if (rt != NULL) {
+        // TODO: Files should be stored as floating entities of file type.
+        char *block_id = str_data(&block->data->str);
+        uint64_t id = canonical_id_parse(block_id, 0);
+        struct vlt_file_t *file = file_id_lookup (&rt->vlt, id);
+
+        if (file != NULL) {
+            append_attribute_value (ctx, html, parent, block_id);
+        }
+    }
+
+    // TODO: Should we add all floating TSPLX values like this?, seems like a
+    // good idea...
+
+
     int num_visible_attributes = block->data->attributes.num_nodes;
     BINARY_TREE_FOR (cstr_to_splx_node_list_map, &block->data->attributes, curr_attribute) {
         if (c_str_array_contains(skip_attrs, skip_attrs_len, curr_attribute->key)) {
@@ -2341,9 +2553,8 @@ void attributes_html_append (struct html_t *html, struct psx_block_t *block, str
     }
 
     // Attributes
-
     // NOTE: Avoid generating any attribute elements if the only present
-    // attributer are those already shown soehwre else (note's title, type
+    // attributes are those already shown somewhere else (note's title, type
     // labels etc.).
     if (num_visible_attributes > 0) {
         struct html_element_t *container = html_new_element (html, "div");
@@ -2364,15 +2575,12 @@ void attributes_html_append (struct html_t *html, struct psx_block_t *block, str
             html_element_append_cstr (html, label, curr_attribute->key);
             html_element_append_child (html, attribute, label);
 
-            // NOTE: This additionar wrapper div for values is added so that they
+            // NOTE: This additional wrapper div for values is added so that they
             // wrap nicely and are left aligned with all other values.
             struct html_element_t *values = html_new_element (html, "div");
             html_element_attribute_set (html, values, SSTR("style"), SSTR("row-gap: 3px; display: flex; flex-wrap: wrap; overflow-x: auto;"));
             LINKED_LIST_FOR (struct splx_node_list_t *, curr_list_node, curr_attribute->value) {
-                struct html_element_t *value = html_new_element (html, "div");
-                html_element_class_add (html, value, "attribute-value");
-                html_element_append_cstr (html, value, str_data(&curr_list_node->node->str));
-                html_element_append_child (html, values, value);
+                append_attribute_value (ctx, html, values, str_data(&curr_list_node->node->str));
             }
             html_element_append_child (html, attribute, values);
 
@@ -2387,7 +2595,7 @@ void attributes_html_append (struct html_t *html, struct psx_block_t *block, str
 // don't want to break all tests every time a change is made. Instead, for tests
 // we compare TSPLX data in canonical form and in the HTML we just output a
 // placeholder div that represents all attributes.
-void note_attributes_html_append (struct html_t *html, struct psx_block_t *block, struct html_element_t *parent)
+void note_attributes_html_append (struct psx_parser_ctx_t *ctx, struct html_t *html, struct psx_block_t *block, struct html_element_t *parent)
 #ifdef ATTRIBUTE_PLACEHOLDER
 {
     int num_visible_attributes = block->data->attributes.num_nodes;
@@ -2405,11 +2613,12 @@ void note_attributes_html_append (struct html_t *html, struct psx_block_t *block
 }
 #else
 {
-    attributes_html_append (html, block, parent, note_internal_attributes, ARRAY_SIZE(note_internal_attributes));
+    attributes_html_append (ctx, html, block, parent, note_internal_attributes, ARRAY_SIZE(note_internal_attributes));
 }
 #endif
 
-void attributed_block_html_append (struct psx_parser_ctx_t *ctx, struct html_t *html, struct psx_block_t *block, struct html_element_t *parent)
+void attributed_block_html_append (struct psx_parser_ctx_t *ctx, struct html_t *html, struct psx_block_t *block, struct html_element_t *parent,
+    bool force_external_links)
 #ifdef ATTRIBUTE_PLACEHOLDER
 {
     assert(block->data != NULL);
@@ -2417,7 +2626,7 @@ void attributed_block_html_append (struct psx_parser_ctx_t *ctx, struct html_t *
     struct html_element_t *new_dom_element = html_new_element (html, "p");
     html_element_attribute_set (html, new_dom_element, SSTR("data-block-attributes"), SSTR(""));
     html_element_append_child (html, parent, new_dom_element);
-    block_content_parse_text (ctx, html, new_dom_element, str_data(&block->inline_content));
+    block_content_parse_text (ctx, html, new_dom_element, str_data(&block->inline_content), force_external_links);
 }
 #else
 {
@@ -2434,7 +2643,7 @@ void attributed_block_html_append (struct psx_parser_ctx_t *ctx, struct html_t *
     if (str_len(&block->inline_content) > 0) {
         struct html_element_t *inline_content = html_new_element (html, "p");
         html_element_append_child (html, new_dom_element, inline_content);
-        block_content_parse_text (ctx, html, inline_content, str_data(&block->inline_content));
+        block_content_parse_text (ctx, html, inline_content, str_data(&block->inline_content), force_external_links);
     }
 
     struct html_element_t *block_attributes = html_new_element (html, "div");
@@ -2447,11 +2656,25 @@ void attributed_block_html_append (struct psx_parser_ctx_t *ctx, struct html_t *
     }
     html_element_attribute_set (html, block_attributes, SSTR("style"), SSTR(str_data(&style)));
 
-    attributes_html_append (html, block, block_attributes, block_internal_attributes, ARRAY_SIZE(block_internal_attributes));
+    attributes_html_append (ctx, html, block, block_attributes, block_internal_attributes, ARRAY_SIZE(block_internal_attributes));
 }
 #endif
 
-void block_tree_to_html (struct psx_parser_ctx_t *ctx, struct html_t *html, struct psx_block_t *block, struct html_element_t *parent)
+// Converts a block AST into HTML
+//
+// force_external_links: When true, it will assume linked entities have a "url"
+// attribute, then it will make all links render as external links to the first
+// value of this attribute. This is useful to break appart linking between the
+// pages website and the custom site generation. In my specific use case it
+// allows me having personal pages with links to other personal pages that when
+// exported as blog posts have working external links without going back to my
+// personal notes page.
+//
+// TODO: Is this the best architecture we can have?, feels like a lot of
+// functions were polluted with the force_external_links attribute. Maybe have
+// some "link processing" callback into ctx?, or just move that flag into ctx?.
+void block_tree_to_html (struct psx_parser_ctx_t *ctx, struct html_t *html, struct psx_block_t *block, struct html_element_t *parent,
+    bool force_external_links)
 {
     string_t buff = {0};
 
@@ -2488,10 +2711,10 @@ void block_tree_to_html (struct psx_parser_ctx_t *ctx, struct html_t *html, stru
                 html_element_append_child (html, parent, new_dom_element);
             }
 
-            block_content_parse_text (ctx, html, new_dom_element, block_content);
+            block_content_parse_text (ctx, html, new_dom_element, block_content, force_external_links);
 
         } else {
-            attributed_block_html_append (ctx, html, block, parent);
+            attributed_block_html_append (ctx, html, block, parent, force_external_links);
         }
 
     } else if (block->type == BLOCK_TYPE_HEADING) {
@@ -2503,7 +2726,7 @@ void block_tree_to_html (struct psx_parser_ctx_t *ctx, struct html_t *html, stru
         html_element_attribute_set (html, new_dom_element, SSTR("id"), SSTR(str_data(&buff)));
 
         html_element_append_child (html, parent, new_dom_element);
-        block_content_parse_text (ctx, html, new_dom_element, str_data(&block->inline_content));
+        block_content_parse_text (ctx, html, new_dom_element, str_data(&block->inline_content), force_external_links);
 
     } else if (block->type == BLOCK_TYPE_CODE) {
         struct html_element_t *pre_element = html_new_element (html, "pre");
@@ -2549,13 +2772,13 @@ void block_tree_to_html (struct psx_parser_ctx_t *ctx, struct html_t *html, stru
     } else if (block->type == BLOCK_TYPE_ROOT) {
         bool is_first = true;
         LINKED_LIST_FOR (struct psx_block_t*, sub_block, block->block_content) {
-            block_tree_to_html(ctx, html, sub_block, parent);
+            block_tree_to_html(ctx, html, sub_block, parent, force_external_links);
 
             // If there are note attributes in the root block, print them after
             // the first block which sould've been the title (heading).
             if (block->data != NULL && is_first) {
                 is_first = false;
-                note_attributes_html_append (html, block, parent);
+                note_attributes_html_append (ctx, html, block, parent);
             }
         }
 
@@ -2568,7 +2791,7 @@ void block_tree_to_html (struct psx_parser_ctx_t *ctx, struct html_t *html, stru
         // TODO: There's an unhandled case where all list items of a list are
         // hidden, then the list itself should not be created.
         LINKED_LIST_FOR (struct psx_block_t*, sub_block, block->block_content) {
-            block_tree_to_html(ctx, html, sub_block, new_dom_element);
+            block_tree_to_html(ctx, html, sub_block, new_dom_element, force_external_links);
         }
 
         html_element_append_child (html, parent, new_dom_element);
@@ -2579,7 +2802,7 @@ void block_tree_to_html (struct psx_parser_ctx_t *ctx, struct html_t *html, stru
         bool has_content = false;
         LINKED_LIST_FOR (struct psx_block_t*, sub_block, block->block_content) {
             if (rt == NULL || !rt->is_public || !sub_block->is_private) {
-                block_tree_to_html(ctx, html, sub_block, new_dom_element);
+                block_tree_to_html(ctx, html, sub_block, new_dom_element, force_external_links);
                 has_content = true;
             }
         }
@@ -3128,7 +3351,7 @@ char* markup_to_html (
     if (!note->error) {
         note->html = html_new (&note->pool, "div");
         html_element_attribute_set (note->html, note->html->root, SSTR("id"), SSTR(note->id));
-        block_tree_to_html (ctx, note->html, note->tree, note->html->root);
+        block_tree_to_html (ctx, note->html, note->tree, note->html->root, false);
 
         if (note->html == NULL) {
             note->error = true;
@@ -3184,7 +3407,7 @@ void render_backlinks(struct note_runtime_t *rt, struct note_t *note)
 
                     string_t *name = splx_node_get_name (node);
                     if (name != NULL) {
-                        html_append_note_link (NULL, html, wrapper, str_data(&node->str), NULL, false, name);
+                        html_append_note_link (NULL, html, wrapper, str_data(&node->str), NULL, false, name, false);
 
                     } else {
                         // TODO: When does this happen?, is it for all linked
@@ -3258,7 +3481,7 @@ PSX_USER_TAG_CB(block_tag_handler)
 
             psx_block_tree_user_callbacks (ctx, ba, &block_content);
 
-            block_tree_to_html (ctx, html, block_content, html->root);
+            block_tree_to_html (ctx, html, block_content, html->root, false);
 
         } else {
             html_element_set_text (html, html->root, "PSPLX PARSE ERROR");
@@ -3423,7 +3646,8 @@ PSX_LATE_USER_TAG_CB(orphan_list_tag_handler)
                         target_note->id,
                         NULL,
                         false,
-                        &curr_note->title);
+                        &curr_note->title,
+                        false);
                 }
             }
 
@@ -3457,7 +3681,8 @@ PSX_LATE_USER_TAG_CB(entity_list_tag_handler)
         html_element_append_child (note->html, list_item, paragraph);
 
         string_t *name = splx_node_get_name(entity);
-        html_append_link (NULL, note->html, paragraph, NULL, entity, NULL, &tag->content, name);
+        char *name_str = (name == NULL) ? NULL : str_data(name);
+        html_append_link (NULL, note->html, paragraph, NULL, entity, NULL, str_data(&tag->content), name_str, false);
 
         if (name != NULL) {
             // TODO: This isn't working right now. It causes a weird
@@ -3493,12 +3718,13 @@ PSX_LATE_USER_TAG_CB(virtual_list_tag_handler)
                 str_cpy (&name, entity_name);
             }
 
-            html_append_entity_link (NULL, note->html,
+            html_append_virtual_link (NULL, note->html,
                 paragraph,
                 str_data(&virtual_id->str),
                 NULL,
                 false,
-                &name);
+                &name,
+                false);
 
             str_free (&name);
         }

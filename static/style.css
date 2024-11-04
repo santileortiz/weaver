@@ -58,7 +58,7 @@ h2 {
     border-bottom: solid 1px #a2a9b1;
 }
 
-p, ul, ol {
+p {
     font-family: var(--text-font);
     margin: 0;
 }
@@ -371,10 +371,6 @@ code {
     padding-right: var(--bleed);
 }
 
-
-.attributed-block .type-list {
-    margin-bottom: 0;
-}
 
 .attributed-block .attribute-label {
     width: 90px;

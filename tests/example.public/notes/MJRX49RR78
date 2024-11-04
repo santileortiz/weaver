@@ -1,5 +1,19 @@
 <div id="MJRX49RR78">
   <h1 id="user-content-redacting">Redacting</h1>
+  <div class="attributes">
+    <div style="align-items: baseline; display: flex; color: var(--secondary-fg-color)">
+      <div class="attribute-label">created-at</div>
+      <div style="row-gap: 3px; display: flex; flex-wrap: wrap; overflow-x: auto;">
+        <div class="attribute-value">2023-04-24T04:25:22-00:00</div>
+      </div>
+    </div>
+    <div style="align-items: baseline; display: flex; color: var(--secondary-fg-color)">
+      <div class="attribute-label">updated-at</div>
+      <div style="row-gap: 3px; display: flex; flex-wrap: wrap; overflow-x: auto;">
+        <div class="attribute-value">2023-06-18T16:52:03-06:00</div>
+      </div>
+    </div>
+  </div>
   <p>Redacting is the mechanism used to separate personal from public content. It hides personal content in public publishing, but preserves useful relationships for personal use.</p>
   <p>This paragraph contains a parenthesized reference to a private page. The redacting feature will remove the parenthesis and its enclosing content when publishing publicly.</p>
   <p>To make redacting undetectable when publishing publicly, we do some space stripping. Spaces <i>after</i> are preserved, but we remove spaces <i>before</i>. As in most places, multiple spaces will be collapsed to a single one.</p>

@@ -63,7 +63,7 @@ char* markup_to_html (
     if (!note->error) { \
         note->html = html_new (&note->pool, "div"); \
         html_element_attribute_set (note->html, note->html->root, SSTR("id"), SSTR(note->id)); \
-        block_tree_to_html (ctx, note->html, note->tree, note->html->root); \
+        block_tree_to_html (ctx, note->html, note->tree, note->html->root, false); \
  \
         if (note->html == NULL) { \
             note->error = true; \

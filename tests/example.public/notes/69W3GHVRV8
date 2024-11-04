@@ -1,0 +1,34 @@
+<div id="69W3GHVRV8">
+  <h1 id="user-content-bracket-link-tests">Bracket Link Tests</h1>
+  <div class="attributes">
+    <div style="align-items: baseline; display: flex; color: var(--secondary-fg-color)">
+      <div class="attribute-label">created-at</div>
+      <div style="row-gap: 3px; display: flex; flex-wrap: wrap; overflow-x: auto;">
+        <div class="attribute-value">2024-10-21T00:21:47-06:00</div>
+      </div>
+    </div>
+    <div style="align-items: baseline; display: flex; color: var(--secondary-fg-color)">
+      <div class="attribute-label">updated-at</div>
+      <div style="row-gap: 3px; display: flex; flex-wrap: wrap; overflow-x: auto;">
+        <div class="attribute-value">2024-10-28T03:21:06-06:00</div>
+      </div>
+    </div>
+  </div>
+  <p>Test cases for links using bracked notation, like <a class="note-link" href="?n=V5VQ876393" onclick="return open_note('V5VQ876393');">Page Syntax</a>.</p>
+  <p>By page title</p>
+  <ul>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393" onclick="return open_note('V5VQ876393');">Page Syntax</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393" onclick="return open_note('V5VQ876393');">Custom Text</a></p>
+    </li>
+    <li>
+      <p><a class="note-link" href="?n=V5VQ876393" onclick="return open_note('V5VQ876393');">Custom Text</a></p>
+    </li>
+  </ul>
+  <h4>Backlinks</h4>
+  <div class="backlinks">
+    <p><a class="note-link" href="?n=XHWXV3888W" onclick="return open_note('XHWXV3888W');">Page Links</a></p>
+  </div>
+</div>

@@ -76,6 +76,19 @@ void scr_advance_char (struct scanner_t *scr)
     }
 }
 
+static inline
+bool scr_match_char(struct scanner_t *scr, char c)
+{
+    bool found = false;
+
+    if (scr_curr_char(scr) == c) {
+        scr_advance_char (scr);
+        found = true;
+    }
+
+    return found;
+}
+
 // NOTE: c_str MUST be null terminated!!
 bool scr_match_str(struct scanner_t *scr, char *c_str)
 {
@@ -180,6 +193,13 @@ char* scr_advance_until_str (struct scanner_t *scr, char *s)
     }
 
     return result;
+}
+
+void scr_advance_until_char (struct scanner_t *scr, char c)
+{
+    while (!scr->is_eof && scr_curr_char(scr) != c) {
+        scr_advance_char (scr);
+    }
 }
 
 static inline

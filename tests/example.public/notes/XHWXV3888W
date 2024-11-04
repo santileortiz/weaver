@@ -1,8 +1,22 @@
 <div id="XHWXV3888W">
   <h1 id="user-content-page-links">Page Links</h1>
+  <div class="attributes">
+    <div style="align-items: baseline; display: flex; color: var(--secondary-fg-color)">
+      <div class="attribute-label">created-at</div>
+      <div style="row-gap: 3px; display: flex; flex-wrap: wrap; overflow-x: auto;">
+        <div class="attribute-value">2023-07-22T08:23:34-00:00</div>
+      </div>
+    </div>
+    <div style="align-items: baseline; display: flex; color: var(--secondary-fg-color)">
+      <div class="attribute-label">updated-at</div>
+      <div style="row-gap: 3px; display: flex; flex-wrap: wrap; overflow-x: auto;">
+        <div class="attribute-value">2024-10-21T00:22:02-06:00</div>
+      </div>
+    </div>
+  </div>
   <p>To create a page link by the target's title use <a class="note-link" href="?n=V5VQ876393" onclick="return open_note('V5VQ876393');">Page Syntax</a>. Instead of the title, the page's ID can also be used <a class="note-link" href="?n=V5VQ876393" onclick="return open_note('V5VQ876393');">Page Syntax</a>.</p>
   <p>The <code class="code-inline">-&gt;</code> separator can be used to change the visible text that links to the note. <a class="note-link" href="?n=V5VQ876393" onclick="return open_note('V5VQ876393');">Custom Text</a> links to the same page as the previous example but shows <code class="code-inline">Custom Text</code> instead of the page's title.</p>
-  <p>Components can be quoted to use otherwise not allowed characters the <code class="code-inline">-&gt;</code> character sequence, like <a class="note-link" href="?v=VCMHGGJ222" onclick="return open_virtual_entity('VCMHGGJ222');">here</a>.</p>
+  <p>Components can be quoted to use otherwise not allowed characters the <code class="code-inline">-&gt;</code> character sequence, like <a class="note-link" href="?n=V5VQ876393" onclick="return open_note('V5VQ876393');">-&gt; here</a>.</p>
   <ul>
     <li>
       <p>Inside quoted notation <code class="code-inline">\"</code> will represent the <code class="code-inline">"</code> character.</p>
@@ -21,6 +35,11 @@
     </li>
   </ul>
   <h2 id="user-content-test-cases">Test Cases</h2>
+  <ul>
+    <li>
+      <p><a class="note-link" href="?n=69W3GHVRV8" onclick="return open_note('69W3GHVRV8');">Bracket Link Tests</a></p>
+    </li>
+  </ul>
   <p>By page title</p>
   <ul>
     <li>

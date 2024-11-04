@@ -376,7 +376,7 @@ void generate_data_javascript (struct note_runtime_t *rt, char *out_fname, char 
             if (virtual_id != NULL) {
                 html_element_attribute_set (dummy_note->html, dummy_note->html->root, SSTR("id"), SSTR(str_data(splx_node_get_id (virtual_id))));
             }
-            block_tree_to_html (ctx, dummy_note->html, dummy_note->tree, dummy_note->html->root);
+            block_tree_to_html (ctx, dummy_note->html, dummy_note->tree, dummy_note->html->root, false);
             render_backlinks (rt, dummy_note);
             str_cat_html (&html, dummy_note->html, 2);
             str_replace (&html, "'", "\\'", NULL);
@@ -770,7 +770,7 @@ int main(int argc, char** argv)
                         struct html_t *content_html = html_new (&pool_l, "div");
                         STACK_ALLOCATE (struct psx_parser_ctx_t, ctx);
                         ctx->vlt = &rt->vlt;
-                        block_tree_to_html (ctx, content_html, note->tree, content_html->root);
+                        block_tree_to_html (ctx, content_html, note->tree, content_html->root, true);
 
                         str_set (&buff, "");
                         str_cat_html_element_siblings(&buff, content_html->root->children->next->next->next, 2);
