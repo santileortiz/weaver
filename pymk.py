@@ -2116,7 +2116,10 @@ def delete_empty_dirs(path):
                     else:
                         print (cma_red("error: ") + f"flattening left non empty directory {dir_path}")
 
-def photos_download ():
+def photos_process ():
+    # USefult to verify the download before adding it to the album folder
+    is_download_only = get_cli_bool_opt('--download-only')
+
     dir_data = json.loads(ex (f"rclone lsjson google-drive:/{cli_esc(photos_dirname)}/", ret_stdout=True, echo=False))
     [print(f'[{str(i)}] {f["Path"]}') for i, f in enumerate(dir_data)]
     download_idx = int(input('Download: '))
@@ -2154,7 +2157,11 @@ def photos_download ():
         print (cma_red("error: ") + "Can't guarantee duplication against existing collection deletes downloaded folders because the download temporary directory name is contained in the collection's path.")
         success = False
 
-    if success:
+    if is_download_only:
+        print("Check Duplicates With:")
+        print(f"~/scrapbook/bin/scrapbook --find-duplicates-file --remove --prefer-removal-substr {cli_esc(photos_dirname)} ~/{cli_esc(photos_dirname)}/{album_name_escaped}/ {cli_esc(tgt_dir)}")
+
+    if success and not is_download_only:
         ensure_dir(tgt_dir)
 
         print()
@@ -2218,8 +2225,12 @@ def photos_download ():
 
 
         print()
-        print(ecma_magenta("Moving Into Collection"))
-        cmd = f"mv ~/{cli_esc(photos_dirname)}/{album_name_escaped}/* {cli_esc(tgt_dir)}"
+        if not copy:
+            print(ecma_magenta("Moving Into Collection"))
+            cmd = f"mv ~/{cli_esc(photos_dirname)}/{album_name_escaped}/* {cli_esc(tgt_dir)}"
+        else:
+            print(ecma_magenta("Copying Into Collection"))
+            cmd = f"cp ~/{cli_esc(photos_dirname)}/{album_name_escaped}/* {cli_esc(tgt_dir)}"
         cmds.append(cmd)
         ex (cmd)
 
