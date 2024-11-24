@@ -366,7 +366,7 @@ code {
     border: 1px solid #0000001c;
 }
 
-.attributed-block > p {
+.attributed-block p {
     padding-left: var(--bleed);
     padding-right: var(--bleed);
 }
