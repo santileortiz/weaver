@@ -2151,6 +2151,20 @@ cJSON* cJSON_splx_create_array(struct splx_node_list_t *node_list)
     return result;
 }
 
+bool splx_node_value_as_bool (sstring_t *value)
+{
+    if (sstr_equals(value, &SSTRING_C("true"))) {
+        return true;
+
+    } else if (sstr_equals(value, &SSTRING_C("false"))) {
+        return false;
+
+    } else {
+        // Is this the right approach?, maybe this function should instead fail somehow?...
+        return false;
+    }
+}
+
 struct splx_node_attribute_value_cmp_clsr_t {
     bool reverse;
     char *attribute;
@@ -2158,12 +2172,32 @@ struct splx_node_attribute_value_cmp_clsr_t {
 
 int splx_node_attribute_value_cmp (struct splx_node_t *a, struct splx_node_t *b, struct splx_node_attribute_value_cmp_clsr_t *user_data)
 {
-    int result = strcmp(
-        str_data(splx_node_get_id(splx_node_get_attribute(a, user_data->attribute))),
-        str_data(splx_node_get_id(splx_node_get_attribute(b, user_data->attribute)))
-    );
+    int result = 0;
 
-    return user_data->reverse ? -1*result : result;
+    struct splx_node_t *a_attr = splx_node_get_attribute(a, user_data->attribute);
+    struct splx_node_t *b_attr = splx_node_get_attribute(b, user_data->attribute);
+
+    if (a_attr == NULL || b_attr == NULL) {
+        // Nodes not containing the attribute will be left unsorted at the end,
+        // no matter the _reverse_ parameter.
+        if (a_attr == b_attr) {
+            result = 0;
+        } else if (a_attr == NULL) {
+            result = 1;
+        } else {
+            result = -1;
+        }
+
+    } else {
+        result = strcmp(
+            str_data(splx_node_get_id(a_attr)),
+            str_data(splx_node_get_id(b_attr))
+        );
+
+        result = user_data->reverse ? -1*result : result;
+    }
+
+    return result;
 }
 
 templ_sort_stable_ll(_splx_node_list_sort,struct splx_node_list_t,splx_node_attribute_value_cmp(a->node, b->node, user_data));

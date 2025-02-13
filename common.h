@@ -1225,6 +1225,24 @@ sstring_t sstr_set (char *s, uint32_t len)
 }
 
 static inline
+bool sstr_equals (sstring_t *a, sstring_t *b)
+{
+    return a->len == b->len && strncmp(a->s, b->s, a->len) == 0;
+}
+
+static inline
+bool sstr_starts_with (sstring_t *s, sstring_t *start)
+{
+    return strncmp(s->s, start->s, MIN(s->len, start->len)) == 0;
+}
+
+static inline
+int sstr_cmp (sstring_t *a, sstring_t *b)
+{
+    return strncmp(a->s, b->s, MIN(a->len, b->len));
+}
+
+static inline
 sstring_t sstr_strip (sstring_t str)
 {
     if (str.len > 0) {
@@ -4165,8 +4183,10 @@ char* path_basename (char *path)
 {
     if (path == NULL) return NULL;
 
+    if (*path == '\0') return path;
+
     char *basename = path + (strlen (path) - 1);
-    while (*basename != '/' && basename >= path) {
+    while (basename >= path && *basename != '/') {
         basename--;
     }
 

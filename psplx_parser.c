@@ -191,11 +191,9 @@ void psx_warning_ctx (struct psx_parser_ctx_t *ctx, char *format, ...)
 // iteratively to yield all parameters.
 bool ps_parse_tag_parameters (struct psx_parser_state_t *ps, struct psx_tag_parameters_t *parameters)
 {
-    bool has_parameters = false;
+    assert (parameters->named.pool != NULL);
 
-    if (parameters != NULL) {
-        parameters->named.pool = &ps->pool;
-    }
+    bool has_parameters = false;
 
     char *original_pos = scr_pos(PS_SCR);
     if (scr_curr_char(PS_SCR) == '[') {
@@ -3671,6 +3669,21 @@ PSX_LATE_USER_TAG_CB(entity_list_tag_handler)
     }
 
     struct splx_node_list_t *entities_of_type = splx_get_node_by_type (&rt->sd,  str_data(&tag->content));
+
+    sstring_t sort_by = {0};
+    if (sstring_map_maybe_get (&tag->parameters.named, SSTRING_C("sort-by"), &sort_by)) {
+        bool reverse = false;
+        sstring_t sort_reverse = {0};
+        if (sstring_map_maybe_get (&tag->parameters.named, SSTRING_C("sort-reverse"), &sort_reverse)) {
+            reverse = splx_node_value_as_bool(&sort_reverse);
+        }
+
+        string_t s = {0};
+        str_set_sstr (&s, &sort_by);
+        splx_node_list_sort(&entities_of_type, str_data(&s), reverse);
+        str_free (&s);
+    }
+
     LINKED_LIST_FOR (struct splx_node_list_t *, curr_list_node, entities_of_type) {
         struct splx_node_t *entity = curr_list_node->node;
 
