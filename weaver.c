@@ -2,6 +2,8 @@
  * Copyright (C) 2021 Santiago León O.
  */
 #include "common.h"
+#include "olc_utility.h"
+
 #include "datetime.c"
 #include "scanner.c"
 #include "binary_tree.c"

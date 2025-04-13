@@ -370,7 +370,7 @@ def common_build(c_sources, out_fname, use_js, subprocess_test=True):
     if not subprocess_test:
         C_FLAGS += " -DTEST_NO_SUBPROCESS"
 
-    c_sources += " lib/cJSON.c lib/mustach.c lib/mustach-wrap.c lib/mustach-cjson.c"
+    c_sources += " lib/cJSON.c lib/mustach.c lib/mustach-wrap.c lib/mustach-cjson.c lib/olc.c"
 
     generate_automacros ('automacros.h')
 
