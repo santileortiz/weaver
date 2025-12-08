@@ -279,16 +279,17 @@ void generate_metadata (struct note_runtime_t *rt, struct config_t *cfg)
             char *entity_id = str_data(splx_node_get_id (entity));
 
             if (strlen(entity_id) > 0) {
-                struct splx_node_t *metadata_node = splx_node(metadata, entity_id, SPLX_NODE_TYPE_OBJECT);
-
                 struct splx_node_t *created_at_node = splx_node_get_attribute (entity, META_CREATED_AT);
-                splx_node_attribute_append_c_str(metadata, metadata_node, META_CREATED_AT, str_data(&created_at_node->str), SPLX_NODE_TYPE_STRING);
-
                 struct splx_node_t *updated_at_node = splx_node_get_attribute (entity, META_UPDATED_AT);
-                splx_node_attribute_append_c_str(metadata, metadata_node, META_UPDATED_AT, str_data(&updated_at_node->str), SPLX_NODE_TYPE_STRING);
 
-                str_cat_splx_canonical_shallow(&metadata_str, metadata_node);
-                str_cat_c(&metadata_str, "\n");
+                if (created_at_node != NULL && updated_at_node != NULL) {
+                    struct splx_node_t *metadata_node = splx_node(metadata, entity_id, SPLX_NODE_TYPE_OBJECT);
+                    splx_node_attribute_append_c_str(metadata, metadata_node, META_CREATED_AT, str_data(&created_at_node->str), SPLX_NODE_TYPE_STRING);
+                    splx_node_attribute_append_c_str(metadata, metadata_node, META_UPDATED_AT, str_data(&updated_at_node->str), SPLX_NODE_TYPE_STRING);
+
+                    str_cat_splx_canonical_shallow(&metadata_str, metadata_node);
+                    str_cat_c(&metadata_str, "\n");
+                }
 
             } else {
                  // TODO: Which entities of note type don't have an id?... I've
