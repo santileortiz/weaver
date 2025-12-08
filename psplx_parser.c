@@ -2429,6 +2429,23 @@ void psx_create_links_full (struct psx_parser_ctx_t *ctx, struct psx_block_t **r
                     str_free(&type);
                     str_free(&name);
                 }
+
+            } else if (psx_match_bracket_link (ps_inline->token.value.s, NULL, NULL, NULL, NULL)) {
+                char *start = ps_inline->token.value.s;
+                char *end;
+                psx_match_bracket_link (start, NULL, NULL, NULL, &end);
+                string_t content = {0};
+                strn_set (&content, start + strlen("[["), end - strlen("]]") - (start + strlen("[[")));
+
+                if (str_len(&content) > 0) {
+                    // TODO: Type should come from the target itself, should not be necessary here...
+                    string_t type = {0};
+                    str_set (&type, "note");
+
+                    psx_create_link(&ctx->rt->sd, ctx->note->tree->data, ctx->note->id, &type, &content);
+                }
+
+                str_free(&content);
             }
         }
 
