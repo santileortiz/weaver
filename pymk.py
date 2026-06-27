@@ -11,6 +11,7 @@ from natsort import natsorted
 import random
 import psutil
 import json
+import re
 from zipfile import ZipFile
 from urllib.parse import urlparse, urlunparse, ParseResult
 
@@ -620,6 +621,155 @@ def new_scan(path, resolution=300, device=None):
 
     return error, cmd
 
+
+#############################
+# Structured Data Capture CLI
+#############################
+
+class DataCaptureTypeDefinition:
+    def __init__(self, name, attributes, target_file_dir, target_data_file):
+        self.name = name
+        self.attributes = attributes
+        self.target_file_dir =target_file_dir
+        self.target_data_file = target_data_file
+
+type_definitions = [
+    DataCaptureTypeDefinition("transaction",
+        ["date", "value", "currency", "from", "to"],
+        'invoices',
+        'digitized_invoices.tsplx'),
+
+    DataCaptureTypeDefinition("exchange",
+        ["date", "exchanger", "from-value", "from-currency", "from", "to-value", "to-currency", "to"],
+        'invoices',
+        'digitized_invoices.tsplx'),
+
+    DataCaptureTypeDefinition("ticket",
+        ["date", "price", "type"],
+        'ticket',
+        'ticket.tsplx'),
+
+    DataCaptureTypeDefinition("contact",
+        ["name"],
+        None,
+        None),
+
+    DataCaptureTypeDefinition("establishment",
+        ["name"],
+        None,
+        None),
+
+]
+
+def get_data_capture_type(target_type):
+    for type_definition in type_definitions:
+        if type_definition.name == target_type:
+            return type_definition
+
+    return None
+
+def get_stub_attributes(tsplx_stub):
+    attributes = []
+    for attr in re.findall(r"<\+([^+]+)\+>", tsplx_stub):
+        if attr != "files" and attr not in attributes:
+            attributes.append(attr)
+
+    return attributes
+
+def capture_data():
+    global type_definitions
+
+    win = curses.initscr()
+    curses.start_color()
+    win.scrollok(1)
+    curses.use_default_colors()
+    curses.init_pair(1, curses.COLOR_RED, -1)
+
+    curses.curs_set(0)
+    win.clear()
+
+    active_type = None
+    global_defaults = {}
+    instances = []
+    current_instance = {}
+
+    while True:
+        win.clear()
+
+        # Display type definitions
+        win.addstr(0, 0, "Available types:")
+        for idx, tdef in enumerate(type_definitions, 1):
+            prefix = "*" if active_type == tdef else " "
+            win.addstr(idx, 0, f"{prefix}[{idx}] {tdef.name}")
+
+        # Display controls and current state
+        row = len(type_definitions) + 2
+        if active_type:
+            win.addstr(row, 0, f"Active type: {active_type.name}")
+            row += 1
+            win.addstr(row, 0, "Attributes:")
+            for idx, attr in enumerate(active_type.attributes):
+                value = current_instance.get(attr, global_defaults.get(attr, "None"))
+                win.addstr(row + idx + 1, 2, f"{idx + 1}) {attr}: {value}")
+
+        row += len(active_type.attributes) + 2 if active_type else 2
+        win.addstr(row, 0, "Commands:")
+        win.addstr(row + 1, 2, "[1-N] switch type")
+        win.addstr(row + 2, 2, "[a1-aN] modify attribute (e.g., 'a1')")
+
+        win.addstr(row + 3, 2, "[n] create new instance")
+        win.addstr(row + 4, 2, "[q] quit")
+
+        # Handle user input
+        key = win.getch()
+
+        if key == ord('q'):
+            break
+
+        elif ord('1') <= key <= ord(str(len(type_definitions))):
+            active_type = type_definitions[key - ord('1')]
+            global_defaults = {attr: "" for attr in active_type.attributes}
+            current_instance = {}
+
+        elif active_type and key == ord('a'):
+            second_key = win.getch()
+            if ord('1') <= second_key <= ord(str(len(active_type.attributes))):
+                attr_index = second_key - ord('1')
+                attr_name = active_type.attributes[attr_index]
+
+                # Enter attribute editing mode
+                curses.curs_set(1)
+                win.addstr(row + attr_index + 1, 2 + len(attr_name) + 4, " " * 20)
+                win.move(row + attr_index + 1, 2 + len(attr_name) + 4)
+                curses.echo()
+
+                new_value = win.getstr(row + attr_index + 1, 2 + len(attr_name) + 4).decode("utf-8").strip()
+                if new_value == "":
+                    if attr_name in current_instance:
+                        del current_instance[attr_name]
+                elif new_value.lower() == "escape":
+                    pass  # Restore previous value
+                else:
+                    current_instance[attr_name] = new_value
+
+                curses.noecho()
+                curses.curs_set(0)
+
+        elif key == ord(' '):
+            if active_type:
+                instances.append(current_instance.copy())
+                current_instance = {}
+
+    # Exit and display captured instances
+    win.clear()
+    win.addstr(0, 0, "Captured Instances:")
+    for idx, instance in enumerate(instances, 1):
+        win.addstr(idx, 0, f"{idx}: {instance}")
+
+    win.addstr(len(instances) + 2, 0, "Press any key to exit...")
+    win.getch()
+    curses.endwin()
+
 def get_type_config(target_type):
     # TODO: This should be part of a configuration for each type, most likely
     # coming from some .tsplx file. This configuration will describe details of
@@ -635,13 +785,13 @@ def get_type_config(target_type):
     if target_type == "print-book":
         target_file_dir = "book-photos"
         target_data_file = "book_library_santiago.tsplx"
-        tsplx_stub = 'print-book["<++>", q("<++>")];\n'
+        tsplx_stub = 'print-book["<+name+>", "<+author+>"];\n'
 
     elif target_type == "transaction":
         target_file_dir = 'invoices'
         target_data_file = "digitized_invoices.tsplx"
         tsplx_stub = textwrap.dedent('''\
-            transaction["<+date+>",<+value+>,"MXN",q("<+from+>"),q("<+to+>")]{
+            transaction["<+date+>",<+value+>,"<+currency+>","<+from+>","<+to+>"]{
               file <+files+>;
             };
             ''')
@@ -650,8 +800,19 @@ def get_type_config(target_type):
         target_file_dir = 'invoices'
         target_data_file = "digitized_invoices.tsplx"
         tsplx_stub = textwrap.dedent('''\
-            exchange["<+date+>","<+exchanger+>",<+from-value+>,"MXN",q("<+from+>"),<+to-value+>,"USD",q("<+to+>")]{
-              "OMG 2024 Q4";
+            exchange["<+date+>","<+exchanger+>",<+from-value+>,"<+from-currency+>","<+from+>",<+to-value+>,"<+to-currency+>","<+to+>"]{
+              file <+files+>;
+            };
+            ''')
+
+    elif target_type == "ticket":
+        target_file_dir = 'ticket'
+        target_data_file = "ticket.tsplx"
+        tsplx_stub = textwrap.dedent('''\
+            ticket {
+              type "<+type+>";
+              date "<+date+>";
+              price <+price+>;
               file <+files+>;
             };
             ''')
@@ -689,7 +850,7 @@ def get_type_config(target_type):
               type "concert"; "event";
               date "<+date+>";
               name "<+name+>";
-              artist q"<+artist+>";
+              artist "<+artist+>";
               file <+files+>;
             };
             ''')
@@ -701,7 +862,7 @@ def get_type_config(target_type):
             ticket {
               type "concert";
               date "<+date+>";
-              artist q"<+artist+>";
+              artist "<+artist+>";
               file <+files+>;
             };
             ''')
@@ -763,13 +924,22 @@ def get_type_config(target_type):
 
     return target_file_dir, target_data_file, tsplx_stub
 
-def resolve_stub(target_type, tsplx_stub=None, identifier=None, files=None):
+def resolve_stub(target_type, tsplx_stub=None, identifier=None, files=None, attributes=None):
     # TODO: Don't pass the stubs as a string template. Should better pass them
     # in a format that node_to_object_string() understands, and use that as
     # serialization mechanism.
 
+    if files == None:
+        files = []
+
+    if attributes == None:
+        attributes = {}
+
     if tsplx_stub.find("<+files+>") > 0:
         tsplx_stub = tsplx_stub.replace("<+files+>", "; ".join(files))
+
+    for attr, value in attributes.items():
+        tsplx_stub = tsplx_stub.replace(f"<+{attr}+>", value)
 
     # I've been tempted to using a shorthand notation where apply the following
     # default
@@ -809,10 +979,124 @@ def append_instance(target_data_file, tsplx_data):
     ensure_dir(path_basename(target_data_file))
 
     file_existed = True if path_exists(target_data_file) else False
+    start_line = 1
+    if file_existed:
+        with open(target_data_file) as data_file:
+            start_line = sum(1 for _ in data_file) + 2
+
     with open(target_data_file, "+a") as data_file:
         if file_existed:
             data_file.write('\n')
         data_file.write(tsplx_data)
+
+    return start_line
+
+class TsplxEntity():
+    def __init__(self):
+        self.floating = []
+        self.attributes = {}
+
+class DataCaptureState:
+    def __init__(self):
+        self.active_type = None
+        self.current_instance = TsplxEntity()
+
+
+def clear_to_bottom(win):
+        """
+        Clears everything from the current cursor position to the end of the screen.
+        """
+        row, col = win.getyx()
+        max_y, _ = win.getmaxyx()
+        for r in range(row, max_y):
+            win.move(r, 0)
+            win.clrtoeol()
+
+        win.move(row, col)
+
+def clear_line(win, row):
+    max_y, _ = win.getmaxyx()
+    if row < 0 or row >= max_y:
+        return
+
+    win.move(row, 0)
+    win.clrtoeol()
+
+def curses_addstr_clipped(win, row, col, text):
+    max_y, max_x = win.getmaxyx()
+    if row < 0 or row >= max_y or col < 0 or col >= max_x:
+        return
+
+    available_width = max_x - col - 1
+    if available_width <= 0:
+        return
+
+    try:
+        win.addstr(row, col, text[:available_width])
+    except curses.error:
+        pass
+
+def render_scan_capture_state(win, row, dcs, tsplx_data, pending_documents, saved_instances_by_file):
+    max_y, max_x = win.getmaxyx()
+    left_width = max(32, min(50, max_x // 2))
+    right_col = left_width + 2
+    prompt_row = max_y - 2
+
+    clear_to_bottom(win)
+
+    line = row
+    active_type_str = dcs.active_type.name if dcs.active_type else "None"
+    curses_addstr_clipped(win, line, 0, f"Active type: {active_type_str}")
+    line += 1
+
+    if dcs.active_type:
+        curses_addstr_clipped(win, line, 0, "Attributes:")
+        line += 1
+        for idx, attr in enumerate(dcs.active_type.attributes):
+            value = dcs.current_instance.attributes.get(attr, "")
+            curses_addstr_clipped(win, line, 2, f"a{idx + 1}) {attr}: {value}")
+            line += 1
+
+    line += 1
+    curses_addstr_clipped(win, line, 0, "Pending instance:")
+    line += 1
+    if pending_documents:
+        curses_addstr_clipped(win, line, 2, f"{len(pending_documents)} document(s)")
+        line += 1
+        for idx, document_pages in enumerate(pending_documents, 1):
+            curses_addstr_clipped(win, line, 2, f"{idx}) {len(document_pages)} page(s)")
+            line += 1
+    else:
+        curses_addstr_clipped(win, line, 2, "None")
+        line += 1
+
+    line += 1
+    curses_addstr_clipped(win, line, 0, "Saved this session:")
+    line += 1
+    if saved_instances_by_file:
+        for path, writes in saved_instances_by_file.items():
+            curses_addstr_clipped(win, line, 2, f"{path_basename(path)}: {len(writes)}")
+            line += 1
+    else:
+        curses_addstr_clipped(win, line, 2, "0 entities")
+
+    if right_col < max_x:
+        for y in range(row, prompt_row):
+            curses_addstr_clipped(win, y, left_width, "|")
+
+        preview_line = row
+        curses_addstr_clipped(win, preview_line, right_col, "Pending TSPLX:")
+        preview_line += 1
+
+        if tsplx_data:
+            for preview in tsplx_data.splitlines():
+                curses_addstr_clipped(win, preview_line, right_col, preview)
+                preview_line += 1
+        else:
+            curses_addstr_clipped(win, preview_line, right_col, "None")
+
+    clear_line(win, prompt_row)
+    clear_line(win, prompt_row + 1)
 
 def scan():
     show_help = get_cli_bool_opt ("--help")
@@ -827,15 +1111,12 @@ def scan():
 
     if show_help:
         print ("usage:")
-        print (f" ./pymk.py {get_function_name()}")
-        print (f" ./pymk.py {get_function_name()} --directory TARGET_DIRECTORY")
-        print (f" ./pymk.py {get_function_name()} TARGET_TYPE")
+        print (f" ./pymk.py {get_function_name()}                     # structured capture")
+        print (f" ./pymk.py {get_function_name()} TARGET_TYPE         # structured capture with initial type")
+        print (f" ./pymk.py {get_function_name()} --directory TARGET_DIRECTORY  # scan files only")
         return
 
-    if target_type == None and target_file_dir == None:
-        target_file_dir = fu.source_files_dir
-
-    is_stub_mode = target_type != None
+    is_stub_mode = target_type != None or target_file_dir == None
 
     # If we don't pass a device to 'scanimage' and leave it to figure it out,
     # scanning takes significantly longer (10s per scan). To make things faster
@@ -848,32 +1129,50 @@ def scan():
     elif len(scanner_names) == 1:
         scanner_name = scanner_names[0]
 
-    if is_stub_mode:
+    if is_stub_mode and target_type != None:
         target_file_dir, target_data_file, tsplx_stub = get_type_config(target_type)
-    target_file_dir, target_data_file = fu.get_target(target_type, target_file_dir, target_data_file)
+        target_file_dir, target_data_file = fu.get_target(target_type, target_file_dir, target_data_file)
+    elif not is_stub_mode:
+        target_file_dir, target_data_file = fu.get_target(target_type, target_file_dir, target_data_file)
+    else:
+        target_file_dir = fu.source_files_dir
+        target_data_file = None
+        tsplx_stub = None
 
     help_str = textwrap.dedent("""\
         Commands:
-          d new document
-          p scan next page in document
-          e end document section
+          [d] new document
+          [p] scan next page in document
+          [e] end document section
 
-          h help
-          q quit
+          [h] help
+          [q] quit
         """)
     if is_stub_mode:
         help_str = textwrap.dedent("""\
             Commands:
-              n new scan (new instance)
-              d new document (in same instance)
-              p scan next page in document
+              [1-N] switch type
+              a[1-N] modify attribute (e.g., 'a1')
 
-              e end document section
-              w end instance (optional, n and q imply this)
+              [n] new scan (new instance)
+              [d] new document (in same instance)
+              [p] scan next page in document
 
-              h help
-              q quit
+              [e] end document section
+              [w] end instance (optional, [n] and [q] imply this)
+
+              [h] help
+              [q] quit
             """)
+
+    dcs = DataCaptureState()
+    if is_stub_mode and target_type != None:
+        dcs.active_type = get_data_capture_type(target_type)
+        if dcs.active_type == None:
+            dcs.active_type = DataCaptureTypeDefinition(target_type,
+                    get_stub_attributes(tsplx_stub),
+                    target_file_dir,
+                    target_data_file)
 
     mfd = fu.MultiFileDocument(target_file_dir)
     ensure_dir(target_file_dir)
@@ -885,7 +1184,11 @@ def scan():
     curses.init_pair(1, curses.COLOR_RED, -1)
 
     win.addstr(f'Storing scans in: {target_file_dir}\n')
-    win.addstr(f'Appending data stubs to: {target_data_file}\n')
+    if is_stub_mode:
+        if target_data_file == None:
+            win.addstr(f'Appending data stubs to: [select a type]\n')
+        else:
+            win.addstr(f'Appending data stubs to: {target_data_file}\n')
 
     # There are multiple devices, prompt the user to choose one.
     if scanner_name == None:
@@ -904,38 +1207,107 @@ def scan():
                 win.addstr(f'Invalid device index.\n')
 
     win.addstr(f'Using device: {scanner_name}\n\n')
+
     win.addstr(help_str)
 
+    if is_stub_mode:
+        # Display type definitions
+        win.addstr("\nAvailable types:\n")
+        win.addstr(f" [0] None\n")
+        for idx, tdef in enumerate(type_definitions, 1):
+            win.addstr(f" [{idx}] {tdef.name}\n")
+
     instance_files = []
+    pending_documents = []
+    saved_instances_by_file = {}
     if is_stub_mode:
         tsplx_data = None
 
+    row, col = win.getyx()
+
+    def get_prompt_row():
+        max_y, _ = win.getmaxyx()
+        return max_y - 2
+
+    def record_saved_instance(path, start_line):
+        if path not in saved_instances_by_file:
+            saved_instances_by_file[path] = []
+        saved_instances_by_file[path].append(start_line)
+
+    def write_pending_instance():
+        start_line = append_instance(target_data_file, tsplx_data)
+        record_saved_instance(target_data_file, start_line)
+        return start_line
+
+    def update_tsplx_data():
+        return resolve_stub(target_type,
+                tsplx_stub=tsplx_stub,
+                identifier=None,
+                files=instance_files,
+                attributes=dcs.current_instance.attributes)
+
+    def set_active_capture_type(type_definition, update_scan_dir=True):
+        nonlocal target_type
+        nonlocal target_file_dir
+        nonlocal target_data_file
+        nonlocal tsplx_stub
+        nonlocal mfd
+
+        target_type = type_definition.name
+        new_file_dir, new_data_file, tsplx_stub = get_type_config(target_type)
+        target_file_dir, target_data_file = fu.get_target(target_type,
+                new_file_dir,
+                new_data_file)
+        dcs.active_type = type_definition
+        dcs.current_instance = TsplxEntity()
+
+        if update_scan_dir:
+            ensure_dir(target_file_dir)
+            mfd = fu.MultiFileDocument(target_file_dir)
+
     while True:
-        win.addstr('> ')
+        win.move(row, 0)
+        if is_stub_mode:
+            render_scan_capture_state(win,
+                    row,
+                    dcs,
+                    tsplx_data,
+                    pending_documents,
+                    saved_instances_by_file)
+        else:
+            clear_to_bottom(win)
+
         c = input_char(win)
-        win.addstr('\n')
+
+        if is_stub_mode and dcs.active_type == None and c.lower() in ['n', 'd', 'p']:
+            win.addstr('\nPlease select a capture type before scanning.\n')
+            continue
+
+        if is_stub_mode and tsplx_data == None and c.lower() in ['d', 'p']:
+            win.addstr('\nPlease start a new instance before adding documents or pages.\n')
+            continue
 
         if is_stub_mode and c.lower() == 'n':
+            if mfd.target_path != target_file_dir:
+                ensure_dir(target_file_dir)
+                mfd = fu.MultiFileDocument(target_file_dir)
+
             path_to_scan = fu.mfd_new(mfd)
             error, output = new_scan (path_to_scan, resolution, device=scanner_name)
 
             if not error:
                 assert target_data_file != None
 
-                # If there was a tsplx data to be written, write it out. This
-                # writes out the OLD tsplx data, because we're going to be
-                # createing a new one, we know this one is done.
+                # Starting a new instance finalizes the pending one, but only
+                # after the new scan succeeds.
                 if tsplx_data != None:
-                    append_instance(target_data_file, tsplx_data)
+                    write_pending_instance()
+                    pending_documents = []
 
                 # Initialize a the new tsplx data
                 instance_files = [mfd.identifier]
-                tsplx_data = resolve_stub(target_type,
-                        tsplx_stub=tsplx_stub,
-                        identifier=None,
-                        files=instance_files)
-
-                win.addstr(f'TSPLX:\n{tsplx_data}')
+                pending_documents = [[path_basename(path_to_scan)]]
+                tsplx_data = update_tsplx_data()
 
             win.addstr(f'{output}\n')
             win.refresh()
@@ -946,19 +1318,58 @@ def scan():
                 win.addstr('error:', curses.color_pair(1))
                 win.addstr(' could not scan page\n')
 
+        elif c.isdigit() and 0 <= int(c) <= len(type_definitions):
+            if tsplx_data != None:
+                win.addstr('\nPlease finish the pending instance before changing types.\n')
+            elif int(c) > 0:
+                set_active_capture_type(type_definitions[int(c) - 1],
+                        update_scan_dir=True)
+                win.addstr(f'\nActive type set to: {target_type}\n')
+                win.addstr(f'New instances scan in: {target_file_dir}\n')
+                win.addstr(f'Appending data stubs to: {target_data_file}\n')
+            else:
+                dcs.active_type = None
+                dcs.current_instance = TsplxEntity()
+
+        elif dcs.active_type and c == 'a':
+            second_key = input_char(win)
+            if second_key.isdigit() and 1 <= int(second_key) <= len(dcs.active_type.attributes):
+                attr_index = int(second_key) - 1
+                attr_name = dcs.active_type.attributes[attr_index]
+
+                # Enter attribute editing mode
+                curses.curs_set(1)
+                prompt_row = get_prompt_row()
+                clear_line(win, prompt_row)
+                win.move(prompt_row, 0)
+                win.addstr(f"{attr_name}: ")
+                curses.echo()
+
+                new_value = win.getstr().decode("utf-8").strip()
+                if new_value == "":
+                    if attr_name in dcs.current_instance.attributes:
+                        del dcs.current_instance.attributes[attr_name]
+                elif new_value.lower() == "escape":
+                    pass  # Restore previous value
+                else:
+                    dcs.current_instance.attributes[attr_name] = new_value
+
+                curses.noecho()
+                curses.curs_set(0)
+
+                if is_stub_mode and tsplx_data != None:
+                    tsplx_data = update_tsplx_data()
+
         elif c.lower() == 'd':
             path_to_scan = fu.mfd_new(mfd)
             error, output = new_scan (path_to_scan, resolution, device=scanner_name)
 
             if not error:
                 instance_files.append(mfd.identifier)
+                pending_documents.append([path_basename(path_to_scan)])
 
                 if is_stub_mode:
-                    tsplx_data = resolve_stub(target_type,
-                            tsplx_stub=tsplx_stub,
-                            identifier=None,
-                            files=instance_files)
-                    win.addstr(f'TSPLX:\n{tsplx_data}')
+                    tsplx_data = update_tsplx_data()
                 else:
                     win.addstr('\n'.join(mfd.document_files))
 
@@ -969,15 +1380,12 @@ def scan():
             path_to_scan = fu.mfd_new_page (mfd)
             error, output = new_scan (path_to_scan, resolution, device=scanner_name)
 
-            if is_stub_mode:
-                tsplx_data = resolve_stub(target_type,
-                        tsplx_stub=tsplx_stub,
-                        identifier=None,
-                        files=instance_files)
+            if is_stub_mode and not error:
+                if pending_documents:
+                    pending_documents[-1].append(path_basename(path_to_scan))
 
-                win.addstr(f'TSPLX:\n')
-                win.addstr(f'{tsplx_data}\n')
-            else:
+                tsplx_data = update_tsplx_data()
+            elif not is_stub_mode:
                 win.addstr('\n'.join(mfd.document_files))
 
             win.addstr(f'{output}\n')
@@ -1001,11 +1409,10 @@ def scan():
 
         elif is_stub_mode and c.lower() == 'w':
             if tsplx_data != None:
-                append_instance(target_data_file, tsplx_data)
+                write_pending_instance()
 
-                win.addstr(f'TSPLX:\n')
-                win.addstr(f'{tsplx_data}\n')
                 tsplx_data = None
+                pending_documents = []
 
             else:
                 win.addstr('error: no instance data to be written out, did nothing.\n')
@@ -1015,10 +1422,19 @@ def scan():
 
         elif c.lower() == 'q':
             if is_stub_mode and tsplx_data != None:
-                append_instance(target_data_file, tsplx_data)
+                write_pending_instance()
             break
 
     curses.endwin()
+
+    if is_stub_mode:
+        if saved_instances_by_file:
+            print("Scan capture summary:")
+            for path, start_lines in saved_instances_by_file.items():
+                print(f"  {path}: {len(start_lines)} entities added")
+                print(f"    vim +{start_lines[0]} {path}")
+        else:
+            print("Scan capture summary: no entities added.")
 
     if not is_stub_mode:
         for i in instance_files:
