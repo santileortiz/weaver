@@ -999,6 +999,7 @@ class TsplxEntity():
 class DataCaptureState:
     def __init__(self):
         self.active_type = None
+        self.default_attributes = {}
         self.current_instance = TsplxEntity()
 
 
@@ -1050,11 +1051,11 @@ def render_scan_capture_state(win, row, dcs, tsplx_data, pending_documents, save
     line += 1
 
     if dcs.active_type:
-        curses_addstr_clipped(win, line, 0, "Attributes:")
+        curses_addstr_clipped(win, line, 0, "Defaults:")
         line += 1
         for idx, attr in enumerate(dcs.active_type.attributes):
-            value = dcs.current_instance.attributes.get(attr, "")
-            curses_addstr_clipped(win, line, 2, f"a{idx + 1}) {attr}: {value}")
+            value = dcs.default_attributes.get(attr, "")
+            curses_addstr_clipped(win, line, 2, f"g{idx + 1}) {attr}: {value}")
             line += 1
 
     line += 1
@@ -1152,11 +1153,13 @@ def scan():
         help_str = textwrap.dedent("""\
             Commands:
               [1-N] switch type
-              a[1-N] modify attribute (e.g., 'a1')
+              g[1-N] modify default attribute (e.g., 'g1')
+              a[1-N] modify pending entity attribute (e.g., 'a1')
 
               [n] new scan (new instance)
               [d] new document (in same instance)
               [p] scan next page in document
+              [u] delete last pending scan
 
               [e] end document section
               [w] end instance (optional, [n] and [q] imply this)
@@ -1229,6 +1232,26 @@ def scan():
         max_y, _ = win.getmaxyx()
         return max_y - 2
 
+    def edit_attribute_value(attr_name, attributes):
+        curses.curs_set(1)
+        prompt_row = get_prompt_row()
+        clear_line(win, prompt_row)
+        win.move(prompt_row, 0)
+        win.addstr(f"{attr_name}: ")
+        curses.echo()
+
+        new_value = win.getstr().decode("utf-8").strip()
+        if new_value == "":
+            if attr_name in attributes:
+                del attributes[attr_name]
+        elif new_value.lower() == "escape":
+            pass  # Restore previous value
+        else:
+            attributes[attr_name] = new_value
+
+        curses.noecho()
+        curses.curs_set(0)
+
     def record_saved_instance(path, start_line):
         if path not in saved_instances_by_file:
             saved_instances_by_file[path] = []
@@ -1246,6 +1269,42 @@ def scan():
                 files=instance_files,
                 attributes=dcs.current_instance.attributes)
 
+    def delete_last_pending_scan():
+        nonlocal tsplx_data
+
+        if not pending_documents:
+            win.addstr('\nNo pending scan to delete.\n')
+            return
+
+        document_pages = pending_documents[-1]
+        if not document_pages:
+            win.addstr('\nNo pending scan to delete.\n')
+            return
+
+        document_had_one_page = len(document_pages) == 1
+        fname = document_pages.pop()
+        path = path_cat(target_file_dir, fname)
+
+        if path_exists(path):
+            os.remove(path)
+
+        for idx in range(len(mfd.document_files) - 1, -1, -1):
+            if mfd.document_files[idx] == fname:
+                del mfd.document_files[idx]
+                break
+
+        if document_had_one_page:
+            pending_documents.pop()
+            if instance_files:
+                instance_files.pop()
+
+        if pending_documents:
+            tsplx_data = update_tsplx_data()
+        else:
+            tsplx_data = None
+
+        win.addstr(f'\nDeleted pending scan: {fname}\n')
+
     def set_active_capture_type(type_definition, update_scan_dir=True):
         nonlocal target_type
         nonlocal target_file_dir
@@ -1259,6 +1318,7 @@ def scan():
                 new_file_dir,
                 new_data_file)
         dcs.active_type = type_definition
+        dcs.default_attributes = {}
         dcs.current_instance = TsplxEntity()
 
         if update_scan_dir:
@@ -1307,6 +1367,7 @@ def scan():
                 # Initialize a the new tsplx data
                 instance_files = [mfd.identifier]
                 pending_documents = [[path_basename(path_to_scan)]]
+                dcs.current_instance.attributes = dcs.default_attributes.copy()
                 tsplx_data = update_tsplx_data()
 
             win.addstr(f'{output}\n')
@@ -1329,33 +1390,33 @@ def scan():
                 win.addstr(f'Appending data stubs to: {target_data_file}\n')
             else:
                 dcs.active_type = None
+                dcs.default_attributes = {}
                 dcs.current_instance = TsplxEntity()
 
+        elif is_stub_mode and c.lower() == 'u':
+            delete_last_pending_scan()
+
+        elif dcs.active_type and c == 'g':
+            second_key = input_char(win)
+            if second_key.isdigit() and 1 <= int(second_key) <= len(dcs.active_type.attributes):
+                attr_index = int(second_key) - 1
+                attr_name = dcs.active_type.attributes[attr_index]
+                edit_attribute_value(attr_name, dcs.default_attributes)
+
+            else:
+                win.addstr('\nInvalid default attribute shortcut.\n')
+
         elif dcs.active_type and c == 'a':
+            if tsplx_data == None:
+                win.addstr('\nPlease start an instance before editing entity attributes.\n')
+                continue
+
             second_key = input_char(win)
             if second_key.isdigit() and 1 <= int(second_key) <= len(dcs.active_type.attributes):
                 attr_index = int(second_key) - 1
                 attr_name = dcs.active_type.attributes[attr_index]
 
-                # Enter attribute editing mode
-                curses.curs_set(1)
-                prompt_row = get_prompt_row()
-                clear_line(win, prompt_row)
-                win.move(prompt_row, 0)
-                win.addstr(f"{attr_name}: ")
-                curses.echo()
-
-                new_value = win.getstr().decode("utf-8").strip()
-                if new_value == "":
-                    if attr_name in dcs.current_instance.attributes:
-                        del dcs.current_instance.attributes[attr_name]
-                elif new_value.lower() == "escape":
-                    pass  # Restore previous value
-                else:
-                    dcs.current_instance.attributes[attr_name] = new_value
-
-                curses.noecho()
-                curses.curs_set(0)
+                edit_attribute_value(attr_name, dcs.current_instance.attributes)
 
                 if is_stub_mode and tsplx_data != None:
                     tsplx_data = update_tsplx_data()
