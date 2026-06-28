@@ -1037,7 +1037,7 @@ def curses_addstr_clipped(win, row, col, text):
     except curses.error:
         pass
 
-def render_scan_capture_state(win, row, dcs, tsplx_data, pending_documents, saved_instances_by_file):
+def render_scan_capture_state(win, row, dcs, tsplx_data, pending_documents, saved_instances_by_file, status_message):
     max_y, max_x = win.getmaxyx()
     left_width = max(32, min(50, max_x // 2))
     right_col = left_width + 2
@@ -1098,6 +1098,8 @@ def render_scan_capture_state(win, row, dcs, tsplx_data, pending_documents, save
 
     clear_line(win, prompt_row)
     clear_line(win, prompt_row + 1)
+    if status_message:
+        curses_addstr_clipped(win, prompt_row + 1, 0, status_message)
 
 def scan():
     show_help = get_cli_bool_opt ("--help")
@@ -1223,6 +1225,7 @@ def scan():
     instance_files = []
     pending_documents = []
     saved_instances_by_file = {}
+    status_message = None
     if is_stub_mode:
         tsplx_data = None
 
@@ -1233,6 +1236,8 @@ def scan():
         return max_y - 2
 
     def edit_attribute_value(attr_name, attributes):
+        nonlocal status_message
+
         curses.curs_set(1)
         prompt_row = get_prompt_row()
         clear_line(win, prompt_row)
@@ -1249,6 +1254,7 @@ def scan():
         else:
             attributes[attr_name] = new_value
 
+        status_message = f"Updated {attr_name}"
         curses.noecho()
         curses.curs_set(0)
 
@@ -1271,14 +1277,15 @@ def scan():
 
     def delete_last_pending_scan():
         nonlocal tsplx_data
+        nonlocal status_message
 
         if not pending_documents:
-            win.addstr('\nNo pending scan to delete.\n')
+            status_message = "No pending scan to delete."
             return
 
         document_pages = pending_documents[-1]
         if not document_pages:
-            win.addstr('\nNo pending scan to delete.\n')
+            status_message = "No pending scan to delete."
             return
 
         document_had_one_page = len(document_pages) == 1
@@ -1303,7 +1310,7 @@ def scan():
         else:
             tsplx_data = None
 
-        win.addstr(f'\nDeleted pending scan: {fname}\n')
+        status_message = f"Deleted pending scan: {fname}"
 
     def set_active_capture_type(type_definition, update_scan_dir=True):
         nonlocal target_type
@@ -1333,18 +1340,19 @@ def scan():
                     dcs,
                     tsplx_data,
                     pending_documents,
-                    saved_instances_by_file)
+                    saved_instances_by_file,
+                    status_message)
         else:
             clear_to_bottom(win)
 
         c = input_char(win)
 
         if is_stub_mode and dcs.active_type == None and c.lower() in ['n', 'd', 'p']:
-            win.addstr('\nPlease select a capture type before scanning.\n')
+            status_message = "Please select a capture type before scanning."
             continue
 
         if is_stub_mode and tsplx_data == None and c.lower() in ['d', 'p']:
-            win.addstr('\nPlease start a new instance before adding documents or pages.\n')
+            status_message = "Please start a new instance before adding documents or pages."
             continue
 
         if is_stub_mode and c.lower() == 'n':
@@ -1370,28 +1378,23 @@ def scan():
                 dcs.current_instance.attributes = dcs.default_attributes.copy()
                 tsplx_data = update_tsplx_data()
 
-            win.addstr(f'{output}\n')
-            win.refresh()
-
             if error == None:
-                win.addstr(f'New: {path_basename(path_to_scan)}\n')
+                status_message = f"New: {path_basename(path_to_scan)}"
             else:
-                win.addstr('error:', curses.color_pair(1))
-                win.addstr(' could not scan page\n')
+                status_message = "error: could not scan page"
 
         elif c.isdigit() and 0 <= int(c) <= len(type_definitions):
             if tsplx_data != None:
-                win.addstr('\nPlease finish the pending instance before changing types.\n')
+                status_message = "Please finish the pending instance before changing types."
             elif int(c) > 0:
                 set_active_capture_type(type_definitions[int(c) - 1],
                         update_scan_dir=True)
-                win.addstr(f'\nActive type set to: {target_type}\n')
-                win.addstr(f'New instances scan in: {target_file_dir}\n')
-                win.addstr(f'Appending data stubs to: {target_data_file}\n')
+                status_message = f"Active type: {target_type}; new scans: {target_file_dir}; data: {target_data_file}"
             else:
                 dcs.active_type = None
                 dcs.default_attributes = {}
                 dcs.current_instance = TsplxEntity()
+                status_message = "Active type cleared."
 
         elif is_stub_mode and c.lower() == 'u':
             delete_last_pending_scan()
@@ -1404,11 +1407,11 @@ def scan():
                 edit_attribute_value(attr_name, dcs.default_attributes)
 
             else:
-                win.addstr('\nInvalid default attribute shortcut.\n')
+                status_message = "Invalid default attribute shortcut."
 
         elif dcs.active_type and c == 'a':
             if tsplx_data == None:
-                win.addstr('\nPlease start an instance before editing entity attributes.\n')
+                status_message = "Please start an instance before editing entity attributes."
                 continue
 
             second_key = input_char(win)
@@ -1434,8 +1437,14 @@ def scan():
                 else:
                     win.addstr('\n'.join(mfd.document_files))
 
-            win.addstr(f'{output}\n')
-            win.refresh()
+            if is_stub_mode:
+                if error == None:
+                    status_message = f"New document: {path_basename(path_to_scan)}"
+                else:
+                    status_message = "error: could not scan document"
+            else:
+                win.addstr(f'{output}\n')
+                win.refresh()
 
         elif c.lower() == 'p':
             path_to_scan = fu.mfd_new_page (mfd)
@@ -1449,24 +1458,24 @@ def scan():
             elif not is_stub_mode:
                 win.addstr('\n'.join(mfd.document_files))
 
-            win.addstr(f'{output}\n')
-            win.refresh()
-
             if error == None:
-                win.addstr(f'New: {path_basename(path_to_scan)}\n')
+                status_message = f"New page: {path_basename(path_to_scan)}"
             else:
-                win.addstr('error:', curses.color_pair(1))
-                win.addstr(' could not scan page\n')
+                status_message = "error: could not scan page"
 
-            win.addstr (f'Document files:\n')
-            for p in mfd.document_files:
-                win.addstr (f'  {p}\n')
+            if not is_stub_mode:
+                win.addstr (f'Document files:\n')
+                for p in mfd.document_files:
+                    win.addstr (f'  {p}\n')
 
         elif c.lower() == 'e':
             fu.mfd_end_section (mfd)
-            win.addstr (f'Document files:\n')
-            for p in mfd.document_files:
-                win.addstr (f'  {p}\n')
+            if is_stub_mode:
+                status_message = "Ended current document section."
+            else:
+                win.addstr (f'Document files:\n')
+                for p in mfd.document_files:
+                    win.addstr (f'  {p}\n')
 
         elif is_stub_mode and c.lower() == 'w':
             if tsplx_data != None:
@@ -1474,12 +1483,16 @@ def scan():
 
                 tsplx_data = None
                 pending_documents = []
+                status_message = "Pending instance written."
 
             else:
-                win.addstr('error: no instance data to be written out, did nothing.\n')
+                status_message = "error: no instance data to be written out, did nothing."
 
         elif c.lower() == 'h':
-            win.addstr(help_str)
+            if is_stub_mode:
+                status_message = "Help is shown above the capture panel."
+            else:
+                win.addstr(help_str)
 
         elif c.lower() == 'q':
             if is_stub_mode and tsplx_data != None:
