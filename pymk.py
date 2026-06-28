@@ -939,7 +939,12 @@ def resolve_stub(target_type, tsplx_stub=None, identifier=None, files=None, attr
         tsplx_stub = tsplx_stub.replace("<+files+>", "; ".join(files))
 
     for attr, value in attributes.items():
-        tsplx_stub = tsplx_stub.replace(f"<+{attr}+>", value)
+        placeholder = f"<+{attr}+>"
+        if value == "_":
+            tsplx_stub = tsplx_stub.replace(f'"{placeholder}"', "_")
+            tsplx_stub = tsplx_stub.replace(placeholder, "_")
+        else:
+            tsplx_stub = tsplx_stub.replace(placeholder, value)
 
     # I've been tempted to using a shorthand notation where apply the following
     # default
@@ -1023,7 +1028,7 @@ def clear_line(win, row):
     win.move(row, 0)
     win.clrtoeol()
 
-def curses_addstr_clipped(win, row, col, text):
+def curses_addstr_clipped(win, row, col, text, attrs=0):
     max_y, max_x = win.getmaxyx()
     if row < 0 or row >= max_y or col < 0 or col >= max_x:
         return
@@ -1033,11 +1038,59 @@ def curses_addstr_clipped(win, row, col, text):
         return
 
     try:
-        win.addstr(row, col, text[:available_width])
+        win.addstr(row, col, text[:available_width], attrs)
     except curses.error:
         pass
 
-def render_scan_capture_state(win, row, dcs, tsplx_data, pending_documents, saved_instances_by_file, status_message):
+def curses_addstr_with_bold_markers(win, row, col, text):
+    marker_re = re.compile(r"\((?:a|g)\d+\)")
+    curr_col = col
+    pos = 0
+    for match in marker_re.finditer(text):
+        if match.start() > pos:
+            segment = text[pos:match.start()]
+            curses_addstr_clipped(win, row, curr_col, segment)
+            curr_col += len(segment)
+
+        marker = match.group(0)
+        curses_addstr_clipped(win, row, curr_col, marker, curses.A_BOLD)
+        curr_col += len(marker)
+        pos = match.end()
+
+    if pos < len(text):
+        curses_addstr_clipped(win, row, curr_col, text[pos:])
+
+def get_tsplx_preview(tsplx_stub, files, dcs):
+    if tsplx_stub == None:
+        return None
+
+    if files == None:
+        files = []
+
+    preview = tsplx_stub
+
+    if preview.find("<+files+>") > 0:
+        preview = preview.replace("<+files+>", "; ".join(files))
+
+    if dcs.active_type == None:
+        return preview
+
+    for idx, attr in enumerate(dcs.active_type.attributes, 1):
+        placeholder = f"<+{attr}+>"
+        marker = f"(a{idx})"
+        value = dcs.current_instance.attributes.get(attr)
+        if value == None:
+            preview_value = f"{marker}{placeholder}"
+            preview = preview.replace(placeholder, preview_value)
+        elif value == "_":
+            preview = preview.replace(f'"{placeholder}"', f"{marker}_")
+            preview = preview.replace(placeholder, f"{marker}_")
+        else:
+            preview = preview.replace(placeholder, f"{marker}{value}")
+
+    return preview
+
+def render_scan_capture_state(win, row, dcs, tsplx_preview, pending_documents, saved_instances_by_file, status_message):
     max_y, max_x = win.getmaxyx()
     left_width = max(32, min(50, max_x // 2))
     right_col = left_width + 2
@@ -1051,11 +1104,12 @@ def render_scan_capture_state(win, row, dcs, tsplx_data, pending_documents, save
     line += 1
 
     if dcs.active_type:
-        curses_addstr_clipped(win, line, 0, "Defaults:")
+        curses_addstr_clipped(win, line, 0, "Attributes:")
         line += 1
         for idx, attr in enumerate(dcs.active_type.attributes):
             value = dcs.default_attributes.get(attr, "")
-            curses_addstr_clipped(win, line, 2, f"g{idx + 1}) {attr}: {value}")
+            curses_addstr_clipped(win, line, 2, f"g{idx + 1})", curses.A_BOLD)
+            curses_addstr_clipped(win, line, 2 + len(f"g{idx + 1})"), f" {attr}: {value}")
             line += 1
 
     line += 1
@@ -1089,9 +1143,9 @@ def render_scan_capture_state(win, row, dcs, tsplx_data, pending_documents, save
         curses_addstr_clipped(win, preview_line, right_col, "Pending TSPLX:")
         preview_line += 1
 
-        if tsplx_data:
-            for preview in tsplx_data.splitlines():
-                curses_addstr_clipped(win, preview_line, right_col, preview)
+        if tsplx_preview:
+            for preview in tsplx_preview.splitlines():
+                curses_addstr_with_bold_markers(win, preview_line, right_col, preview)
                 preview_line += 1
         else:
             curses_addstr_clipped(win, preview_line, right_col, "None")
@@ -1158,7 +1212,7 @@ def scan():
               g[1-N] modify default attribute (e.g., 'g1')
               a[1-N] modify pending entity attribute (e.g., 'a1')
 
-              [n] new scan (new instance)
+              [n/space] new scan (new instance)
               [d] new document (in same instance)
               [p] scan next page in document
               [u] delete last pending scan
@@ -1188,12 +1242,25 @@ def scan():
     curses.use_default_colors()
     curses.init_pair(1, curses.COLOR_RED, -1)
 
-    win.addstr(f'Storing scans in: {target_file_dir}\n')
-    if is_stub_mode:
+    scan_header_row = win.getyx()[0]
+    target_header_row = scan_header_row + 1
+
+    def render_headers():
+        clear_line(win, scan_header_row)
+        clear_line(win, target_header_row)
+        curses_addstr_clipped(win, scan_header_row, 0, f'Storing scans in: {target_file_dir}')
+        if not is_stub_mode:
+            return
+
         if target_data_file == None:
-            win.addstr(f'Appending data stubs to: [select a type]\n')
+            curses_addstr_clipped(win, target_header_row, 0, f'Appending data stubs to: [select a type]')
         else:
-            win.addstr(f'Appending data stubs to: {target_data_file}\n')
+            curses_addstr_clipped(win, target_header_row, 0, f'Appending data stubs to: {target_data_file}')
+
+    render_headers()
+    win.addstr('\n\n')
+    if is_stub_mode:
+        pass
 
     # There are multiple devices, prompt the user to choose one.
     if scanner_name == None:
@@ -1221,6 +1288,7 @@ def scan():
         win.addstr(f" [0] None\n")
         for idx, tdef in enumerate(type_definitions, 1):
             win.addstr(f" [{idx}] {tdef.name}\n")
+        win.addstr("\n")
 
     instance_files = []
     pending_documents = []
@@ -1338,7 +1406,7 @@ def scan():
             render_scan_capture_state(win,
                     row,
                     dcs,
-                    tsplx_data,
+                    get_tsplx_preview(tsplx_stub, instance_files, dcs) if tsplx_data else None,
                     pending_documents,
                     saved_instances_by_file,
                     status_message)
@@ -1347,7 +1415,7 @@ def scan():
 
         c = input_char(win)
 
-        if is_stub_mode and dcs.active_type == None and c.lower() in ['n', 'd', 'p']:
+        if is_stub_mode and dcs.active_type == None and c.lower() in ['n', ' ', 'd', 'p']:
             status_message = "Please select a capture type before scanning."
             continue
 
@@ -1355,7 +1423,7 @@ def scan():
             status_message = "Please start a new instance before adding documents or pages."
             continue
 
-        if is_stub_mode and c.lower() == 'n':
+        if is_stub_mode and c.lower() in ['n', ' ']:
             if mfd.target_path != target_file_dir:
                 ensure_dir(target_file_dir)
                 mfd = fu.MultiFileDocument(target_file_dir)
@@ -1389,11 +1457,14 @@ def scan():
             elif int(c) > 0:
                 set_active_capture_type(type_definitions[int(c) - 1],
                         update_scan_dir=True)
+                render_headers()
                 status_message = f"Active type: {target_type}; new scans: {target_file_dir}; data: {target_data_file}"
             else:
                 dcs.active_type = None
                 dcs.default_attributes = {}
                 dcs.current_instance = TsplxEntity()
+                target_data_file = None
+                render_headers()
                 status_message = "Active type cleared."
 
         elif is_stub_mode and c.lower() == 'u':
