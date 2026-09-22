@@ -599,6 +599,16 @@ def input_char(win):
         time.sleep(0.05)
     return chr(ch)
 
+def input_char_timeout(win, timeout_ms=350):
+    win.timeout(timeout_ms)
+    ch = win.getch()
+    win.timeout(-1)
+
+    if ch in range(32, 127):
+        return chr(ch)
+
+    return None
+
 def get_scanner_names():
     s = ex("scanimage -f '%d'", echo=False, quiet=True, ret_stdout=True)
 
@@ -626,26 +636,161 @@ def new_scan(path, resolution=300, device=None):
 # Structured Data Capture CLI
 #############################
 
-class DataCaptureTypeDefinition:
-    def __init__(self, name, attributes, target_file_dir, target_data_file):
+class Field:
+    def __init__(self, name, value_type=None):
         self.name = name
-        self.attributes = attributes
+        self.value_type = value_type
+
+class StringLiteral:
+    def __init__(self, value):
+        self.value = value
+
+class StringReference:
+    def __init__(self, value):
+        self.value = value
+
+def normalize_field(field):
+    if isinstance(field, Field):
+        return field
+
+    return Field(field, "string")
+
+def quote_tsplx_string(value):
+    return '"' + value.replace('\\', '\\\\').replace('"', '\\"') + '"'
+
+def capture_value_to_string(value):
+    if isinstance(value, StringLiteral) or isinstance(value, StringReference):
+        return value.value
+
+    return value
+
+def serialize_capture_value(field, value):
+    raw_value = capture_value_to_string(value)
+
+    if raw_value == "_":
+        return "_"
+
+    if isinstance(value, StringReference):
+        return f"q{quote_tsplx_string(value.value)}"
+
+    if isinstance(value, StringLiteral):
+        return quote_tsplx_string(value.value)
+
+    if field.value_type == "number":
+        return raw_value
+
+    if field.value_type == "string-reference":
+        return f"q{quote_tsplx_string(raw_value)}"
+
+    if field.value_type in ["string", "string-literal"]:
+        return quote_tsplx_string(raw_value)
+
+    return quote_tsplx_string(raw_value)
+
+def capture_value_for_field(field, value, options=None, autocomplete_cancelled=False):
+    if options == None:
+        options = []
+
+    if value == "_" or field.value_type == "number":
+        return value
+
+    if field.value_type == "string-literal":
+        return StringLiteral(value)
+
+    if field.value_type == "string-reference":
+        return StringReference(value)
+
+    if field.value_type == "string":
+        if not autocomplete_cancelled and value in options:
+            return StringReference(value)
+
+        return StringLiteral(value)
+
+    return value
+
+def serialize_tag_value(value):
+    return serialize_capture_value(Field("tag", "string"), value)
+
+def parse_tags(value, options=None):
+    if options == None:
+        options = []
+
+    tag_field = Field("tag", "string")
+    return [capture_value_for_field(tag_field, tag.strip(), options=options)
+            for tag in value.split(",")
+            if tag.strip() != ""]
+
+def load_reference_option_names(data_json_path=None):
+    if data_json_path == None:
+        data_json_path = path_cat(out_dir, "data.json")
+
+    if not path_exists(data_json_path):
+        return []
+
+    try:
+        with open(data_json_path) as data_json:
+            data = json.load(data_json)
+    except (OSError, json.JSONDecodeError):
+        return []
+
+    names = []
+    seen = set()
+    for value in data.values():
+        if not isinstance(value, dict) or "name" not in value:
+            continue
+
+        name = value["name"]
+        if not isinstance(name, str) or name == "":
+            continue
+
+        dedupe_key = name.lower()
+        if dedupe_key in seen:
+            continue
+
+        seen.add(dedupe_key)
+        names.append(name)
+
+    return natsorted(names, key=lambda name: name.lower())
+
+def get_capture_attribute_options(active_type, field, reference_options):
+    if active_type == None:
+        return []
+
+    configured_options = active_type.options.get(field.name)
+    if configured_options != None:
+        return configured_options
+
+    if field.value_type == "string":
+        return reference_options
+
+    return []
+
+class DataCaptureTypeDefinition:
+    def __init__(self, name, attributes, target_file_dir, target_data_file, options=None):
+        self.name = name
+        self.attributes = [normalize_field(attr) for attr in attributes]
         self.target_file_dir =target_file_dir
         self.target_data_file = target_data_file
+        self.options = options if options != None else {}
 
 type_definitions = [
     DataCaptureTypeDefinition("transaction",
-        ["date", "value", "currency", "from", "to"],
+        [Field("date", "string-literal"), Field("value", "number"), "currency", "from", "to"],
         'invoices',
-        'digitized_invoices.tsplx'),
+        'digitized_invoices.tsplx',
+        options={"currency": ["MXN", "USD", "COP"]}),
 
     DataCaptureTypeDefinition("exchange",
-        ["date", "exchanger", "from-value", "from-currency", "from", "to-value", "to-currency", "to"],
+        [Field("date", "string-literal"), "exchanger", Field("from-value", "number"), "from-currency", "from", Field("to-value", "number"), "to-currency", "to"],
         'invoices',
-        'digitized_invoices.tsplx'),
+        'digitized_invoices.tsplx',
+        options={
+            "from-currency": ["MXN", "COP", "USD", "EUR", "JPY"],
+            "to-currency": ["MXN", "COP", "USD", "EUR", "JPY"],
+        }),
 
     DataCaptureTypeDefinition("ticket",
-        ["date", "price", "type"],
+        [Field("date", "string-literal"), Field("price", "number"), "type"],
         'ticket',
         'ticket.tsplx'),
 
@@ -709,8 +854,8 @@ def capture_data():
             row += 1
             win.addstr(row, 0, "Attributes:")
             for idx, attr in enumerate(active_type.attributes):
-                value = current_instance.get(attr, global_defaults.get(attr, "None"))
-                win.addstr(row + idx + 1, 2, f"{idx + 1}) {attr}: {value}")
+                value = current_instance.get(attr.name, global_defaults.get(attr.name, "None"))
+                win.addstr(row + idx + 1, 2, f"{idx + 1}) {attr.name}: {capture_value_to_string(value)}")
 
         row += len(active_type.attributes) + 2 if active_type else 2
         win.addstr(row, 0, "Commands:")
@@ -728,14 +873,14 @@ def capture_data():
 
         elif ord('1') <= key <= ord(str(len(type_definitions))):
             active_type = type_definitions[key - ord('1')]
-            global_defaults = {attr: "" for attr in active_type.attributes}
+            global_defaults = {attr.name: "" for attr in active_type.attributes}
             current_instance = {}
 
         elif active_type and key == ord('a'):
             second_key = win.getch()
             if ord('1') <= second_key <= ord(str(len(active_type.attributes))):
                 attr_index = second_key - ord('1')
-                attr_name = active_type.attributes[attr_index]
+                attr_name = active_type.attributes[attr_index].name
 
                 # Enter attribute editing mode
                 curses.curs_set(1)
@@ -785,13 +930,13 @@ def get_type_config(target_type):
     if target_type == "print-book":
         target_file_dir = "book-photos"
         target_data_file = "book_library_santiago.tsplx"
-        tsplx_stub = 'print-book["<+name+>", "<+author+>"];\n'
+        tsplx_stub = 'print-book[<+name+>, <+author+>];\n'
 
     elif target_type == "transaction":
         target_file_dir = 'invoices'
         target_data_file = "digitized_invoices.tsplx"
         tsplx_stub = textwrap.dedent('''\
-            transaction["<+date+>",<+value+>,"<+currency+>","<+from+>","<+to+>"]{
+            transaction[<+date+>,<+value+>,<+currency+>,<+from+>,<+to+>]{
               file <+files+>;
             };
             ''')
@@ -800,7 +945,7 @@ def get_type_config(target_type):
         target_file_dir = 'invoices'
         target_data_file = "digitized_invoices.tsplx"
         tsplx_stub = textwrap.dedent('''\
-            exchange["<+date+>","<+exchanger+>",<+from-value+>,"<+from-currency+>","<+from+>",<+to-value+>,"<+to-currency+>","<+to+>"]{
+            exchange[<+date+>,<+exchanger+>,<+from-value+>,<+from-currency+>,<+from+>,<+to-value+>,<+to-currency+>,<+to+>]{
               file <+files+>;
             };
             ''')
@@ -810,8 +955,8 @@ def get_type_config(target_type):
         target_data_file = "ticket.tsplx"
         tsplx_stub = textwrap.dedent('''\
             ticket {
-              type "<+type+>";
-              date "<+date+>";
+              type <+type+>;
+              date <+date+>;
               price <+price+>;
               file <+files+>;
             };
@@ -823,8 +968,8 @@ def get_type_config(target_type):
         tsplx_stub = textwrap.dedent('''\
             ticket {
               type "movie";
-              date "<+date+>";
-              film "<+film_title+>";
+              date <+date+>;
+              film <+film_title+>;
               file <+files+>;
             };
             ''')
@@ -835,9 +980,9 @@ def get_type_config(target_type):
         tsplx_stub = textwrap.dedent('''\
             ticket {
               type "event";
-              date "<+date+>";
-              name "<+name+>";
-              place "<+place+>";
+              date <+date+>;
+              name <+name+>;
+              place <+place+>;
               file <+files+>;
             };
             ''')
@@ -848,9 +993,9 @@ def get_type_config(target_type):
         tsplx_stub = textwrap.dedent('''\
             ticket {
               type "concert"; "event";
-              date "<+date+>";
-              name "<+name+>";
-              artist "<+artist+>";
+              date <+date+>;
+              name <+name+>;
+              artist <+artist+>;
               file <+files+>;
             };
             ''')
@@ -861,8 +1006,8 @@ def get_type_config(target_type):
         tsplx_stub = textwrap.dedent('''\
             ticket {
               type "concert";
-              date "<+date+>";
-              artist "<+artist+>";
+              date <+date+>;
+              artist <+artist+>;
               file <+files+>;
             };
             ''')
@@ -898,14 +1043,14 @@ def get_type_config(target_type):
             {target_type} {{
               person <+person+>;
               file <+files+>;
-              issuing-date "<+date+>";
-              expiration-date "<+date+>";
+              issuing-date <+date+>;
+              expiration-date <+date+>;
             }};
             ''')
 
     elif target_type in ["person", "establishment", "contact"]:
         tsplx_stub = textwrap.dedent(f'''\
-            {target_type}["<+name+>"]{{
+            {target_type}[<+name+>]{{
               file <+files+>;
             }};
             ''')
@@ -924,7 +1069,18 @@ def get_type_config(target_type):
 
     return target_file_dir, target_data_file, tsplx_stub
 
-def resolve_stub(target_type, tsplx_stub=None, identifier=None, files=None, attributes=None):
+def add_tags_to_tsplx(tsplx_data, tags, include_markers=False):
+    if not tags:
+        return tsplx_data
+
+    serialized_tags = []
+    for idx, tag in enumerate(tags, 1):
+        marker = f"(t{idx})" if include_markers else ""
+        serialized_tags.append(marker + serialize_tag_value(tag))
+
+    return tsplx_data.replace("{", "{\n  " + ", ".join(serialized_tags) + ";", 1)
+
+def resolve_stub(target_type, tsplx_stub=None, identifier=None, files=None, attributes=None, tags=None):
     # TODO: Don't pass the stubs as a string template. Should better pass them
     # in a format that node_to_object_string() understands, and use that as
     # serialization mechanism.
@@ -935,16 +1091,25 @@ def resolve_stub(target_type, tsplx_stub=None, identifier=None, files=None, attr
     if attributes == None:
         attributes = {}
 
+    if tags == None:
+        tags = []
+
     if tsplx_stub.find("<+files+>") > 0:
         tsplx_stub = tsplx_stub.replace("<+files+>", "; ".join(files))
 
+    active_type = get_data_capture_type(target_type)
+    fields_by_name = {}
+    if active_type != None:
+        fields_by_name = {field.name: field for field in active_type.attributes}
+
     for attr, value in attributes.items():
         placeholder = f"<+{attr}+>"
-        if value == "_":
-            tsplx_stub = tsplx_stub.replace(f'"{placeholder}"', "_")
-            tsplx_stub = tsplx_stub.replace(placeholder, "_")
-        else:
-            tsplx_stub = tsplx_stub.replace(placeholder, value)
+        field = fields_by_name.get(attr, Field(attr))
+        serialized_value = serialize_capture_value(field, value)
+        tsplx_stub = tsplx_stub.replace(f'"{placeholder}"', serialized_value)
+        tsplx_stub = tsplx_stub.replace(placeholder, serialized_value)
+
+    tsplx_stub = add_tags_to_tsplx(tsplx_stub, tags)
 
     # I've been tempted to using a shorthand notation where apply the following
     # default
@@ -1000,11 +1165,13 @@ class TsplxEntity():
     def __init__(self):
         self.floating = []
         self.attributes = {}
+        self.tags = []
 
 class DataCaptureState:
     def __init__(self):
         self.active_type = None
         self.default_attributes = {}
+        self.default_tags = []
         self.current_instance = TsplxEntity()
 
 
@@ -1043,7 +1210,7 @@ def curses_addstr_clipped(win, row, col, text, attrs=0):
         pass
 
 def curses_addstr_with_bold_markers(win, row, col, text):
-    marker_re = re.compile(r"\((?:a|g)\d+\)")
+    marker_re = re.compile(r"\((?:a|g|t)\d+\)")
     curr_col = col
     pos = 0
     for match in marker_re.finditer(text):
@@ -1075,18 +1242,19 @@ def get_tsplx_preview(tsplx_stub, files, dcs):
     if dcs.active_type == None:
         return preview
 
-    for idx, attr in enumerate(dcs.active_type.attributes, 1):
-        placeholder = f"<+{attr}+>"
+    for idx, field in enumerate(dcs.active_type.attributes, 1):
+        placeholder = f"<+{field.name}+>"
         marker = f"(a{idx})"
-        value = dcs.current_instance.attributes.get(attr)
+        value = dcs.current_instance.attributes.get(field.name)
         if value == None:
             preview_value = f"{marker}{placeholder}"
             preview = preview.replace(placeholder, preview_value)
-        elif value == "_":
-            preview = preview.replace(f'"{placeholder}"', f"{marker}_")
-            preview = preview.replace(placeholder, f"{marker}_")
         else:
-            preview = preview.replace(placeholder, f"{marker}{value}")
+            preview_value = f"{marker}{serialize_capture_value(field, value)}"
+            preview = preview.replace(f'"{placeholder}"', preview_value)
+            preview = preview.replace(placeholder, preview_value)
+
+    preview = add_tags_to_tsplx(preview, dcs.current_instance.tags, include_markers=True)
 
     return preview
 
@@ -1106,10 +1274,18 @@ def render_scan_capture_state(win, row, dcs, tsplx_preview, pending_documents, s
     if dcs.active_type:
         curses_addstr_clipped(win, line, 0, "Attributes:")
         line += 1
+        curses_addstr_clipped(win, line, 2, "g0)", curses.A_BOLD)
+        curses_addstr_clipped(win, line, 5, " add tag")
+        line += 1
+        for idx, tag in enumerate(dcs.default_tags, 1):
+            shortcut = f"g0{idx})"
+            curses_addstr_clipped(win, line, 4, shortcut, curses.A_BOLD)
+            curses_addstr_clipped(win, line, 4 + len(shortcut), f" {capture_value_to_string(tag)}")
+            line += 1
         for idx, attr in enumerate(dcs.active_type.attributes):
-            value = dcs.default_attributes.get(attr, "")
+            value = dcs.default_attributes.get(attr.name, "")
             curses_addstr_clipped(win, line, 2, f"g{idx + 1})", curses.A_BOLD)
-            curses_addstr_clipped(win, line, 2 + len(f"g{idx + 1})"), f" {attr}: {value}")
+            curses_addstr_clipped(win, line, 2 + len(f"g{idx + 1})"), f" {attr.name}: {capture_value_to_string(value)}")
             line += 1
 
     line += 1
@@ -1154,6 +1330,10 @@ def render_scan_capture_state(win, row, dcs, tsplx_preview, pending_documents, s
     clear_line(win, prompt_row + 1)
     if status_message:
         curses_addstr_clipped(win, prompt_row + 1, 0, status_message)
+
+
+def new_id():
+    print(fu.new_identifier())
 
 def scan():
     show_help = get_cli_bool_opt ("--help")
@@ -1209,8 +1389,12 @@ def scan():
         help_str = textwrap.dedent("""\
             Commands:
               [1-N] switch type
+              [g0] add default tag
+              g0[1-N] modify default tag (e.g., 'g01')
               g[1-N] modify default attribute (e.g., 'g1')
+              [a0] add pending entity tag
               a[1-N] modify pending entity attribute (e.g., 'a1')
+              t[1-N] modify pending tag (e.g., 't1')
 
               [n/space] new scan (new instance)
               [d] new document (in same instance)
@@ -1294,6 +1478,7 @@ def scan():
     pending_documents = []
     saved_instances_by_file = {}
     status_message = None
+    reference_options = load_reference_option_names()
     if is_stub_mode:
         tsplx_data = None
 
@@ -1303,28 +1488,144 @@ def scan():
         max_y, _ = win.getmaxyx()
         return max_y - 2
 
-    def edit_attribute_value(attr_name, attributes):
-        nonlocal status_message
+    def get_option_matches(options, value):
+        if value == "":
+            return options
+
+        lowercase_value = value.lower()
+        return [option for option in options if option.lower().startswith(lowercase_value)]
+
+    def get_current_completion(options, value, selected_option_idx):
+        matches = get_option_matches(options, value)
+        if not matches:
+            return None
+
+        return matches[selected_option_idx % len(matches)]
+
+    def render_attribute_prompt(attr_name, value, options, selected_option_idx, suppress_completion):
+        prompt_row = get_prompt_row()
+        clear_line(win, prompt_row)
+        win.move(prompt_row, 0)
+        prompt = f"{attr_name}: "
+        curses_addstr_clipped(win, prompt_row, 0, prompt)
+        curses_addstr_clipped(win, prompt_row, len(prompt), value)
+
+        completion = get_current_completion(options, value, selected_option_idx)
+        if value != "" and not suppress_completion and completion and completion != value:
+            suffix = completion[len(value):]
+            curses_addstr_clipped(win,
+                    prompt_row,
+                    len(prompt) + len(value),
+                    suffix,
+                    curses.A_REVERSE)
+
+        win.move(prompt_row, len(prompt) + len(value))
+        win.refresh()
+
+    def read_autocomplete_value(label, options=None):
+        if options == None:
+            options = []
 
         curses.curs_set(1)
         prompt_row = get_prompt_row()
         clear_line(win, prompt_row)
-        win.move(prompt_row, 0)
-        win.addstr(f"{attr_name}: ")
-        curses.echo()
 
-        new_value = win.getstr().decode("utf-8").strip()
+        value = ""
+        selected_option_idx = 0
+        suppress_completion = False
+        while True:
+            render_attribute_prompt(label, value, options, selected_option_idx, suppress_completion)
+            ch = win.getch()
+
+            if ch in [10, 13]:
+                break
+            elif ch == 9:
+                completion = get_current_completion(options, value, selected_option_idx)
+                if completion:
+                    value = completion
+                    suppress_completion = False
+            elif ch == 27:
+                suppress_completion = True
+            elif ch in [8, 127, curses.KEY_BACKSPACE]:
+                value = value[:-1]
+                selected_option_idx = 0
+                suppress_completion = True
+            elif ch in range(32, 127):
+                value += chr(ch)
+                selected_option_idx = 0
+                suppress_completion = False
+            time.sleep(0.01)
+
+        curses.curs_set(0)
+        return value.strip(), suppress_completion
+
+    def edit_attribute_value(field, attributes, options=None):
+        nonlocal status_message
+
+        if options == None:
+            options = []
+
+        attr_name = field.name
+        new_value, autocomplete_cancelled = read_autocomplete_value(attr_name, options)
         if new_value == "":
             if attr_name in attributes:
                 del attributes[attr_name]
         elif new_value.lower() == "escape":
             pass  # Restore previous value
         else:
-            attributes[attr_name] = new_value
+            attributes[attr_name] = capture_value_for_field(field,
+                    new_value,
+                    options=options,
+                    autocomplete_cancelled=autocomplete_cancelled)
 
         status_message = f"Updated {attr_name}"
-        curses.noecho()
-        curses.curs_set(0)
+
+    def read_tag_value(label):
+        tag_field = Field("tag", "string")
+        value, autocomplete_cancelled = read_autocomplete_value(label, reference_options)
+        if value == "":
+            return None
+
+        return capture_value_for_field(tag_field,
+                value,
+                options=reference_options,
+                autocomplete_cancelled=autocomplete_cancelled)
+
+    def append_tag(tags, label):
+        nonlocal status_message
+
+        tag = read_tag_value(label)
+        if tag != None:
+            tags.append(tag)
+            status_message = f"Added {label}"
+        else:
+            status_message = f"No {label} added."
+
+    def edit_tag_at(tags, idx, label):
+        nonlocal status_message
+
+        if idx < 0 or idx >= len(tags):
+            status_message = f"No {label} at that index."
+            return
+
+        tag = read_tag_value(f"{label} {idx + 1}")
+        if tag == None:
+            del tags[idx]
+            status_message = f"Removed {label} {idx + 1}"
+        else:
+            tags[idx] = tag
+            status_message = f"Updated {label} {idx + 1}"
+
+    def edit_default_tag(idx):
+        edit_tag_at(dcs.default_tags, idx, "default tag")
+
+    def edit_tag(idx):
+        nonlocal tsplx_data
+
+        edit_tag_at(dcs.current_instance.tags, idx, "pending tag")
+
+        if tsplx_data != None:
+            tsplx_data = update_tsplx_data()
 
     def record_saved_instance(path, start_line):
         if path not in saved_instances_by_file:
@@ -1341,7 +1642,8 @@ def scan():
                 tsplx_stub=tsplx_stub,
                 identifier=None,
                 files=instance_files,
-                attributes=dcs.current_instance.attributes)
+                attributes=dcs.current_instance.attributes,
+                tags=dcs.current_instance.tags)
 
     def delete_last_pending_scan():
         nonlocal tsplx_data
@@ -1394,6 +1696,7 @@ def scan():
                 new_data_file)
         dcs.active_type = type_definition
         dcs.default_attributes = {}
+        dcs.default_tags = []
         dcs.current_instance = TsplxEntity()
 
         if update_scan_dir:
@@ -1444,6 +1747,7 @@ def scan():
                 instance_files = [mfd.identifier]
                 pending_documents = [[path_basename(path_to_scan)]]
                 dcs.current_instance.attributes = dcs.default_attributes.copy()
+                dcs.current_instance.tags = dcs.default_tags.copy()
                 tsplx_data = update_tsplx_data()
 
             if error == None:
@@ -1462,6 +1766,7 @@ def scan():
             else:
                 dcs.active_type = None
                 dcs.default_attributes = {}
+                dcs.default_tags = []
                 dcs.current_instance = TsplxEntity()
                 target_data_file = None
                 render_headers()
@@ -1472,10 +1777,23 @@ def scan():
 
         elif dcs.active_type and c == 'g':
             second_key = input_char(win)
-            if second_key.isdigit() and 1 <= int(second_key) <= len(dcs.active_type.attributes):
+            if second_key == "0":
+                third_key = input_char_timeout(win)
+                if third_key != None and third_key.isdigit() and int(third_key) > 0:
+                    edit_default_tag(int(third_key) - 1)
+                elif third_key == None:
+                    append_tag(dcs.default_tags, "default tag")
+                else:
+                    status_message = "Invalid default tag shortcut."
+            elif second_key.isdigit() and 1 <= int(second_key) <= len(dcs.active_type.attributes):
                 attr_index = int(second_key) - 1
-                attr_name = dcs.active_type.attributes[attr_index]
-                edit_attribute_value(attr_name, dcs.default_attributes)
+                field = dcs.active_type.attributes[attr_index]
+                attr_name = field.name
+                edit_attribute_value(field,
+                        dcs.default_attributes,
+                        options=get_capture_attribute_options(dcs.active_type,
+                            field,
+                            reference_options))
 
             else:
                 status_message = "Invalid default attribute shortcut."
@@ -1486,14 +1804,33 @@ def scan():
                 continue
 
             second_key = input_char(win)
-            if second_key.isdigit() and 1 <= int(second_key) <= len(dcs.active_type.attributes):
+            if second_key == "0":
+                append_tag(dcs.current_instance.tags, "entity tag")
+                tsplx_data = update_tsplx_data()
+            elif second_key.isdigit() and 1 <= int(second_key) <= len(dcs.active_type.attributes):
                 attr_index = int(second_key) - 1
-                attr_name = dcs.active_type.attributes[attr_index]
+                field = dcs.active_type.attributes[attr_index]
+                attr_name = field.name
 
-                edit_attribute_value(attr_name, dcs.current_instance.attributes)
+                edit_attribute_value(field,
+                        dcs.current_instance.attributes,
+                        options=get_capture_attribute_options(dcs.active_type,
+                            field,
+                            reference_options))
 
                 if is_stub_mode and tsplx_data != None:
                     tsplx_data = update_tsplx_data()
+
+        elif dcs.active_type and c == 't':
+            if tsplx_data == None:
+                status_message = "Please start an instance before editing tags."
+                continue
+
+            second_key = input_char(win)
+            if second_key.isdigit() and int(second_key) > 0:
+                edit_tag(int(second_key) - 1)
+            else:
+                status_message = "Invalid tag shortcut."
 
         elif c.lower() == 'd':
             path_to_scan = fu.mfd_new(mfd)
