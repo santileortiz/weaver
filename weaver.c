@@ -169,6 +169,7 @@ void rt_init (struct note_runtime_t *rt, struct splx_data_t *config)
 {
     rt->notes_by_id.pool = &rt->pool;
     rt->notes_by_title.pool = &rt->pool;
+    rt->sd.root = splx_node_new(&rt->sd);
 
     if (!rt->is_public) {
         splx_get_value_cstr_arr (config, &rt->pool, CFG_TITLE_NOTES, &rt->title_note_ids, &rt->title_note_ids_len);
@@ -176,6 +177,7 @@ void rt_init (struct note_runtime_t *rt, struct splx_data_t *config)
         splx_get_value_cstr_arr (config, &rt->pool, CFG_PUBLIC_TITLE_NOTES, &rt->title_note_ids, &rt->title_note_ids_len);
     }
     splx_get_value_cstr_arr (config, &rt->pool, CFG_PRIVATE_TYPES, &rt->private_types, &rt->private_types_len);
+    splx_get_value_cstr_arr (config, &rt->pool, CFG_DATA_TYPES, &rt->data_types, &rt->data_types_len);
 
     rt->user_late_cb_tree.pool = &rt->pool;
     psx_populate_internal_late_cb_tree (&rt->user_late_cb_tree);
@@ -192,6 +194,7 @@ struct config_t {
     string_t metadata_path;
 
     string_t source_notes_path;
+    string_t source_data_path;
     string_t source_files_path;
 
     string_t target_path;
@@ -203,9 +206,43 @@ void cfg_destroy (struct config_t *cfg)
     str_free (&cfg->home);
     str_free (&cfg->config_path);
     str_free (&cfg->source_notes_path);
+    str_free (&cfg->source_data_path);
     str_free (&cfg->source_files_path);
     str_free (&cfg->target_path);
     str_free (&cfg->target_notes_path);
+}
+
+bool load_configured_data(struct note_runtime_t *rt, struct config_t *cfg, string_t *error_msg)
+{
+    bool success = true;
+    string_t path = {0};
+
+    for (int i=0; i<rt->data_types_len; i++) {
+        str_set_path(&path, str_data(&cfg->source_data_path));
+        str_cat_printf(&path, "%s.tsplx", rt->data_types[i]);
+
+        if (!path_exists(str_data(&path))) {
+            str_cat_printf(error_msg, ECMA_RED("error: ") "configured data file does not exist: %s\n", str_data(&path));
+            success = false;
+            continue;
+        }
+
+        uint64_t source_len;
+        char *source = full_file_read(NULL, str_data(&path), &source_len);
+        string_t parse_error = {0};
+        bool parsed = tsplx_parse_str_name_full(&rt->sd, source, rt->sd.root, &parse_error);
+        free(source);
+
+        if (!parsed) {
+            str_cat_printf(error_msg, ECMA_CYAN("%s\n") "%s", str_data(&path), str_data(&parse_error));
+            success = false;
+        }
+        str_free(&parse_error);
+
+    }
+
+    str_free(&path);
+    return success;
 }
 
 #define DEFAULT_HOME_DIR "~/.weaver"
@@ -227,34 +264,22 @@ enum cli_output_type_t {
 
 void generate_data_json (struct note_runtime_t *rt, char *out_fname)
 {
-    // TODO: This should create an identity map serialization of all entities.
-    // It should call into a generic JSON serializer for TSPLX data.
+    cJSON *json = cJSON_splx_create_array(rt->sd.root->floating_values);
 
-    string_t generated_data = {0};
+    string_t output = {0};
+    str_cat_c(&output, "[\n");
+    for (int i=0; i<cJSON_GetArraySize(json); i++) {
+        if (i > 0) str_cat_c(&output, ",\n");
 
-    bool is_first = true;
-
-    string_t escaped_title = {0};
-    is_first = true;
-    str_cat_c(&generated_data, "{");
-    LINKED_LIST_FOR (struct note_t*, curr_note, rt->notes) {
-        if (!is_first) str_cat_c(&generated_data, ",\n");
-        is_first = false;
-
-        str_set (&escaped_title, str_data(&curr_note->title));
-        str_replace (&escaped_title, "\"", "\\\"", NULL);
-        str_cat_printf(&generated_data, "\"%s\":", curr_note->id);
-
-        str_cat_c(&generated_data, "{");
-        str_cat_printf(&generated_data, "\"name\":\"%s\",", str_data(&escaped_title));
-        str_cat_printf(&generated_data, "\"@type\":\"page\"");
-        str_cat_c(&generated_data, "}");
+        char *entity = cJSON_PrintUnformatted(cJSON_GetArrayItem(json, i));
+        str_cat_c(&output, entity);
+        free(entity);
     }
-    str_cat_c(&generated_data, "}\n");
-    str_free(&escaped_title);
+    str_cat_c(&output, "\n]\n");
 
-    full_file_write (str_data(&generated_data), str_len(&generated_data), out_fname);
-    str_free (&generated_data);
+    full_file_write(str_data(&output), str_len(&output), out_fname);
+    str_free(&output);
+    cJSON_Delete(json);
 }
 
 void generate_metadata (struct note_runtime_t *rt, struct config_t *cfg)
@@ -465,6 +490,9 @@ int main(int argc, char** argv)
     str_set_path (&cfg->source_notes_path, str_data(&cfg->home));
     str_cat_path (&cfg->source_notes_path, "notes/");
 
+    str_set_path (&cfg->source_data_path, str_data(&cfg->home));
+    str_cat_path (&cfg->source_data_path, "data/");
+
     str_set_path (&cfg->source_files_path, str_data(&cfg->home));
     str_cat_path (&cfg->source_files_path, "files/");
 
@@ -607,6 +635,13 @@ int main(int argc, char** argv)
         rt_late_user_callbacks (rt);
 
         render_all_backlinks(rt);
+    }
+
+    if (!load_configured_data(rt, cfg, &error_msg)) {
+        printf("%s", str_data(&error_msg));
+        str_set(&error_msg, "");
+        success = false;
+        retval = 1;
     }
 
     //print_splx_dump (&rt->sd, rt->sd.entities);

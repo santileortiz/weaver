@@ -37,6 +37,9 @@ struct note_runtime_t {
     int private_types_len;
     char **private_types;
 
+    int data_types_len;
+    char **data_types;
+
     struct block_allocation_t block_allocation;
 
     struct id_to_note_t notes_by_id;
@@ -67,3 +70,4 @@ void rt_queue_late_callback (struct note_t *note, struct psx_tag_t *tag, struct 
 #define CFG_TITLE_NOTES "title-notes"
 #define CFG_PUBLIC_TITLE_NOTES "public-title-notes"
 #define CFG_PRIVATE_TYPES "private-types"
+#define CFG_DATA_TYPES "data-types"

@@ -100,7 +100,7 @@ function set_innerhtml_and_run_scripts(element, html) {
 
 function get_title(id)
 {
-    if (data[id] !== undefined && data[id]["@type"] === "page") {
+    if (data[id] !== undefined && data[id]["name"] !== undefined) {
         return data[id]["name"];
     }
 
@@ -370,8 +370,14 @@ function fetch_data() {
 
 async function initialize() {
   try {
-    const data = await fetch_data();
-    window.data = data;
+    const entities = await fetch_data();
+    window.entities = entities;
+    window.data = {};
+    for (const entity of entities) {
+        if (entity["@id"] !== undefined && entity["@id"] !== "") {
+            window.data[entity["@id"]] = entity;
+        }
+    }
 
     let sidebar = document.getElementById("sidebar");
     for (let i=0; i<title_notes.length; i++) {

@@ -1,8 +1,12 @@
-{"MJRX49RR78":{"name":"Redacting","@type":"page"},
-"5P3QHFGX2Q":{"name":"Virtual List","@type":"page"},
-"WCM48HVJ5X":{"name":"\"Quoted Page Title\"","@type":"page"},
-"W8FFHR5FP4":{"name":"Non-public","@type":"page"},
-"XHWXV3888W":{"name":"Page Links","@type":"page"},
-"68W5X99W59":{"name":"Sample PKB","@type":"page"},
-"V5VQ876393":{"name":"Page Syntax","@type":"page"},
-"W6FH7VJ9RJ":{"name":"# Page Title With #Hash Characters","@type":"page"}}
+[
+{"@id":"5P3QHFGX2Q","a":"note","backlink":"68W5X99W59","created-at":"2023-08-26T01:12:11-00:00","link":"","name":"Virtual List","updated-at":"2023-08-29T03:21:27-06:00"},
+{"@id":"W8FFHR5FP4","a":["note","personal"],"backlink":"MJRX49RR78","created-at":"2023-06-17T22:03:11-00:00","name":"Non-public","updated-at":"2023-06-17T22:10:18-06:00"},
+{"@id":"W6FH7VJ9RJ","a":"note","backlink":"V5VQ876393","created-at":"2023-08-10T21:50:25-00:00","name":"# Page Title With #Hash Characters","updated-at":"2023-08-11T08:06:12-06:00"},
+{"@id":"MJRX49RR78","a":"note","backlink":"68W5X99W59","created-at":"2023-04-24T04:25:22-00:00","link":["","W8FFHR5FP4",""],"name":"Redacting","updated-at":"2023-06-18T16:52:03-06:00"},
+{"@id":"68W5X99W59","a":"note","created-at":"2023-03-19T16:25:05-00:00","link":["V5VQ876393","XHWXV3888W","MJRX49RR78","5P3QHFGX2Q"],"name":"Sample PKB","updated-at":"2023-08-26T02:57:48-06:00"},
+{"@id":"XHWXV3888W","a":"note","backlink":"68W5X99W59","created-at":"2023-07-22T08:23:34-00:00","link":["V5VQ876393","WCM48HVJ5X","69W3GHVRV8","","","","","","","","","","","","",""],"name":"Page Links","updated-at":"2024-10-28T03:31:39-06:00"},
+{"@id":"V5VQ876393","a":"note","backlink":["68W5X99W59","XHWXV3888W","69W3GHVRV8"],"created-at":"2023-07-22T08:20:00-00:00","link":"W6FH7VJ9RJ","name":"Page Syntax","updated-at":"2023-08-25T08:33:38-06:00"},
+{"@id":"69W3GHVRV8","a":"note","backlink":"XHWXV3888W","created-at":"2024-10-21T00:21:47-06:00","link":"V5VQ876393","name":"Bracket Link Tests","updated-at":"2024-10-28T03:27:05-06:00"},
+{"@id":"WCM48HVJ5X","a":"note","backlink":"XHWXV3888W","created-at":"2023-08-11T08:05:49-00:00","name":"\"Quoted Page Title\"","updated-at":"2023-08-11T08:06:52-06:00"},
+{"@id":"9385G63979","a":"citation","author":"Vannevar Bush","name":"As We May Think","publisher":"Atlantic Monthly","url":"http://worrydream.com/refs/Bush%20-%20As%20We%20May%20Think%20(Life%20Magazine%209-10-1945).pdf"}
+]

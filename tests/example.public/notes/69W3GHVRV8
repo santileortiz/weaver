@@ -10,7 +10,7 @@
     <div style="align-items: baseline; display: flex; color: var(--secondary-fg-color)">
       <div class="attribute-label">updated-at</div>
       <div style="row-gap: 3px; display: flex; flex-wrap: wrap; overflow-x: auto;">
-        <div class="attribute-value">2024-10-28T03:21:06-06:00</div>
+        <div class="attribute-value">2024-10-28T03:27:05-06:00</div>
       </div>
     </div>
   </div>

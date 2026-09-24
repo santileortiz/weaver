@@ -128,6 +128,11 @@ void rt_process_notes (struct note_runtime_t *rt, string_t *error_msg_out)
             char *markup = str_data(&curr_note->psplx);
 
             PROCESS_NOTE_PARSE
+
+            if (!note->error && note->tree != NULL && note->tree->data != NULL) {
+                struct splx_node_list_t *root_entity = tps_wrap_in_list_node(&rt->sd, note->tree->data);
+                LINKED_LIST_APPEND(rt->sd.root->floating_values, root_entity);
+            }
         }
     }
 

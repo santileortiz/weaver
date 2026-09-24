@@ -7,8 +7,8 @@ The `->` separator can be used to change the visible text that links to the
 note. [[Custom Text -> Page Syntax]] links to the same page as the previous
 example but shows `Custom Text` instead of the page's title.
 
-Components can be quoted to use otherwise not allowed characters the `->`
-character sequence, like [["-> here" -> "Page Syntax"]].
+Components can be quoted to use otherwise not allowed characters, like the `->`
+character sequence, like [["here" -> "Thin -> Arrow"]] or [["-> here" -> "Page Syntax"]].
 
  - Inside quoted notation `\"` will represent the `"` character.
 

@@ -18,6 +18,10 @@ private-types [
   "personal"
 ] .
 
+data-types [
+  "citation"
+] .
+
 
 // Autolink
 // TODO: Currently there's no TSPLX data loading from
