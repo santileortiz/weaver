@@ -1152,6 +1152,171 @@ def static_site_test(source, target, expected, public=False):
     success = test_dir(target, expected)
     return success
 
+def virtual_ids_by_title(data_js):
+    """Read the virtual entity title-to-ID mapping embedded in data.js."""
+    entries = {}
+    with open(data_js) as data_file:
+        for line in data_file:
+            match = re.match(r"^  '([^']+)': .* title: '(.*)'},$", line)
+            if match:
+                node_id, title = match.groups()
+                if title in entries:
+                    raise RuntimeError(f'duplicate virtual entity title: {title}')
+                entries[title] = node_id
+
+    return entries
+
+def replace_virtual_ids(text, id_map):
+    """Apply an ID mapping simultaneously, including overlapping mappings."""
+    placeholders = {}
+    for index, old_id in enumerate(id_map):
+        placeholder = f'__WEAVER_VIRTUAL_ID_REMAP_{index}__'
+        if placeholder in text:
+            raise RuntimeError(f'virtual ID replacement placeholder collision: {placeholder}')
+        placeholders[old_id] = placeholder
+
+    for old_id, placeholder in placeholders.items():
+        text = text.replace(old_id, placeholder)
+    for old_id, placeholder in placeholders.items():
+        text = text.replace(placeholder, id_map[old_id])
+
+    return text
+
+def replace_virtual_ids_in_tree(root, id_map):
+    changed = []
+    for dirpath, _, filenames in os.walk(root):
+        for filename in filenames:
+            path = path_cat(dirpath, filename)
+            with open(path) as source_file:
+                old_text = source_file.read()
+            new_text = replace_virtual_ids(old_text, id_map)
+            if new_text != old_text:
+                with open(path, 'w') as target_file:
+                    target_file.write(new_text)
+                changed.append(path)
+    return changed
+
+def differing_files(left, right):
+    differences = []
+    comparison = filecmp.dircmp(left, right)
+    differences.extend(path_cat(left, name) for name in comparison.left_only)
+    differences.extend(path_cat(right, name) for name in comparison.right_only)
+    differences.extend(path_cat(left, name) for name in comparison.diff_files)
+    for common_dir in comparison.common_dirs:
+        differences.extend(differing_files(
+            path_cat(left, common_dir), path_cat(right, common_dir)))
+    return differences
+
+def update_example_virtual_ids():
+    """Update only verified virtual-ID substitutions in static snapshots."""
+    generated_public = './bin/update_virtual_ids_public'
+    generated_full = './bin/update_virtual_ids_full'
+    staged_public = './bin/update_virtual_ids_expected_public'
+    staged_full = './bin/update_virtual_ids_expected_full'
+    temporary_paths = (generated_public, generated_full, staged_public, staged_full)
+
+    for path in temporary_paths:
+        if path_exists(path):
+            shutil.rmtree(path)
+
+    ex(f'./bin/weaver generate --home ./tests/example --output-dir {generated_public} --static --public --deterministic', echo=False)
+    ex(f'./bin/weaver generate --home ./tests/example --output-dir {generated_full} --static --deterministic', echo=False)
+
+    expected_ids = virtual_ids_by_title('./tests/example.full/data.js')
+    generated_ids = virtual_ids_by_title(path_cat(generated_full, 'data.js'))
+
+    if expected_ids.keys() != generated_ids.keys():
+        print('Refusing to update: the virtual entity title sets differ.')
+        print('Only expected:', sorted(expected_ids.keys() - generated_ids.keys()))
+        print('Only generated:', sorted(generated_ids.keys() - expected_ids.keys()))
+        for path in temporary_paths:
+            if path_exists(path): shutil.rmtree(path)
+        return False
+
+    id_map = {
+        expected_ids[title]: generated_ids[title]
+        for title in expected_ids
+        if expected_ids[title] != generated_ids[title]
+    }
+
+    if len(set(id_map.values())) != len(id_map):
+        print('Refusing to update: the virtual ID mapping is not one-to-one.')
+        for path in temporary_paths:
+            if path_exists(path): shutil.rmtree(path)
+        return False
+
+    if not id_map:
+        print('Virtual IDs already match; nothing to update.')
+        for path in temporary_paths:
+            if path_exists(path): shutil.rmtree(path)
+        return True
+
+    shutil.copytree('./tests/example.public', staged_public)
+    shutil.copytree('./tests/example.public', staged_full)
+    shutil.copytree('./tests/example.full', staged_full, dirs_exist_ok=True)
+    replace_virtual_ids_in_tree(staged_public, id_map)
+    replace_virtual_ids_in_tree(staged_full, id_map)
+
+    differences = (
+        differing_files(generated_public, staged_public) +
+        differing_files(generated_full, staged_full)
+    )
+    if differences:
+        print('Other snapshot differences will remain untouched:')
+        for path in differences:
+            print(f'  {path}')
+
+    print('Verified virtual ID substitutions:')
+    for title in sorted(expected_ids, key=str.casefold):
+        old_id = expected_ids[title]
+        if old_id in id_map:
+            print(f'  {old_id} -> {id_map[old_id]}  {title}')
+
+    changed = []
+    changed.extend(replace_virtual_ids_in_tree('./tests/example.public', id_map))
+    changed.extend(replace_virtual_ids_in_tree('./tests/example.full', id_map))
+    print('Updated only virtual ID occurrences in:')
+    for path in changed:
+        print(f'  {path}')
+
+    for path in temporary_paths:
+        shutil.rmtree(path)
+    return True
+
+def deterministic_static_traversal_test():
+    """Equivalent trees must generate identically regardless of creation order."""
+    source = './bin/deterministic_static_source'
+    output_ascending = './bin/deterministic_static_ascending'
+    output_descending = './bin/deterministic_static_descending'
+
+    for path in (source, output_ascending, output_descending):
+        if path_exists(path):
+            shutil.rmtree(path)
+
+    shutil.copytree('./tests/example', source, ignore=shutil.ignore_patterns('notes'))
+    source_notes = './tests/example/notes'
+    target_notes = path_cat(source, 'notes')
+    note_names = natsorted(os.listdir(source_notes))
+
+    def create_notes(names):
+        ensure_dir(target_notes)
+        for name in names:
+            shutil.copy2(path_cat(source_notes, name), path_cat(target_notes, name))
+
+    create_notes(note_names)
+    ex(f'./bin/weaver generate --home {source} --output-dir {output_ascending} --static --deterministic', echo=False)
+
+    shutil.rmtree(target_notes)
+    create_notes(reversed(note_names))
+    ex(f'./bin/weaver generate --home {source} --output-dir {output_descending} --static --deterministic', echo=False)
+
+    success = test_dir(output_ascending, output_descending)
+
+    for path in (source, output_ascending, output_descending):
+        shutil.rmtree(path)
+
+    return success
+
 def data_to_autolink_map(data, target):
     with open(data) as data_json:
         data = json.load(data_json)
@@ -1233,6 +1398,10 @@ def tests():
     success = static_site_test ('./tests/example', static_target_full, expected_full)
     shutil.rmtree (expected_full)
     test_pop(success)
+
+    test_push('Deterministic static traversal')
+    traversal_success = deterministic_static_traversal_test()
+    test_pop(traversal_success)
 
     server_home_full = './bin/.weaver_full'
     data_to_autolink_map(f'{static_target_full}/data.json', f'{server_home_full}/files/map/Q976XFMWMW.json')

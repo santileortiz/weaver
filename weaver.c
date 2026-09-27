@@ -151,18 +151,13 @@ void rt_init_push_file (struct note_runtime_t *rt, char *fname)
     }
 }
 
-ITERATE_DIR_CB(test_dir_iter)
-{
-    struct note_runtime_t *rt = (struct note_runtime_t*)data;
-
-    if (!is_dir) {
-        rt_init_push_file (rt, fname);
-    }
-}
-
 void rt_init_push_dir (struct note_runtime_t *rt, char *path)
 {
-    iterate_dir (path, test_dir_iter, rt);
+    PATH_FOR_SORTED (path, it) {
+        if (!it.is_dir) {
+            rt_init_push_file (rt, str_data(&it.path));
+        }
+    }
 }
 
 void rt_init (struct note_runtime_t *rt, struct splx_data_t *config)

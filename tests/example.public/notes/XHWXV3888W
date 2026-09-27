@@ -16,7 +16,7 @@
   </div>
   <p>To create a page link by the target's title use <a class="note-link" href="?n=V5VQ876393" onclick="return open_note('V5VQ876393');">Page Syntax</a>. Instead of the title, the page's ID can also be used <a class="note-link" href="?n=V5VQ876393" onclick="return open_note('V5VQ876393');">Page Syntax</a>.</p>
   <p>The <code class="code-inline">-&gt;</code> separator can be used to change the visible text that links to the note. <a class="note-link" href="?n=V5VQ876393" onclick="return open_note('V5VQ876393');">Custom Text</a> links to the same page as the previous example but shows <code class="code-inline">Custom Text</code> instead of the page's title.</p>
-  <p>Components can be quoted to use otherwise not allowed characters, like the <code class="code-inline">-&gt;</code> character sequence, like <a class="note-link" href="?v=VCMHGGJ222" onclick="return open_virtual_entity('VCMHGGJ222');">here</a> or <a class="note-link" href="?n=V5VQ876393" onclick="return open_note('V5VQ876393');">-&gt; here</a>.</p>
+  <p>Components can be quoted to use otherwise not allowed characters, like the <code class="code-inline">-&gt;</code> character sequence, like <a class="note-link" href="?v=VQW85F744F" onclick="return open_virtual_entity('VQW85F744F');">here</a> or <a class="note-link" href="?n=V5VQ876393" onclick="return open_note('V5VQ876393');">-&gt; here</a>.</p>
   <ul>
     <li>
       <p>Inside quoted notation <code class="code-inline">\"</code> will represent the <code class="code-inline">"</code> character.</p>
@@ -247,76 +247,76 @@
   <p>These will create virtual notes</p>
   <ul>
     <li>
-      <p><a class="note-link" href="?v=WXF7QMH956" onclick="return open_virtual_entity('WXF7QMH956');">Quoted Page Title</a></p>
+      <p><a class="note-link" href="?v=WM4FXFJHRW" onclick="return open_virtual_entity('WM4FXFJHRW');">Quoted Page Title</a></p>
     </li>
     <li>
-      <p><a class="note-link" href="?v=V89VMV4HMP" onclick="return open_virtual_entity('V89VMV4HMP');">Title with quoted "end"</a></p>
+      <p><a class="note-link" href="?v=WXF7QMH956" onclick="return open_virtual_entity('WXF7QMH956');">Title with quoted "end"</a></p>
     </li>
     <li>
-      <p><a class="note-link" href="?v=W6672VQWWQ" onclick="return open_virtual_entity('W6672VQWWQ');">"Title" with quoted start</a></p>
+      <p><a class="note-link" href="?v=V89VMV4HMP" onclick="return open_virtual_entity('V89VMV4HMP');">"Title" with quoted start</a></p>
     </li>
     <li>
-      <p><a class="note-link" href="?v=J2H9VH8QRF" onclick="return open_virtual_entity('J2H9VH8QRF');">Title "with quoted" middle</a></p>
+      <p><a class="note-link" href="?v=W6672VQWWQ" onclick="return open_virtual_entity('W6672VQWWQ');">Title "with quoted" middle</a></p>
     </li>
     <li>
-      <p><a class="note-link" href="?v=3JWVG2XP3X" onclick="return open_virtual_entity('3JWVG2XP3X');">Title with -&gt; arrows -&gt; Page Syntax</a></p>
+      <p><a class="note-link" href="?v=J2H9VH8QRF" onclick="return open_virtual_entity('J2H9VH8QRF');">Title with -&gt; arrows -&gt; Page Syntax</a></p>
     </li>
     <li>
-      <p><a class="note-link" href="?v=J7FR9RRC9Q" onclick="return open_virtual_entity('J7FR9RRC9Q');">Title with &gt; greater than &gt; Page Syntax</a></p>
+      <p><a class="note-link" href="?v=3JWVG2XP3X" onclick="return open_virtual_entity('3JWVG2XP3X');">Title with &gt; greater than &gt; Page Syntax</a></p>
     </li>
     <li>
-      <p><a class="note-link" href="?v=J7FR9RRC9Q" onclick="return open_virtual_entity('J7FR9RRC9Q');">Title with &gt; greater than &gt; Page Syntax</a></p>
+      <p><a class="note-link" href="?v=3JWVG2XP3X" onclick="return open_virtual_entity('3JWVG2XP3X');">Title with &gt; greater than &gt; Page Syntax</a></p>
     </li>
     <li>
-      <p><a class="note-link" href="?v=H5HW26F642" onclick="return open_virtual_entity('H5HW26F642');">&gt; Title with &gt; greater than &gt; Page Syntax</a></p>
+      <p><a class="note-link" href="?v=J7FR9RRC9Q" onclick="return open_virtual_entity('J7FR9RRC9Q');">&gt; Title with &gt; greater than &gt; Page Syntax</a></p>
     </li>
     <li>
-      <p><a class="note-link" href="?v=JMV9HHMRGF" onclick="return open_virtual_entity('JMV9HHMRGF');">Page Syntax-&gt;</a></p>
+      <p><a class="note-link" href="?v=H5HW26F642" onclick="return open_virtual_entity('H5HW26F642');">Page Syntax-&gt;</a></p>
     </li>
     <li>
-      <p><a class="note-link" href="?v=V5Q869RHM9" onclick="return open_virtual_entity('V5Q869RHM9');">Page Syntax -&gt;</a></p>
+      <p><a class="note-link" href="?v=JMV9HHMRGF" onclick="return open_virtual_entity('JMV9HHMRGF');">Page Syntax -&gt;</a></p>
     </li>
     <li>
-      <p><a class="note-link" href="?v=WH4FQQP965" onclick="return open_virtual_entity('WH4FQQP965');">Title With &gt; Greater Than -&gt;</a></p>
+      <p><a class="note-link" href="?v=V5Q869RHM9" onclick="return open_virtual_entity('V5Q869RHM9');">Title With &gt; Greater Than -&gt;</a></p>
     </li>
     <li>
-      <p><a class="note-link" href="?v=W7G6HGX53X" onclick="return open_virtual_entity('W7G6HGX53X');">Title with spaces</a></p>
+      <p><a class="note-link" href="?v=WH4FQQP965" onclick="return open_virtual_entity('WH4FQQP965');">Title with spaces</a></p>
     </li>
     <li>
-      <p><a class="note-link" href="?v=W645HXMQXM" onclick="return open_virtual_entity('W645HXMQXM');">-&gt;</a></p>
+      <p><a class="note-link" href="?v=W7G6HGX53X" onclick="return open_virtual_entity('W7G6HGX53X');">-&gt;</a></p>
     </li>
     <li>
-      <p><a class="note-link" href="?v=WJ67FXMP58" onclick="return open_virtual_entity('WJ67FXMP58');">&gt;</a></p>
+      <p><a class="note-link" href="?v=W645HXMQXM" onclick="return open_virtual_entity('W645HXMQXM');">&gt;</a></p>
     </li>
     <li>
-      <p><a class="note-link" href="?v=WJ67FXMP58" onclick="return open_virtual_entity('WJ67FXMP58');">&gt;</a></p>
+      <p><a class="note-link" href="?v=W645HXMQXM" onclick="return open_virtual_entity('W645HXMQXM');">&gt;</a></p>
     </li>
     <li>
-      <p><a class="note-link" href="?v=WJ67FXMP58" onclick="return open_virtual_entity('WJ67FXMP58');">&gt;</a></p>
+      <p><a class="note-link" href="?v=W645HXMQXM" onclick="return open_virtual_entity('W645HXMQXM');">&gt;</a></p>
     </li>
     <li>
-      <p><a class="note-link" href="?v=WJ67FXMP58" onclick="return open_virtual_entity('WJ67FXMP58');">&gt;</a></p>
+      <p><a class="note-link" href="?v=W645HXMQXM" onclick="return open_virtual_entity('W645HXMQXM');">&gt;</a></p>
     </li>
     <li>
-      <p><a class="note-link" href="?v=WJ67FXMP58" onclick="return open_virtual_entity('WJ67FXMP58');">&gt;</a></p>
+      <p><a class="note-link" href="?v=W645HXMQXM" onclick="return open_virtual_entity('W645HXMQXM');">&gt;</a></p>
     </li>
     <li>
-      <p><a class="note-link" href="?v=WJ67FXMP58" onclick="return open_virtual_entity('WJ67FXMP58');">&gt;</a></p>
+      <p><a class="note-link" href="?v=W645HXMQXM" onclick="return open_virtual_entity('W645HXMQXM');">&gt;</a></p>
     </li>
     <li>
-      <p><a class="note-link" href="?v=WJ67FXMP58" onclick="return open_virtual_entity('WJ67FXMP58');">&gt;</a></p>
+      <p><a class="note-link" href="?v=W645HXMQXM" onclick="return open_virtual_entity('W645HXMQXM');">&gt;</a></p>
     </li>
     <li>
-      <p><a class="note-link" href="?v=WJ67FXMP58" onclick="return open_virtual_entity('WJ67FXMP58');">&gt;</a></p>
+      <p><a class="note-link" href="?v=W645HXMQXM" onclick="return open_virtual_entity('W645HXMQXM');">&gt;</a></p>
     </li>
     <li>
-      <p><a class="note-link" href="?v=WJ67FXMP58" onclick="return open_virtual_entity('WJ67FXMP58');">&gt;</a></p>
+      <p><a class="note-link" href="?v=W645HXMQXM" onclick="return open_virtual_entity('W645HXMQXM');">&gt;</a></p>
     </li>
     <li>
-      <p><a class="note-link" href="?v=WJ67FXMP58" onclick="return open_virtual_entity('WJ67FXMP58');">&gt;</a></p>
+      <p><a class="note-link" href="?v=W645HXMQXM" onclick="return open_virtual_entity('W645HXMQXM');">&gt;</a></p>
     </li>
     <li>
-      <p><a class="note-link" href="?v=WJ67FXMP58" onclick="return open_virtual_entity('WJ67FXMP58');">&gt;</a></p>
+      <p><a class="note-link" href="?v=W645HXMQXM" onclick="return open_virtual_entity('W645HXMQXM');">&gt;</a></p>
     </li>
   </ul>
   <p>These will not create a link</p>

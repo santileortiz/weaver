@@ -2331,6 +2331,12 @@ def tests():
 
     #ex (f'cat {log}')
 
+def update_example_virtual_ids():
+    """Update only virtual ID occurrences in the static fixtures."""
+    weaver_maybe_build()
+    if not tests_python.update_example_virtual_ids():
+        print('Virtual ID fixtures were not updated.')
+
 def id():
     args = get_cli_no_opt()
     

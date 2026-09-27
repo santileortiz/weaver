@@ -32,8 +32,8 @@
   <p>\####### Use <code class="code-inline">\\</code> to get a single <code class="code-inline">\</code> at the start of a paragraph.</p>
   <h4>Backlinks</h4>
   <div class="backlinks">
-    <p><a class="note-link" href="?n=68W5X99W59" onclick="return open_note('68W5X99W59');">Sample PKB</a></p>
     <p><a class="note-link" href="?n=XHWXV3888W" onclick="return open_note('XHWXV3888W');">Page Links</a></p>
     <p><a class="note-link" href="?n=69W3GHVRV8" onclick="return open_note('69W3GHVRV8');">Bracket Link Tests</a></p>
+    <p><a class="note-link" href="?n=68W5X99W59" onclick="return open_note('68W5X99W59');">Sample PKB</a></p>
   </div>
 </div>
