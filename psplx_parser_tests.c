@@ -79,6 +79,7 @@ void rt_init_from_dir (struct note_runtime_t *rt, char *path)
 {
     rt->notes_by_id.pool = &rt->pool;
     rt->notes_by_title.pool = &rt->pool;
+    rt->sd.root = splx_node_new(&rt->sd);
 
     iterate_dir (path, test_dir_iter, rt);
 }
