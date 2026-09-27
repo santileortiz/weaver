@@ -556,6 +556,10 @@ bool psx_match_link (char *str,
     }
 
     if (unquoted) {
+        // Reinitialize the scanner because we unquoted may have been set to
+        // true in the middle of a partial quote scan.
+        scr_init(scr);
+
         char *arrow =  "->";
         int arrow_len =  strlen(arrow);
         char *last_arrow = NULL;
@@ -580,6 +584,10 @@ bool psx_match_link (char *str,
             str_strip(&l_reference);
 
         } else {
+            // Reinitialize the scanner because we could've reached this place
+            // by a broken arrow serach.
+            scr_init(scr);
+
             sstring_t r = {0};
             r.s = scr->pos;
             if (end_str != NULL) {
@@ -1643,6 +1651,15 @@ void html_redact_or_append_link (struct psx_parser_state_t *ps,
                 if (curr_pos > pos) {
                     str_shrink(&prev->text, pos - (curr_pos - str_len(&prev->text)));
                     str_rstrip (&prev->text);
+
+                    if (is_empty_str(str_data(&prev->text))) {
+                        if (pprev != NULL) {
+                            pprev->next = NULL;
+                        } else {
+                            html_parent->children = NULL;
+                        }
+                        html_parent->children_end = pprev;
+                    }
                 }
 
                 cstr_find_close_parenthesis (ps->scr.pos, count, &pos);
@@ -2247,6 +2264,8 @@ void psx_block_tree_user_callbacks_full (struct psx_parser_ctx_t *ctx, struct bl
     }
 }
 
+// TODO: Give virtual entities proper IDs registered in sd->nodes. Virtual
+// should only mean that there's no PSPLX file attached.
 void psx_set_virtual_id (struct splx_node_t *node)
 {
     struct note_runtime_t *rt = rt_get();
@@ -3621,6 +3640,7 @@ void psx_populate_internal_cb_tree (struct psx_user_tag_cb_t *tree)
 }
 
 
+
 /////////////////////
 // Late Callback API
 //
@@ -3774,4 +3794,3 @@ void psx_populate_internal_late_cb_tree (struct psx_late_user_tag_cb_t *tree)
     PSX_LATE_INTERNAL_TAG_TABLE
 #undef PSX_INTERNAL_CUSTOM_TAG_ROW
 }
-

@@ -12,6 +12,15 @@ struct scanner_t {
     bool is_eof;
 };
 
+// TODO: Should we have an "initialize at index" version of this?
+static inline
+void scr_init (struct scanner_t *scr)
+{
+    scr->pos = scr->str;
+    scr->line_number = 0;
+    scr->column_number = 0;
+}
+
 static inline
 char* scr_pos (struct scanner_t *scr)
 {

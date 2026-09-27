@@ -2135,17 +2135,28 @@ cJSON* cJSON_splx_create_array(struct splx_node_list_t *node_list)
 
         BINARY_TREE_FOR (cstr_to_splx_node_list_map, &entity->attributes, curr_attribute) {
             cJSON *value = NULL;
-            if (curr_attribute->value->next == NULL) {
-                value = cJSON_CreateString(str_data(splx_node_get_id(curr_attribute->value->node)));
-            } else {
-                value = cJSON_CreateArray();
-                LINKED_LIST_FOR (struct splx_node_list_t *, curr_node_list_element, curr_attribute->value) {
-                    cJSON_AddItemToArray(value,
-                                         cJSON_CreateString(str_data(splx_node_get_id(curr_node_list_element->node))));
+            LINKED_LIST_FOR (struct splx_node_list_t *, curr_value, curr_attribute->value) {
+                struct splx_node_t *node = curr_value->node;
+
+                // Unreferenceable nodes cannot be represented by this ID-only JSON
+                // format, so skip them.
+                if (node->type != SPLX_NODE_TYPE_OBJECT || splx_node_is_referenceable(node)) {
+                    cJSON *item = cJSON_CreateString(str_data(splx_node_get_id(node)));
+                    if (value == NULL) {
+                        value = item;
+
+                    } else {
+                        if (!cJSON_IsArray(value)) {
+                            cJSON *array = cJSON_CreateArray();
+                            cJSON_AddItemToArray(array, value);
+                            value = array;
+                        }
+                        cJSON_AddItemToArray(value, item);
+                    }
                 }
             }
 
-            cJSON_AddItemToObject(post, curr_attribute->key, value);
+            if (value != NULL) cJSON_AddItemToObject(post, curr_attribute->key, value);
         }
     }
     return result;

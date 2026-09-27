@@ -1157,9 +1157,14 @@ def data_to_autolink_map(data, target):
         data = json.load(data_json)
 
     autolink_map = {}
-    for key, value in data.items():
-        lowercase_name = value['name'].lower()
-        autolink_map[lowercase_name] = key
+
+    # TODO: It's possible this test is now broken because data.json now has a
+    # flat array of referenceable entities instead of an index map, this map is
+    # now created by the client side after laoding the data files.
+    for entity in data:
+        if '@id' in entity and 'name' in entity:
+            lowercase_name = entity['name'].lower()
+            autolink_map[lowercase_name] = entity['@id']
 
     ensure_dir (path_dirname(target))
     with open(target, 'w') as target_file:
