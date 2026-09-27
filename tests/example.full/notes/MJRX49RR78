@@ -1,5 +1,19 @@
 <div id="MJRX49RR78">
   <h1 id="user-content-redacting">Redacting</h1>
+  <div class="attributes">
+    <div style="align-items: baseline; display: flex; color: var(--secondary-fg-color)">
+      <div class="attribute-label">created-at</div>
+      <div style="row-gap: 3px; display: flex; flex-wrap: wrap; overflow-x: auto;">
+        <div class="attribute-value">2023-04-24T04:25:22-00:00</div>
+      </div>
+    </div>
+    <div style="align-items: baseline; display: flex; color: var(--secondary-fg-color)">
+      <div class="attribute-label">updated-at</div>
+      <div style="row-gap: 3px; display: flex; flex-wrap: wrap; overflow-x: auto;">
+        <div class="attribute-value">2023-06-18T16:52:03-06:00</div>
+      </div>
+    </div>
+  </div>
   <p>Redacting is the mechanism used to separate personal from public content. It hides personal content in public publishing, but preserves useful relationships for personal use.</p>
   <div style="padding: 0.5em 0;">
     <div class="attributed-block">
@@ -7,14 +21,6 @@
       <div style="padding: var(--bleed); background-color: var(--secondary-bg-color);border-top: 1px solid #0000001c;">
         <div class="type-list">
           <div class="type">personal</div>
-        </div>
-        <div class="attributes">
-          <div style="align-items: baseline; display: flex; color: var(--secondary-fg-color)">
-            <div class="attribute-label">backlink</div>
-            <div style="row-gap: 3px; display: flex; flex-wrap: wrap; overflow-x: auto;">
-              <div class="attribute-value">MJRX49RR78</div>
-            </div>
-          </div>
         </div>
       </div>
     </div>
