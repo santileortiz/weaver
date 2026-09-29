@@ -12,6 +12,7 @@ import random
 import psutil
 import json
 import re
+import shlex
 from zipfile import ZipFile
 from urllib.parse import urlparse, urlunparse, ParseResult
 
@@ -489,6 +490,19 @@ def file_move ():
     if dry_run:
         print ('Dry run by default, to perform changes use --execute')
 
+def select_files(initial_directory=None):
+    separator = '|||'
+    initial_path_arg = ''
+    if initial_directory != None:
+        initial_directory = os.path.abspath(path_resolve(initial_directory))
+        initial_path_arg = f" --filename={shlex.quote(initial_directory + os.sep)}"
+
+    files_str = ex(
+            f"zenity --file-selection --multiple --separator='{separator}'{initial_path_arg}",
+            echo=False,
+            ret_stdout=True)
+    return files_str.split(separator) if files_str else []
+
 def file_store():
     is_sequence = get_cli_bool_opt('--sequence')
     attach_target = get_cli_arg_opt('--attach')
@@ -517,10 +531,7 @@ def file_store():
 
     files = []
     if args == None:
-        separator = '|||'
-        files_str = ex(f'zenity --file-selection --multiple --separator=\'{separator}\'', echo=False,ret_stdout=True)
-        if len(files_str) > 0:
-            files = files_str.split(separator)
+        files = select_files()
     else:
         files = args
 
@@ -735,11 +746,11 @@ def load_reference_option_names(data_json_path=None):
 
     names = []
     seen = set()
-    for value in data.values():
-        if not isinstance(value, dict) or "name" not in value:
+    for entity in data:
+        if not isinstance(entity, dict) or "name" not in entity:
             continue
 
-        name = value["name"]
+        name = entity["name"]
         if not isinstance(name, str) or name == "":
             continue
 
@@ -829,6 +840,7 @@ def capture_data():
     win.scrollok(1)
     curses.use_default_colors()
     curses.init_pair(1, curses.COLOR_RED, -1)
+    win.keypad(True)
 
     curses.curs_set(0)
     win.clear()
@@ -1335,7 +1347,7 @@ def render_scan_capture_state(win, row, dcs, tsplx_preview, pending_documents, s
 def new_id():
     print(fu.new_identifier())
 
-def scan():
+def capture():
     show_help = get_cli_bool_opt ("--help")
     target_file_dir = get_cli_arg_opt ("--directory")
     target_data_file = get_cli_arg_opt ("--data-file")
@@ -1350,7 +1362,7 @@ def scan():
         print ("usage:")
         print (f" ./pymk.py {get_function_name()}                     # structured capture")
         print (f" ./pymk.py {get_function_name()} TARGET_TYPE         # structured capture with initial type")
-        print (f" ./pymk.py {get_function_name()} --directory TARGET_DIRECTORY  # scan files only")
+        print (f" ./pymk.py {get_function_name()} --directory TARGET_DIRECTORY  # capture files without entity data")
         return
 
     is_stub_mode = target_type != None or target_file_dir == None
@@ -1360,10 +1372,7 @@ def scan():
     # we list all devices, choose one, then pass in all subsequent commands.
     scanner_name = None
     scanner_names = get_scanner_names()
-    if len(scanner_names) == 0:
-        print(ecma_red("error:") + " No scanners detected.")
-        return
-    elif len(scanner_names) == 1:
+    if len(scanner_names) == 1:
         scanner_name = scanner_names[0]
 
     if is_stub_mode and target_type != None:
@@ -1395,8 +1404,11 @@ def scan():
               [a0] add pending entity tag
               a[1-N] modify pending entity attribute (e.g., 'a1')
               t[1-N] modify pending tag (e.g., 't1')
+              [Ctrl+N] accept attribute and edit the next one
 
-              [n/space] new scan (new instance)
+              [n] start new empty entity
+              [space] repeat last file capture action
+              [f] move files from Downloads into pending entity
               [d] new document (in same instance)
               [p] scan next page in document
               [u] delete last pending scan
@@ -1432,7 +1444,7 @@ def scan():
     def render_headers():
         clear_line(win, scan_header_row)
         clear_line(win, target_header_row)
-        curses_addstr_clipped(win, scan_header_row, 0, f'Storing scans in: {target_file_dir}')
+        curses_addstr_clipped(win, scan_header_row, 0, f'Storing captured files in: {target_file_dir}')
         if not is_stub_mode:
             return
 
@@ -1447,7 +1459,7 @@ def scan():
         pass
 
     # There are multiple devices, prompt the user to choose one.
-    if scanner_name == None:
+    if len(scanner_names) > 1 and scanner_name == None:
         win.addstr(f'\nAvailable devices:\n')
         devices_list = [win.addstr(f'  {i}) {d}\n') for i,d in enumerate(scanner_names,1)]
         while scanner_name == None:
@@ -1476,8 +1488,10 @@ def scan():
 
     instance_files = []
     pending_documents = []
+    pending_document_is_scanned = []
     saved_instances_by_file = {}
-    status_message = None
+    last_file_capture_action = "scan" if scanner_name != None else "files"
+    status_message = None if scanner_name != None else "No scanner detected; use [f] to import files."
     reference_options = load_reference_option_names()
     if is_stub_mode:
         tsplx_data = None
@@ -1502,7 +1516,8 @@ def scan():
 
         return matches[selected_option_idx % len(matches)]
 
-    def render_attribute_prompt(attr_name, value, options, selected_option_idx, suppress_completion):
+    def render_attribute_prompt(attr_name, value, options, selected_option_idx,
+            suppress_completion, cursor_offset=None):
         prompt_row = get_prompt_row()
         clear_line(win, prompt_row)
         win.move(prompt_row, 0)
@@ -1519,10 +1534,12 @@ def scan():
                     suffix,
                     curses.A_REVERSE)
 
-        win.move(prompt_row, len(prompt) + len(value))
+        if cursor_offset == None:
+            cursor_offset = len(value)
+        win.move(prompt_row, len(prompt) + cursor_offset)
         win.refresh()
 
-    def read_autocomplete_value(label, options=None):
+    def read_autocomplete_value(label, options=None, initial_value=None):
         if options == None:
             options = []
 
@@ -1531,16 +1548,32 @@ def scan():
         clear_line(win, prompt_row)
 
         value = ""
+        template_prefix = ""
+        template_suffix = ""
+        template_mode = initial_value != None and "<++>" in initial_value
+        if template_mode:
+            template_prefix, template_suffix = initial_value.split("<++>", 1)
+
         selected_option_idx = 0
         suppress_completion = False
+        advance_to_next = False
         while True:
-            render_attribute_prompt(label, value, options, selected_option_idx, suppress_completion)
+            display_value = template_prefix + value + template_suffix
+            cursor_offset = len(template_prefix) + len(value)
+            render_attribute_prompt(label, display_value,
+                    [] if template_mode else options,
+                    selected_option_idx,
+                    suppress_completion,
+                    cursor_offset=cursor_offset)
             ch = win.getch()
 
             if ch in [10, 13]:
                 break
+            elif ch in [14, curses.KEY_ENTER]:
+                advance_to_next = True
+                break
             elif ch == 9:
-                completion = get_current_completion(options, value, selected_option_idx)
+                completion = None if template_mode else get_current_completion(options, value, selected_option_idx)
                 if completion:
                     value = completion
                     suppress_completion = False
@@ -1557,7 +1590,9 @@ def scan():
             time.sleep(0.01)
 
         curses.curs_set(0)
-        return value.strip(), suppress_completion
+        if template_mode:
+            value = initial_value if value == "" else template_prefix + value + template_suffix
+        return value.strip(), suppress_completion, advance_to_next
 
     def edit_attribute_value(field, attributes, options=None):
         nonlocal status_message
@@ -1566,8 +1601,14 @@ def scan():
             options = []
 
         attr_name = field.name
-        new_value, autocomplete_cancelled = read_autocomplete_value(attr_name, options)
-        if new_value == "":
+        initial_value = None
+        if attr_name in attributes:
+            initial_value = capture_value_to_string(attributes[attr_name])
+        new_value, autocomplete_cancelled, advance_to_next = read_autocomplete_value(
+                attr_name, options, initial_value=initial_value)
+        if advance_to_next and new_value == "" and attr_name in attributes:
+            pass  # Keep an existing value while traversing attributes.
+        elif new_value == "":
             if attr_name in attributes:
                 del attributes[attr_name]
         elif new_value.lower() == "escape":
@@ -1579,10 +1620,11 @@ def scan():
                     autocomplete_cancelled=autocomplete_cancelled)
 
         status_message = f"Updated {attr_name}"
+        return advance_to_next
 
     def read_tag_value(label):
         tag_field = Field("tag", "string")
-        value, autocomplete_cancelled = read_autocomplete_value(label, reference_options)
+        value, autocomplete_cancelled, _ = read_autocomplete_value(label, reference_options)
         if value == "":
             return None
 
@@ -1590,6 +1632,30 @@ def scan():
                 value,
                 options=reference_options,
                 autocomplete_cancelled=autocomplete_cancelled)
+
+    def edit_attributes_from(attr_index, attributes, update_preview=False):
+        nonlocal tsplx_data
+
+        while attr_index < len(dcs.active_type.attributes):
+            field = dcs.active_type.attributes[attr_index]
+            advance_to_next = edit_attribute_value(field,
+                    attributes,
+                    options=get_capture_attribute_options(dcs.active_type,
+                        field,
+                        reference_options))
+
+            if update_preview and tsplx_data != None:
+                tsplx_data = update_tsplx_data()
+
+            if not advance_to_next:
+                break
+            attr_index += 1
+            while attr_index < len(dcs.active_type.attributes):
+                next_field = dcs.active_type.attributes[attr_index]
+                next_value = attributes.get(next_field.name)
+                if next_value == None or "<++>" in capture_value_to_string(next_value):
+                    break
+                attr_index += 1
 
     def append_tag(tags, label):
         nonlocal status_message
@@ -1645,9 +1711,65 @@ def scan():
                 attributes=dcs.current_instance.attributes,
                 tags=dcs.current_instance.tags)
 
+    def start_empty_instance():
+        nonlocal instance_files
+        nonlocal pending_documents
+        nonlocal pending_document_is_scanned
+        nonlocal tsplx_data
+        nonlocal status_message
+
+        if tsplx_data != None:
+            write_pending_instance()
+
+        instance_files = []
+        pending_documents = []
+        pending_document_is_scanned = []
+        dcs.current_instance.attributes = dcs.default_attributes.copy()
+        dcs.current_instance.tags = dcs.default_tags.copy()
+        tsplx_data = update_tsplx_data()
+        status_message = "Started new empty entity."
+
+    def scan_new_instance():
+        nonlocal mfd
+        nonlocal instance_files
+        nonlocal pending_documents
+        nonlocal pending_document_is_scanned
+        nonlocal tsplx_data
+        nonlocal status_message
+        nonlocal last_file_capture_action
+
+        if mfd.target_path != target_file_dir:
+            ensure_dir(target_file_dir)
+            mfd = fu.MultiFileDocument(target_file_dir)
+
+        path_to_scan = fu.mfd_new(mfd)
+        error, output = new_scan(path_to_scan, resolution, device=scanner_name)
+
+        if error == None:
+            assert target_data_file != None
+
+            # Starting a scanned instance finalizes the pending one, but only
+            # after the scan succeeds.
+            if tsplx_data != None:
+                write_pending_instance()
+
+            instance_files = [mfd.identifier]
+            pending_documents = [[path_basename(path_to_scan)]]
+            pending_document_is_scanned = [True]
+            dcs.current_instance.attributes = dcs.default_attributes.copy()
+            dcs.current_instance.tags = dcs.default_tags.copy()
+            tsplx_data = update_tsplx_data()
+            last_file_capture_action = "scan"
+            status_message = f"New: {path_basename(path_to_scan)}"
+            return True
+
+        status_message = "error: could not scan page"
+        return False
+
     def delete_last_pending_scan():
         nonlocal tsplx_data
         nonlocal status_message
+        nonlocal pending_document_is_scanned
 
         if not pending_documents:
             status_message = "No pending scan to delete."
@@ -1672,6 +1794,7 @@ def scan():
 
         if document_had_one_page:
             pending_documents.pop()
+            pending_document_is_scanned.pop()
             if instance_files:
                 instance_files.pop()
 
@@ -1681,6 +1804,78 @@ def scan():
             tsplx_data = None
 
         status_message = f"Deleted pending scan: {fname}"
+
+    def import_pending_files(start_new_instance=False):
+        nonlocal instance_files
+        nonlocal pending_documents
+        nonlocal pending_document_is_scanned
+        nonlocal tsplx_data
+        nonlocal status_message
+        nonlocal last_file_capture_action
+
+        curses.def_prog_mode()
+        curses.endwin()
+        try:
+            selected_files = select_files('~/Downloads')
+        finally:
+            curses.reset_prog_mode()
+            curses.curs_set(0)
+            win.refresh()
+
+        if not selected_files:
+            status_message = "No files selected."
+            return False
+
+        ensure_dir(target_file_dir)
+        imported_files = []
+        imported_documents = []
+        errors = []
+        for path in selected_files:
+            error, new_path = fu.file_canonical_rename(
+                    path,
+                    target_file_dir,
+                    None, None, None, [], None,
+                    False, False,
+                    keep_name=True,
+                    original_names=file_original_name_path)
+
+            if error == None:
+                basename = path_basename(new_path)
+                identifier = fu.canonical_parse(basename).identifier
+                imported_files.append(identifier)
+                imported_documents.append([basename])
+            else:
+                errors.append(error)
+
+        imported_count = len(imported_files)
+        if imported_count > 0:
+            if start_new_instance:
+                if tsplx_data != None:
+                    write_pending_instance()
+                instance_files = imported_files
+                pending_documents = imported_documents
+                pending_document_is_scanned = [False] * imported_count
+                dcs.current_instance.attributes = dcs.default_attributes.copy()
+                dcs.current_instance.tags = dcs.default_tags.copy()
+            else:
+                if tsplx_data == None:
+                    instance_files = []
+                    pending_documents = []
+                    pending_document_is_scanned = []
+                    dcs.current_instance.attributes = dcs.default_attributes.copy()
+                    dcs.current_instance.tags = dcs.default_tags.copy()
+                instance_files.extend(imported_files)
+                pending_documents.extend(imported_documents)
+                pending_document_is_scanned.extend([False] * imported_count)
+
+            tsplx_data = update_tsplx_data()
+            last_file_capture_action = "files"
+
+        destination = " into a new entity" if start_new_instance else ""
+        status_message = f"Imported {imported_count} file(s){destination} from Downloads."
+        if errors:
+            status_message += f" {len(errors)} failed."
+        return imported_count > 0
 
     def set_active_capture_type(type_definition, update_scan_dir=True):
         nonlocal target_type
@@ -1718,7 +1913,7 @@ def scan():
 
         c = input_char(win)
 
-        if is_stub_mode and dcs.active_type == None and c.lower() in ['n', ' ', 'd', 'p']:
+        if is_stub_mode and dcs.active_type == None and c.lower() in ['n', ' ', 'f', 'd', 'p']:
             status_message = "Please select a capture type before scanning."
             continue
 
@@ -1726,34 +1921,24 @@ def scan():
             status_message = "Please start a new instance before adding documents or pages."
             continue
 
-        if is_stub_mode and c.lower() in ['n', ' ']:
-            if mfd.target_path != target_file_dir:
-                ensure_dir(target_file_dir)
-                mfd = fu.MultiFileDocument(target_file_dir)
+        if (is_stub_mode and c.lower() == 'p' and
+                (not pending_document_is_scanned or not pending_document_is_scanned[-1])):
+            status_message = "The current document was not scanned; use [d] to start a scanned document."
+            continue
 
-            path_to_scan = fu.mfd_new(mfd)
-            error, output = new_scan (path_to_scan, resolution, device=scanner_name)
+        if scanner_name == None and (c.lower() in ['d', 'p'] or
+                (c == ' ' and last_file_capture_action == "scan")):
+            status_message = "No scanner available; use [f] to import files."
+            continue
 
-            if not error:
-                assert target_data_file != None
+        if is_stub_mode and c.lower() == 'n':
+            start_empty_instance()
 
-                # Starting a new instance finalizes the pending one, but only
-                # after the new scan succeeds.
-                if tsplx_data != None:
-                    write_pending_instance()
-                    pending_documents = []
-
-                # Initialize a the new tsplx data
-                instance_files = [mfd.identifier]
-                pending_documents = [[path_basename(path_to_scan)]]
-                dcs.current_instance.attributes = dcs.default_attributes.copy()
-                dcs.current_instance.tags = dcs.default_tags.copy()
-                tsplx_data = update_tsplx_data()
-
-            if error == None:
-                status_message = f"New: {path_basename(path_to_scan)}"
+        elif is_stub_mode and c == ' ':
+            if last_file_capture_action == "files":
+                import_pending_files(start_new_instance=True)
             else:
-                status_message = "error: could not scan page"
+                scan_new_instance()
 
         elif c.isdigit() and 0 <= int(c) <= len(type_definitions):
             if tsplx_data != None:
@@ -1775,6 +1960,9 @@ def scan():
         elif is_stub_mode and c.lower() == 'u':
             delete_last_pending_scan()
 
+        elif is_stub_mode and c.lower() == 'f':
+            import_pending_files()
+
         elif dcs.active_type and c == 'g':
             second_key = input_char(win)
             if second_key == "0":
@@ -1787,13 +1975,7 @@ def scan():
                     status_message = "Invalid default tag shortcut."
             elif second_key.isdigit() and 1 <= int(second_key) <= len(dcs.active_type.attributes):
                 attr_index = int(second_key) - 1
-                field = dcs.active_type.attributes[attr_index]
-                attr_name = field.name
-                edit_attribute_value(field,
-                        dcs.default_attributes,
-                        options=get_capture_attribute_options(dcs.active_type,
-                            field,
-                            reference_options))
+                edit_attributes_from(attr_index, dcs.default_attributes)
 
             else:
                 status_message = "Invalid default attribute shortcut."
@@ -1809,17 +1991,9 @@ def scan():
                 tsplx_data = update_tsplx_data()
             elif second_key.isdigit() and 1 <= int(second_key) <= len(dcs.active_type.attributes):
                 attr_index = int(second_key) - 1
-                field = dcs.active_type.attributes[attr_index]
-                attr_name = field.name
-
-                edit_attribute_value(field,
+                edit_attributes_from(attr_index,
                         dcs.current_instance.attributes,
-                        options=get_capture_attribute_options(dcs.active_type,
-                            field,
-                            reference_options))
-
-                if is_stub_mode and tsplx_data != None:
-                    tsplx_data = update_tsplx_data()
+                        update_preview=True)
 
         elif dcs.active_type and c == 't':
             if tsplx_data == None:
@@ -1837,8 +2011,10 @@ def scan():
             error, output = new_scan (path_to_scan, resolution, device=scanner_name)
 
             if not error:
+                last_file_capture_action = "scan"
                 instance_files.append(mfd.identifier)
                 pending_documents.append([path_basename(path_to_scan)])
+                pending_document_is_scanned.append(True)
 
                 if is_stub_mode:
                     tsplx_data = update_tsplx_data()
@@ -1857,6 +2033,9 @@ def scan():
         elif c.lower() == 'p':
             path_to_scan = fu.mfd_new_page (mfd)
             error, output = new_scan (path_to_scan, resolution, device=scanner_name)
+
+            if error == None:
+                last_file_capture_action = "scan"
 
             if is_stub_mode and not error:
                 if pending_documents:
@@ -1891,6 +2070,7 @@ def scan():
 
                 tsplx_data = None
                 pending_documents = []
+                pending_document_is_scanned = []
                 status_message = "Pending instance written."
 
             else:
