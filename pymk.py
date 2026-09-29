@@ -13,6 +13,7 @@ import psutil
 import json
 import re
 import shlex
+import subprocess
 from zipfile import ZipFile
 from urllib.parse import urlparse, urlunparse, ParseResult
 
@@ -3174,6 +3175,53 @@ def diff():
 
     file_args_str = " ".join([ex(f"./bin/weaver lookup {id}", ret_stdout=True, echo=False) for id in file_ids])
     ex (f"nvim-qt -- -d {file_args_str}")
+
+
+def concat_pdf():
+    output_path = get_cli_arg_opt('--output', default='concatenated.pdf')
+    file_ids = get_cli_no_opt() or []
+
+    if not sys.stdin.isatty():
+        file_ids += sys.stdin.read().split()
+
+    if len(file_ids) == 0:
+        print(f"usage: ./pymk.py {get_function_name()} [--output output.pdf] <id1> <id2> ...")
+        print(f"   or: echo '<id1> <id2> ...' | ./pymk.py {get_function_name()} [--output output.pdf]")
+        return
+
+    input_paths = []
+    for file_id in file_ids:
+        lookup = subprocess.run(
+            ['./bin/weaver', 'lookup', file_id, '--csv'],
+            capture_output=True,
+            text=True)
+
+        if lookup.returncode != 0:
+            print(f"Could not resolve file ID: {file_id}")
+            if lookup.stderr:
+                print(lookup.stderr, end='')
+            return
+
+        resolved_paths = [
+            path for path in lookup.stdout.splitlines()
+            if os.path.isfile(path)
+        ]
+        if len(resolved_paths) == 0:
+            print(f"No files found for ID: {file_id}")
+            return
+
+        input_paths += resolved_paths
+
+    non_pdf_paths = [path for path in input_paths if not path.lower().endswith('.pdf')]
+    if len(non_pdf_paths) > 0:
+        print('All input files must be PDFs:')
+        for path in non_pdf_paths:
+            print(f'  {path}')
+        return
+
+    result = subprocess.run(['pdfunite', *input_paths, output_path])
+    if result.returncode == 0:
+        print(output_path)
 
 
 def cli_esc(path):
