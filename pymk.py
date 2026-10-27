@@ -2388,8 +2388,16 @@ def dir_import():
     """
     Recursively iterates into a directory, takes any file with a non canonical
     name and renames it.
+
+    With --pictures, reports the percentage of imported pictures that contain
+    GPS coordinates.
+
+    By default a per-subdirectory import summary is printed. With --verbose,
+    the summary is replaced by the full list of source and target filenames.
     """
     dry_run = get_cli_bool_opt ("--dry-run")
+    pictures = get_cli_bool_opt ("--pictures")
+    verbose = get_cli_bool_opt ("--verbose")
     rest_args = get_cli_no_opt()
 
     directory = None
@@ -2398,19 +2406,44 @@ def dir_import():
 
     if directory == None:
         print ("usage:")
-        print (f"  ./pymk.py {get_function_name()} DIRECTORY")
+        print (f"  ./pymk.py {get_function_name()} [--dry-run] [--pictures] [--verbose] DIRECTORY")
         return
 
     dir_len = len(directory)+1
 
     paths = []
+    directory_file_counts = {}
+    directory_import_counts = {}
     for dirpath, dirnames, filenames in os.walk(directory):
+        if len(filenames) > 0:
+            directory_file_counts[dirpath] = len(filenames)
+
         for fname in filenames:
             path = path_cat(dirpath, fname)
 
             canonical_name = fu.canonical_parse(fname)
             if not canonical_name.is_canonical:
                 paths.append(path)
+                directory_import_counts[dirpath] = directory_import_counts.get(dirpath, 0) + 1
+
+    if not verbose:
+        print('Files to import by directory:')
+        if len(directory_import_counts) == 0:
+            print('  No files to import.')
+        else:
+            count_width = max(len(f'({count}/{directory_file_counts[dirpath]})')
+                    for dirpath, count in directory_import_counts.items())
+            for dirpath in sorted(directory_import_counts):
+                relative_dir = dir_import_relative_directory(directory, dirpath)
+                import_count = directory_import_counts[dirpath]
+                file_count = directory_file_counts[dirpath]
+                count = f'({import_count}/{file_count})'
+                print(
+                    f'  {100 * import_count / file_count:6.2f}%  '
+                    f'{count:<{count_width}}  {relative_dir}'
+                )
+
+    picture_gps_result = dir_import_picture_gps_inspect(directory, paths) if pictures else None
 
     if len(paths)>0:
         errors = ''
@@ -2428,13 +2461,90 @@ def dir_import():
                     keep_name=True,
                     original_names=file_original_name_path, error_if_target_exists=True)
 
-            if not rename_error:
-                print(path[dir_len:], '->', new_path[dir_len:])
-            else:
+            if rename_error:
                 errors += rename_error
+            elif verbose:
+                print(path[dir_len:], '->', new_path[dir_len:])
 
         if len(errors) > 0:
             print(errors)
+
+    if picture_gps_result != None:
+        stats, error = picture_gps_result
+        dir_import_picture_gps_report(stats, error)
+
+def dir_import_relative_directory(directory, containing_dir):
+    relative_dir = os.path.relpath(containing_dir, directory)
+    if relative_dir == '.':
+        return './'
+    return f'./{relative_dir}{os.sep}'
+
+def dir_import_picture_gps_inspect(directory, paths):
+    """Collect per-subdirectory GPS coverage."""
+    picture_metadata = []
+
+    # Avoid exceeding the operating system's command-line length limit for
+    # large imports while still letting ExifTool inspect files in batches.
+    batch_size = 500
+    try:
+        for start in range(0, len(paths), batch_size):
+            result = subprocess.run(
+                [
+                    'exiftool', '-json', '-n', '-q', '-q',
+                    '-MIMEType', '-GPSLatitude', '-GPSLongitude', '--',
+                    *paths[start:start + batch_size],
+                ],
+                capture_output=True,
+                text=True,
+            )
+
+            if result.stdout.strip():
+                picture_metadata.extend(json.loads(result.stdout))
+            elif result.returncode != 0:
+                detail = result.stderr.strip()
+                raise RuntimeError(detail if detail else 'ExifTool failed')
+    except (FileNotFoundError, json.JSONDecodeError, RuntimeError) as error:
+        return None, error
+
+    stats = {}
+    for metadata in picture_metadata:
+        if not metadata.get('MIMEType', '').startswith('image/'):
+            continue
+
+        containing_dir = dir_import_relative_directory(directory, os.path.dirname(metadata['SourceFile']))
+        if containing_dir not in stats:
+            stats[containing_dir] = {'total': 0, 'with_gps': 0}
+
+        stats[containing_dir]['total'] += 1
+        if ('GPSLatitude' in metadata and metadata['GPSLatitude'] is not None and
+                'GPSLongitude' in metadata and metadata['GPSLongitude'] is not None):
+            stats[containing_dir]['with_gps'] += 1
+
+    return stats, None
+
+def dir_import_picture_gps_report(stats, error):
+    """Print previously collected per-directory GPS coverage."""
+    print()
+    if error != None:
+        print(ecma_yellow('warning:') + f' could not inspect picture GPS data: {error}')
+        return
+
+    print('Picture GPS data:')
+    if len(stats) == 0:
+        print('  No pictures among files being imported.')
+        return
+
+    count_width = max(len(f"({data['total'] - data['with_gps']}/{data['total']})")
+            for data in stats.values())
+    for containing_dir in sorted(stats):
+        total = stats[containing_dir]['total']
+        with_gps = stats[containing_dir]['with_gps']
+        missing = total - with_gps
+        count = f'({missing}/{total})'
+        print(
+            f'  {100 * missing / total:6.2f}% missing '
+            f'{count:<{count_width}}  {containing_dir}'
+        )
 
 def dir_flatten():
     dry_run = get_cli_bool_opt ("--dry-run")
